@@ -1,0 +1,754 @@
+{
+  "protocol": "exp_ope_res_01_registration_draft_v1",
+  "id": "EXP-OPE-RES-01",
+  "track": "A2_ope_redesign_for_resolution",
+  "status": "DRAFT_UNREGISTERED",
+  "registered": false,
+  "preregistration_complete": false,
+  "created": "2026-10-27",
+  "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+  "task": "D184 track A: A2 design and registration draft (design only)",
+  "author": "research-design worker (claude-opus-5-5) delegated by the Claude PM session",
+  "execution": {
+    "enabled": false,
+    "reason": "Draft only. No TRAIN table fit, sealed-ledger read, synthetic world run, smoke, rehearsal, bootstrap or any other real-data computation is authorized by this file. Order: independent design review by a model different from the author (G-REV, PASS, blocker 0) -> fixed-commit code review by a different model (G-CODE; code reading and synthetic tests only, no real data) -> registration configs/EXP-OPE-RES-01.json (G-REG: status REGISTERED, registered true, execution enabled, every registration-time input pin filled; stage-output seals stay null until their stage completes) -> smoke A2-SM as the first registered step (TRAIN and synthetic only, cost and integrity only, no metric computed or read) -> A2-S0..A2-S4 on game days in the window after 13:30 KST on the Mac CPU. Review -> registration -> execution is Song D186 (docs/decisions.md:325); G-CODE and the smoke position are PM design-stage decisions (docs/pm/research/track-a/README.md). D186 is Song's run approval for that registered plan (G-SIGN)."
+  },
+  "registration": {
+    "target": "configs/EXP-OPE-RES-01.json",
+    "order": "G-REV design review (different model) PASS -> G-CODE fixed-commit code review (different model) PASS -> G-REG registration -> A2-SM smoke (first registered step) -> A2-S0..A2-S4 (D186: review -> registration -> execution; G-CODE and the smoke position are PM design-stage decisions)",
+    "on_registration": "status REGISTERED, registered true, preregistration_complete true, execution.enabled true",
+    "registered_kst": null,
+    "review_reference": null,
+    "code_review_reference": null,
+    "input_pins_at_registration": ["registration_input_pins (every field, including r3_status and the smoke pins)", "seeds.roles values (derived in this draft; re-verified at G-CODE and pinned)"],
+    "stage_output_seals": "stage_output_seals: each seal is written when its stage completes (output manifest sha256 appended to the external digest manifest) and verified before any downstream stage reads it; none is filled at registration and none is written back into the config",
+    "append_only_addenda": ["A2-SM smoke record", "stage output seals", "bug-fix records (stop_rules.deterministic_integrity)"],
+    "config_digest": {
+      "in_config_digest_field": "none: the config carries no digest field (self-reference removed); the digest lives only in the external digest manifest",
+      "hash_target": "digest = sha256 of the UTF-8 bytes of json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2) followed by exactly one trailing newline, where obj is the parsed configs/EXP-OPE-RES-01.json with exactly the nulled_json_paths set to null",
+      "nulled_json_paths": ["$.status", "$.registered", "$.preregistration_complete", "$.execution", "$.registration.registered_kst", "$.registration.review_reference", "$.registration.code_review_reference", "$.pre_run_gates[*].status", "$.stage_output_seals"],
+      "other_fields": "every other field enters the hash unchanged; the registration step changes only the nulled paths",
+      "digest_manifest": "an external append-only digest manifest whose path is pinned at G-REG (registration_input_pins.digest_manifest_path), outside the repository results/ directory; it holds the config digest and every receipt (review references, the smoke record, stage output seals, bug-fix addenda), each appended with its time and sha256 and never rewritten",
+      "why": "the reviewed (G-CODE) and the registered config then have the same digest, and later receipts never change the hashed bytes"
+    }
+  },
+  "documents": {
+    "design": "docs/pm/research/track-a/A2-ope-redesign-design.md",
+    "precedent_prereg_md": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+    "precedent_prereg_json": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+    "binding_le2025_registration": "configs/ML-POLICY-MATERIALIZATION-v1.json (+ addendum chain)",
+    "results_ledger": "docs/results-all.md section 5 (lines 1457-1600)",
+    "proposal": "docs/pm/research/experiment-proposals-2026-10-26.md:25 (A2 row)",
+    "decision": "docs/decisions.md:321 (D184); docs/decisions.md:325 (D186: 2027 decision quantity, WE reward unit, X and B, run window fixed)"
+  },
+  "proposal_convention": "Fields with status=judgment_value are proposals (판단값) with a one-line justification, not measured facts. Values marked recorded are copied from the cited file:line. Values marked derived are arithmetic on recorded values (rule stated). null means unresolved or unmeasured (미측정); no placeholder hash or number is invented. X and B were approved as drafted by Song (D186 4-①); they keep status judgment_value (origin) with approved_by recorded. B is applied as exactly 1.26e-5 (the D186 text); its unrounded derivation is explanatory only.",
+  "id_collision_check": {
+    "pattern": "EXP-OPE|OPE-RES",
+    "searched": ["docs/experiments.md", "configs/", "results/", "docs/", "git log --all commit subjects"],
+    "hits": 0,
+    "date": "2026-10-27"
+  },
+  "governing_rules": {
+    "season_2026_rows_read": false,
+    "season_2026_reevaluated": false,
+    "season_2026_use_in_this_registration": "structure_only: recorded summary numbers of results/MLB-2026-OPE-v1.json enter the MDE arithmetic; no 2026 row, ledger, array or result directory is opened",
+    "D131_label": "NO_EVIDENCE_OF_IMPROVEMENT stands unchanged",
+    "D108_D109_D119_D120_rules": "unchanged; A2 relabels no 2026 or sealed <=2025 result",
+    "D155_reopened": false,
+    "sealed_ledgers": "read-only with hash verification; never written; outputs only under a new registered root",
+    "registered_2026_documents_modified": false,
+    "policy_identity_or_service_change": false,
+    "existing_code_modified": false,
+    "not_modified_paths": [
+      "experiments/pitchmdp/pitchmdp/policy_estimator.py",
+      "experiments/pitchmdp/pitchmdp/policy_runtime.py",
+      "experiments/pitchmdp/pitchmdp/policy_semisynthetic.py",
+      "experiments/pitchmdp/pitchmdp/rollout_policy.py",
+      "experiments/pitchmdp/pitchmdp/policy_requests.py",
+      "experiments/pitchmdp/scripts/run_policy_validation.py"
+    ],
+    "not_modified_reason": "policy identity includes the source import closure; changing these files forces re-certification (D122, docs/decisions.md:190)",
+    "results_read_only_after_registration_and_review": true,
+    "delta_centers_blinded_until_decision_record": true,
+    "signed_shifts_and_parameter_selection_inside_sealed_evaluator": true,
+    "real_data_before_registration": false
+  },
+  "question": {
+    "primary": "Can the OPE scale be made fine enough to detect realistic policy effects (candidate minus SupportedBC, defense WE per PA) without introducing bias beyond a pre-fixed bound?",
+    "secondary": [
+      "What is the 80%-power minimum detectable effect (MDE) of the current scale, from recorded SEs only?",
+      "Which share of the error (point-estimate noise vs censoring bounds) can each arm reduce?",
+      "What bias does each variance-reduction arm introduce in a synthetic world with known truth, including a deliberately violated surrogate exclusion assumption and a misspecified planner model?"
+    ]
+  },
+  "mde_from_records": {
+    "method": {
+      "mde_80": "(z_0.975 + z_0.80) * SE = (1.959964 + 0.841621) * SE = 2.801585 * SE (two-sided 5%, power 80%)",
+      "se_from_percentile_ci": "SE ~= (upper - lower) / (2 * 1.96), normal approximation (records hold percentile CIs, not SEs)",
+      "current_rule_mde": "MEI (+ b_V) + s + 2.801585 * SE_lo, because Delta_lo ~= Delta - s (policy_estimator.py:519-520; an illustrative approximation)",
+      "s_definition": "s = worst_case_residual_share = the share of E0 PAs whose L1-R resolution is worst_case_residual or worst_case_residual_gap (experiments/pitchmdp/pitchmdp/policy_estimator.py:404-409); remaining shared-end bounds are not part of s",
+      "mei": {"value": 0.001, "source": "results/MLB-2026-OPE-v1.json:29", "status": "recorded (itself a D108 judgment value)"},
+      "b_v": {"value": 0.002734729542731599, "source": "results/MLB-2026-OPE-v1.json:30; D120 docs/decisions.md:186", "status": "recorded"}
+    },
+    "S6_rehearsal_150_dev_games": {
+      "source": "results/ML-POLICY-VAL-v1-S6-v3.json (S6-dr-a4; S6-dr-a5 reproduces exactly, line 111)",
+      "games": 150,
+      "pas": 11350,
+      "e0_pas": {"value": 10131, "source": "results/ML-POLICY-VAL-v1-S6.json:10-14 (COMPLETE 9668 + CENSORED 463)"},
+      "l1r_delta_bounds": {"value": [-0.0006478399045356745, 0.000539688464028487], "source": "S6-v3.json:9-12"},
+      "l1r_lower_endpoint_ci95": {"value": [-0.0013683340956097262, 3.69633066742493e-05], "source": "S6-v3.json:13-16"},
+      "l2_ci95": {"value": [-0.000600293243044061, 0.0005368040241650443], "source": "S6-v3.json:26-28"},
+      "worst_case_residual_share_s": {"value": 0.0005922416345869114, "source": "S6-v3.json:50"},
+      "resolutions": {"value": {"rho_zero": 401, "natural_course": 55, "worst_case_residual": 6, "shared_end_unknown": 1}, "source": "S6-v3.json:41-46"},
+      "ess_all_e0_candidate": {"value": {"pa": 9120.218896471748, "game": 144.2828223791589}, "source": "S6-v3.json:92-96"},
+      "derived": {
+        "se_lo": 0.00035849,
+        "se_point_l2": 0.00029008,
+        "mde_point_delta_ne_0": 0.00081269,
+        "mde_current_rule_statistical": 0.0025966,
+        "mde_current_rule_bias_adjusted": 0.0053313,
+        "arithmetic": "0.001 + 0.00059224 + 2.801585 * 0.00035849 = 0.0025966; + b_V = 0.0053313; point: 2.801585 * 0.00029008 = 0.00081269"
+      }
+    },
+    "season_2026_structure_only": {
+      "source": "results/MLB-2026-OPE-v1.json (recorded summary; never re-evaluated)",
+      "games": 2429,
+      "pas": 184288,
+      "e0_pas": {"value": 149525, "source": "MLB-2026-OPE-v1.json:11-15 (COMPLETE 132019 + CENSORED 17506)"},
+      "l1r_delta_bounds": {"value": [-0.001204616445139576, 0.0009206006143749304], "source": "MLB-2026-OPE-v1.json:60-63"},
+      "l1r_lower_endpoint_ci95": {"value": [-0.001744870224354297, -0.0007872588809334804], "source": "MLB-2026-OPE-v1.json:64-67"},
+      "l2_ci95": {"value": [-0.0003110820070690677, 1.1744545917875063e-05], "source": "MLB-2026-OPE-v1.json:77-79"},
+      "worst_case_residual_share_s": {"value": 0.0010566794850359472, "source": "MLB-2026-OPE-v1.json:102"},
+      "worst_case_residual_reasons": {"value": {"NO_TERMINAL:no_terminal_event": 83, "REFUSED:UNSUPPORTED_MISSING_ACTION_LABEL": 75}, "source": "MLB-2026-OPE-v1.json:98-101"},
+      "ess_candidate": {"value": {"pa": 123205.04984508279, "game": 2259.093163887884}, "source": "MLB-2026-OPE-v1.json:111-115"},
+      "derived": {
+        "se_lo": 0.00024429,
+        "se_point_l2": 0.00008235,
+        "mde_point_delta_ne_0": 0.00023071,
+        "mde_current_rule_statistical": 0.0027411,
+        "mde_current_rule_bias_adjusted": 0.0054758,
+        "arithmetic": "0.001 + 0.00105668 + 2.801585 * 0.00024429 = 0.0027411; + b_V = 0.0054758; point: 2.801585 * 0.00008235 = 0.00023071"
+      }
+    },
+    "decomposition": {
+      "rule": "SE_cens ~= sqrt(SE_lo^2 - SE_point^2), assuming independent point and censored-bound components; SE_point comes from L2 (conditional mean over the L1-R point-resolved E0 PAs: complete PAs plus the rho_zero and rho_zero_before_node resolutions, experiments/pitchmdp/pitchmdp/policy_estimator.py:250-251,394-395) and SE_lo from the L1-R lower endpoint (all E0, a different denominator), so this is an illustrative approximation across different populations and normalizations, not an identified decomposition; the measured version is R5 f (common denominator, covariance reported)",
+      "season_2026": {"se_cens": 0.00022999, "share_of_se_lo_squared": 0.886, "status": "illustrative_approximation (inferred under independence)"},
+      "S6": {"se_cens": 0.00021065, "share_of_se_lo_squared": 0.345, "status": "illustrative_approximation (inferred under independence)"},
+      "scaling_check": {
+        "S6_se_point_projected_to_2429_games": 0.00007208,
+        "recorded_2026_se_point": 0.00008235,
+        "ratio": 1.142,
+        "S6_se_lo_projected_to_2429_games": 0.00008909,
+        "recorded_2026_se_lo": 0.00024429,
+        "ratio_lo": 2.742,
+        "reading": "consistent with a point component scaling roughly like 1/sqrt(n) and a censored component that does not; S6 DEV and the 2026 season are different populations, so the comparison is approximate"
+      },
+      "clustering_inference": {
+        "poisson_se_of_worst_case_share_2026": 0.00008406,
+        "poisson_se_of_worst_case_share_S6": 0.00024178,
+        "reading": "2026 censored component (0.00023) far above the independent-PA value (0.000084) suggests game clustering of the 158 worst-case PAs; unverifiable without reopening the 2026 ledger, which this registration forbids",
+        "status": "inference_not_measured"
+      }
+    },
+    "with_30pct_point_se_cut": {
+      "season_2026_scale": {"se_lo": 0.0002371, "se_lo_change": "-2.9%", "mde_current_rule": 0.0027209, "mde_current_rule_change": "-0.7%", "mde_point": 0.00016150},
+      "S6_scale": {"se_lo": 0.00029258, "se_lo_change": "-18.4%", "mde_current_rule": 0.0024119, "mde_point": 0.00056888}
+    },
+    "reference_magnitudes": {
+      "exposed_point_estimates": {"S6_l2_delta_mean": -1.9012038906171694e-05, "season_2026_l2_delta_mean": -0.00014858997929797347, "sources": ["S6-v3.json:25", "MLB-2026-OPE-v1.json:76"], "label": "exposed, descriptive"},
+      "point_se_needed": {"effect_0.0001": "SE 3.57e-5 = 0.43 x 2026 point SE: 57% cut or about 5.3 seasons", "effect_0.0002": "13% cut", "effect_0.0003": "already detectable on the point component"},
+      "planner_claimed_gain_approx": {
+        "value_per_pa": 0.0061,
+        "derivation": "exponential tilt identity E_c[Q] - E_r[Q] = tau * (KL(c||r) + KL(r||c)); tau 0.1; mean per-decision KL(c||r) 0.0074 (docs/results-all.md:1478; per-decision definition policy_tau.py:33,69); KL(r||c) ~= KL(c||r) (second order); 4.155 decisions per PA (43,487 / 10,466, D106 docs/decisions.md:158); performance-difference lemma",
+        "status": "approximation_not_measured"
+      }
+    },
+    "conclusion": "At full-season scale the point-estimate resolution is already about 0.00023 WE/PA; the decision is coarse (0.0027) because of MEI 0.001, the bound width s and the censored-bound variance (its size is the illustrative approximation in decomposition). R1-R4 act on the point component only, so A2's primary metric is the point-estimate half-width; D186 3-① decided that the 2027 decision uses that component (point-estimate decision) with the censoring share reported separately (decision_rules.fixed_statements.decision_quantity_2027)."
+  },
+  "data_roles": {
+    "TRAIN": {"window": ["2023-05-15", "2025-04-30"], "source": "experiments/pitchmdp/pitchmdp/data.py:69-74", "exposure": "exposed_fit (configs/ML-POLICY-MATERIALIZATION-v1.json:433)", "use": "R1 tables, smoothing-strength cross-validation, violation calibration (kappa_p, zeta_p), TAB world marginals"},
+    "DEV_S6_150_games": {"selection": "the sealed S6 selection (salted hash, month-proportional, straddling games excluded)", "exposure": "exposed_development (configs/ML-POLICY-MATERIALIZATION-v1.json:437)", "use": "blinded rehearsal on the sealed S6-dr-a5 ledger (read-only) plus recomputed PA facts; development only, not confirmation"},
+    "DEV_S5_2_games": {"starts": 147, "exposure": "exposed_development", "use": "S5-X synthetic world starts (same registered starts as S5)"},
+    "may_2025_earlystop_and_temperature": "not read by A2; such rows can enter only through the frozen values of an eligible A3 primary artifact (R3, diagnostic only; arms.R3_behavior_policy.eligibility)",
+    "june_2025_policy_tuning": "not used (also excluded from any R3 artifact provenance)",
+    "history_split_before_2023_05_15": "not used",
+    "season_2026": "not used (structure-only arithmetic on recorded summaries)",
+    "statcast_columns_needed": {
+      "in_processed_frame": ["launch_speed", "launch_angle", "events", "description", "stand"],
+      "join_from_approved_raw_files": ["hc_x", "hc_y", "bb_type"],
+      "join_key": ["game_pk", "at_bat_number", "pitch_number"],
+      "raw_allowlist": "statcast_2023.parquet, statcast_2024.parquet, statcast_2025.parquet (data.py:19)",
+      "missingness": null,
+      "missingness_status": "unmeasured"
+    },
+    "date_guards": {"all_stages_max_game_date": "2025-12-31", "tables_max_game_date": "2025-04-30"},
+    "processed_frame_input": {
+      "decision": "PM decision after the G-REG dry run 2026-10-27 19:0x: the pinned processed frame's row groups are not split-aligned, so the strict TRAIN-only footer read plan (smoke, A2-S0/S1 TRAIN reads) was refused on the original layout; A2 reuses the A3 prepared input (same disclosure as A3 design section 6)",
+      "file": "pitches.split-aligned.parquet, prepared once by the PM on 2026-10-27 16:35 KST with the A3 tool; same rows, order and schema as the source; row groups aligned at 2023-05-15 / 2025-05-01 / 2025-05-16 / 2025-06-01 / 2025-07-01 / 2025-09-30",
+      "identity": "proven per column by a canonical sha256 against the source (identity manifest result PASS): a byte check, not a label read; the original processed frame (9f65d1db...) stays the identity source",
+      "reader_rule": "the reader refuses any file whose row groups straddle the TRAIN boundary (footer statistics)",
+      "pin": "registration_input_pins.processed_frame_aligned",
+      "integrity_test": "synthetic: the reader refuses a parquet with a row group straddling the TRAIN boundary; a file or identity manifest whose sha256 or source_sha256 differs from registration_input_pins.processed_frame_aligned is refused; on an aligned synthetic parquet the TRAIN read plan decodes only TRAIN row groups"
+    }
+  },
+  "arms": {
+    "R1_reward": {
+      "currency": {"value": "WE", "reason": "current reward, q_hat control variate and D108/D109 thresholds are all frozen C0 defense WE; RE24 needs a new q_hat (runtime re-run) and a new MEI, so it is not an arm here; the 2027 reward unit stays WE (D186 3-①)"},
+      "R1_0_current": {"definition": "policy_requests.pa_outcome structural-end-v1, score_source next_row: frozen C0 defense WE of the next PA's pre-pitch state, or the final result 0/1 for the game's last PA", "source": "policy_requests.py:221-272"},
+      "R1_a_class_expected": {
+        "definition": "r_a = game.terminal_values(s_K, we, advancement)[e]; s_K = pre-pitch state of the terminal pitch; e = game._EVENT_GROUP[events] among the 9 TERMINALS",
+        "sources": ["game.py:114-121", "game.py:124-193", "game.py:316-325", "planner.py:13-17"],
+        "deterministic_classes": "walk, intent_walk, hbp, strikeout, home_run via apply_terminal (game.py:75-111); extra advancement on those plays is treated as luck and removed",
+        "non_terminal_pitches": "no reward (reward only at the PA's last decision, policy_estimator.py:3-5)",
+        "mid_pa_runner_events": "kept as realized (already in s_K)",
+        "outside_9_classes": "realized reward passes through; share reported",
+        "game_end": "_advance assigns 0/1 (game.py:50-72)"
+      },
+      "R1_b_bip_quality_expected": {
+        "applies_to": "terminal pitch with description == hit_into_play and finite launch_speed and launch_angle; otherwise R1_a",
+        "definition": "r_b = sum_e P_hat(e | x, dp) * terminal_values(s_K)[e], e in {out, single, double, triple, home_run, double_play}",
+        "keys": {
+          "ev_mph_edges": {"value": [60, 70, 80, 85, 90, 95, 98, 101, 104, 107, 110], "bins": 12, "status": "judgment_value", "justification": "outcomes change fastest above 95 mph"},
+          "la_deg_edges": {"value": [-20, -10, 0, 8, 16, 24, 32, 40, 50], "bins": 10, "status": "judgment_value", "justification": "splits ground ball, line drive, fly ball and pop-up ranges at least twice each"},
+          "spray": {"transform": "phi = atan((hc_x - 125.42) / (198.27 - hc_y)), signed to pull-positive by batter stand", "transform_status": "external community convention, to be checked against the TRAIN distribution", "bins": ["pull > +15 deg", "center", "oppo < -15 deg", "missing"], "status": "judgment_value", "justification": "coarse direction effect after the 2023 shift ban (experiment-proposals-2026-10-26.md:38)"},
+          "dp_eligible": "runner on first and outs < 2",
+          "cells": 960
+        },
+        "shrinkage": {
+          "form": "hierarchical Dirichlet pseudo-counts m: P(e|EV,LA,spray,dp) <- P(e|EV,LA,dp) <- P(e|LA,dp) <- P(e|dp); double_play mass 0 when dp = 0",
+          "m_grid": {"value": [5, 20, 80], "status": "judgment_value", "justification": "brackets EmpiricalAdvancement prior 5 (game.py:131) and the batter prior 30 (data.py:178-179)"},
+          "m_selection": "TRAIN-only 2-fold (game_pk parity) cross-validated log-loss; fixed before the rehearsal"
+        },
+        "train_event_mapping": {
+          "out": ["field_out", "force_out", "fielders_choice_out", "sac_fly", "sac_bunt", "other_out"],
+          "double_play": ["grounded_into_double_play", "double_play", "sac_fly_double_play"],
+          "single_equivalent": {"value": ["field_error", "fielders_choice (no out)", "catcher_interf (in play)"], "status": "judgment_value", "justification": "batter on first, runners one base: same base-out effect as a single"},
+          "triple_play": {"value": "double_play", "status": "judgment_value", "justification": "extremely rare"},
+          "report_mapping_shares": true
+        },
+        "not_primary_surrogate": "estimated_woba_using_speedangle: wOBA scale ignores base-out-score WE differences; MLB model training window may include evaluation seasons (uncontrolled leakage path); used only as a TRAIN correlation diagnostic"
+      },
+      "comparison_with_current_reward": {"public_before_decision": ["paired H_point ratio", "Var(r - q_hat_last) vs Var(r_tilde - q_hat_last)"], "sealed_until_unblinding": ["corr(r, r_tilde)", "paired Delta_R1 - Delta_R0 with CI"], "note": "before the decision only S-5 pass/fail is visible for the paired shift"},
+      "estimand_note": "R1 targets Delta in surrogate currency; equals realized-WE Delta under (E1) exclusion E[r|S,a,H] = E[r|S] with S = (pre-pitch game state s_K of the terminal pitch, plus the outcome class e for R1_a or the batted-ball quality x and dp for R1_b; the surrogate depends on s_K, so S includes the game state) and (E2) table validity in the evaluation era; otherwise it differs, and synthetic_bias_check quantifies that difference only in the declared synthetic worlds; the real-data difference stays uncertified"
+    },
+    "R2_estimator": {
+      "common": "per-decision recursion V_t = v_hat(H_t) + rho_tilde_t * (r_t + V_{t+1} - q_hat(H_t, a_t)); same recorded pi_c, pi_r, pi_b_hat, q_hat and logged index; L1-R censoring unchanged (affine base + slope * c, policy_estimator.py:138-146); same transform for both policies",
+      "R2_0_current_dr": {"rho_tilde": "rho", "clipping": false, "self_normalized": false, "source": "policy_estimator.py:3-8"},
+      "R2_1_dr_shrinkage": {
+        "reference": "Su et al. 2020, arXiv 1907.09623",
+        "rho_tilde": "lambda * rho / (rho^2 + lambda)",
+        "lambda_grid": {"value": ["inf", 1000, 100, 30, 10, 3], "status": "judgment_value", "justification": "inf = current DR; 3 shrinks rho = 1 to 0.75 (strong end)"},
+        "selection": {
+          "rule": "per R1 component, on the point set P: minimize B_hat(lambda)^2 + V_hat(lambda); B_hat = |mean_P(Delta_i(lambda) - Delta_i(inf))| + 1.96 * SE_cl(Delta(lambda) - Delta(inf)) (current DR is unbiased when pi_b_hat is correct); V_hat = SE_cl(Delta(lambda))^2",
+          "se_cl": {"formula": "over the games g = 1..G that have at least one PA in P: T_g = per-game sum of the per-PA values, n_g = PA count, N = sum_g n_g, Delta_bar = sum_g T_g / N; SE_cl^2 = (G / (G - 1)) * sum_g (T_g - n_g * Delta_bar)^2 / N^2 (centering by n_g * Delta_bar handles unequal game sizes; no seed)", "applied_to": "B_hat uses the per-PA differences Delta_i(lambda) - Delta_i(inf); V_hat uses Delta_i(lambda)", "where": "identical in the rehearsal and in every TAB replication (150 pseudo-games), so the selection effect is part of the certified combined arm; used instead of a bootstrap for that reason"},
+          "tie_break": "decision_rules.selection.minimizer_ties (tolerance against the finite global minimum, then the larger lambda, toward inf)",
+          "blinding": "outcome-dependent (it uses the size of the paired shift) but operator-blinded: computed only inside the sealed evaluator by this registered deterministic rule; objective values, the selected lambda and signed shifts go to the sealed file only; public outputs carry the pair's widths at the selected value only"
+        },
+        "paper_bound_correspondence": "to be checked against the paper before implementation (unverified)"
+      },
+      "R2_2_switch_dr": {
+        "reference": "Wang, Agarwal, Dudik 2017",
+        "rho_tilde": "rho * 1[rho <= M] (a step with rho > M uses the model value v_hat(H_t) and drops later corrections)",
+        "M_grid": {"value": ["inf", 20, 10, 5, 3, 2], "status": "judgment_value", "justification": "weights are near 1 at tau 0.1, so the grid must reach 2 to trigger at all"},
+        "selection": "same rule as R2_1 inside the sealed evaluator (same SE_cl; ties by decision_rules.selection.minimizer_ties -> the larger M, toward inf); trigger rates per grid value reported (a reward-free weight diagnostic)"
+      },
+      "R2_3_self_normalized_dr": {
+        "reference": "WDR form, Thomas & Brunskill 2016, arXiv 1604.00923",
+        "definition": "V_0 = sum_t (W_t v_hat_t - W_{t+1} q_hat_t) + W_T r with W_t replaced by W_t / n_bar_t",
+        "normalizer": "n_bar_t = mean over all E0 PAs of the depth-t cumulative weight, ended PAs holding their last W (stopped martingale, expectation 1 under correct pi_b_hat); censored PAs hold W up to node k",
+        "not_used": "the old-track reached-depth-only mean (src/pitcheezy/ope/dr.py:125,146) and its fixed-normalizer bootstrap approximation (dr.py:229)",
+        "recompute_per_resample": true
+      },
+      "directional_bias_warning": "R2_1-R2_3 move weight from the IS correction toward q_hat, the frozen simulator Q the candidate optimized against (candidate DR is single-robust, configs/MLB-2026-OPE-PREREG-DRAFT-v1.json arms.ARM_B.dr_q_hat); for the tau tilt the model term gain is >= 0 (tau * Jeffreys divergence), so the pull favors the candidate (design.md section 0-e, docs/design.md:52-61); measured in the TAB world with a misspecified planner model",
+      "considered_not_included": [
+        {"name": "MRDR", "reference": "arXiv 1802.03493", "reason": "refits q_hat by variance minimization: new nuisance fit needing its own registration"},
+        {"name": "MAGIC", "reference": "arXiv 1604.00923", "reason": "blends toward the model term and amplifies the circular bias"}
+      ]
+    },
+    "R3_behavior_policy": {
+      "role": "input arm from track A3; diagnostic only in this registration (never eligible for an adoption label)",
+      "linked_registration": "EXP-BC-CAL-01 (docs/pm/research/track-a/A3-behavior-policy-design.md)",
+      "eligibility": {
+        "a3_label": "ADOPT_FOR_2027_REGISTRATION:<candidate>",
+        "artifact": "the candidate's PRIMARY frozen artifact (not an XF artifact), pinned by sha256 under the BehaviorModel protocol, A3 independent review PASS",
+        "complete_provenance_rule": "every fitted part of the artifact (model fit, in-recipe model selection such as the B1 alpha and B2 rounds, calibration by temperature or vector scaling, frozen inputs entering its features) uses rows dated on or before 2025-05-31 only: TRAIN 2023-05-15..2025-04-30, earlystop 2025-05-01..15, temperature 2025-05-16..31; never June 2025 (blend) rows, never DEV/S6 rows, never 2026 rows; verified from the artifact's provenance manifest (A3 design, item 'A2 R3에 넘기는 산출물')",
+        "reason": "the rehearsal sample is the already-exposed DEV July-September 2025 S6 150 games (exposure dev_2025_07_09, configs/ML-POLICY-MATERIALIZATION-v1.json:437), so values fit on pre-June rows cannot leak into it",
+        "a2_own_tables": "A2's own R1 tables stay TRAIN-only (<= 2025-04-30); A2 never reads the May rows, which enter only through the eligible artifact's frozen values",
+        "decided_by": "PM decision 2026-10-27 (replaces the earlier TRAIN-only wording for R3)"
+      },
+      "status_at_registration": "registration_input_pins.r3_status: ENABLED_DIAGNOSTIC_ONLY (eligible primary artifact and its provenance manifest pinned) or NOT_RUN:R3 (A3 label KEEP_B0, no artifact, or an ineligible artifact; a3 pins set to NOT_APPLICABLE); fixed at G-REG and never added or changed after any result; an eligible artifact that appears after registration needs a new registration id",
+      "excluded_a3_outputs": "DEV cross-fit (XF) artifacts, because S6 game rows may enter their fit",
+      "exposure_note": "A3 chooses among its candidates by DEV NLL; that is not a fit on DEV rows but a same-DEV selection exposure, so R3 rehearsal half-widths are labeled development",
+      "use": "if enabled: recompute rho = pi / pi_b_hat_A3 for both policies on the same ledger decisions for R3 x the 12 pairs; target policies unchanged; positivity nodes keep rho = 0; the recomputation belongs to this A2 registration (A3 does not recompute S6)",
+      "reported_if_enabled": ["H_point and SE per bootstrap", "S-5 pass/fail", "R5 g self-consistency under pi_b_hat_A3", "after unblinding: Delta and CI"],
+      "diagnostic_only_reason": "the synthetic matrix does not cover R3 denominators (TAB has 4 pitch groups and cannot host the 18-type A3 model; S5-X logs follow the BC law), so R3 pairs cannot be bias-certified; an R3 gain is a design input for the 2027 prospective registration only",
+      "reference": "Hanna et al. 2019, arXiv 1806.01347"
+    },
+    "R4_bootstrap": {
+      "game": {"draws": 10000, "seed": 3060201743, "seed_rule": "SeedSequence([20260929, 1]) bootstrap role (configs/ML-POLICY-MATERIALIZATION-v1.json:115-116,703-708)", "unit": "game (all PAs of a resampled game)"},
+      "pitcher": {"draws": 10000, "seed": 3624346705, "seed_rule": "seeds.roles.pitcher_bootstrap (role index 0): SeedSequence([20261027, 0])", "unit": "first-row pitcher of the PA (all PAs of a resampled pitcher)"},
+      "decision_uses": "condition (ii) and S-5 must hold under each bootstrap separately; ranking and reporting use the wider half-width H_star = max(game, pitcher)",
+      "validity": "decision_rules.validity_gates (inherited minimums; pitcher minimum 30)",
+      "reason": "candidate and pi_b_hat errors are pitcher-specific; the game bootstrap ignores within-pitcher correlation across games",
+      "two_way_pigeonhole": {"status": "descriptive only", "reference": "Owen 2007 (added by this worker, outside the 10/26 survey; verify before implementation)"}
+    },
+    "R5_diagnostics_before_any_delta": {
+      "a_match": ["top-1 = logged pitch type rate per policy", "mean pi(logged action)", "candidate-reference TV and KL (mean, q50, q90, q99)", "top-1 agreement between policies"],
+      "b_ess": ["PA and game, both policies, all E0 / complete / censored (policy_estimator.py:293-300,412-414)", "per R2 variant and grid value (never labeled with the selected value)"],
+      "c_weights": ["rho quantiles, max, zero share", "Switch trigger rate per M", "mean |rho_tilde - rho| per lambda"],
+      "d_positivity_censoring": ["LOGGING_POSITIVITY (rho0) count", "unsupported target mass", "resolution counts", "s", "per-game worst-case PA count distribution (clustering)"],
+      "e_mde_blinded": ["H_point and SE per arm (game, pitcher)", "MDE_80 point = 2.801585 * SE", "current-rule MDE = MEI + s + 2.801585 * SE_lo (+ b_V)"],
+      "f_se_decomposition": "common denominator N = all E0 PAs: Delta_lo = (sum over P of Delta_i + sum outside P of lo_i) / N split into a point part and a censored-bound part; both variances and their covariance from the same bootstrap replicates (Var = Var_point + Var_cens + 2 Cov); the point part's denominator N differs from H_point's mean over P, stated with the result",
+      "g_self_consistency": {"what": "mean rho over logged decisions and mean PA-end cumulative W per policy (expectation 1 under correct pi_b_hat), with CI", "flag": "CI excluding 1 = pi_b_hat misspecification signal (A3 input)", "note": "the old RE24-track SNIPS signal (+0.0203 vs realized 0.01399, docs/reviews/external-evaluation-2026-10-19.md:117) is not transferred"},
+      "h_placebo_se_check": {
+        "placebos": 100,
+        "construction": "pi_p proportional to pi_r * exp(xi / tau_p), xi ~ N(0,1) fixed per (pitcher, pitch type, count bucket), tau_p tuned to mean KL 0.0074; computed from the ledger's pi_r, mask and q_hat only (no planner calls)",
+        "statistic": "SD of placebo Delta_hat / mean bootstrap SE",
+        "flag_threshold": {"value": 1.25, "status": "judgment_value", "justification": "SE underestimation above 25% is large enough to flip a 30% half-width decision"},
+        "decision_input": false,
+        "flag_label": "SE_CALIBRATION_WARNING"
+      },
+      "i_r1_paths": ["BIP with EV/LA", "BIP missing EV/LA (R1_a fallback)", "non-BIP class", "pass-through (outside 9 classes)", "hc missingness", "mapping shares", "TRAIN exclusion diagnostic delta_g"],
+      "public_rule": "every public R5 output has one public_type of blinding.public_before_decision_allowlist (width/SE/variance, count/share, reward-free weight or policy diagnostic, the R5 g reward-free weight CIs, the R5 i TRAIN-only signed residuals); reward-free diagnostics are reported per grid value and never labeled with the selected value; nothing else from R5 is public before the decision"
+    },
+    "pairs": {
+      "set": "R1 {0, a, b} x R2 {0, 1, 2, 3} = 12 original-denominator pairs including the baseline; the 11 non-baseline pairs are the adoption candidates; if registration_input_pins.r3_status is ENABLED_DIAGNOSTIC_ONLY, R3 x the same 12 are added as diagnostics only",
+      "ids_in_total_order": ["R1_0xR2_0 (baseline, not a candidate)", "R1_axR2_0", "R1_bxR2_0", "R1_0xR2_3", "R1_axR2_3", "R1_bxR2_3", "R1_0xR2_2", "R1_axR2_2", "R1_bxR2_2", "R1_0xR2_1", "R1_axR2_1", "R1_bxR2_1"],
+      "pair_definition": "a pair is the combined arm (surrogate reward, estimator and, for R2_1/R2_2, the lambda/M chosen by the registered rule)",
+      "baseline": "R1_0 x R2_0 x game bootstrap = the S6-dr-a5 configuration",
+      "report_all": true,
+      "multiplicity_note": "choosing the best pair inflates the apparent gain (pairs are highly correlated on the same data; size unmeasured); re-measured against the current DR in 2027"
+    },
+    "future_not_in_scope": [
+      {"name": "MIPS / OffCEM / kernel-smoothed continuous actions", "references": ["Saito & Joachims 2022", "arXiv 2305.08062", "Kallus & Zhou 2018, arXiv 1802.06037"], "reason": "for large or continuous (type x location) actions; ARM-B is pitch type only and ARM-A is BLOCKED_NOT_IDENTIFIED without intent labels (docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md:33-38)"},
+      {"name": "R1_b_plus (advancement conditioned on LA group)", "reason": "next candidate if the zeta violation fails"},
+      {"name": "censoring-share report format (bounds/sensitivity) and censoring reduction (A2-C)", "reason": "separate design; the 2027 decision quantity itself is fixed by D186 3-① (decision_rules.fixed_statements.decision_quantity_2027)"},
+      {"name": "anytime-valid confidence sequences for in-season monitoring", "reference": "arXiv 2210.10768", "reason": "2027 protocol suggestion only"}
+    ]
+  },
+  "estimands_metrics": {
+    "estimand": "paired per-PA Delta = V(candidate) - V(SupportedBC), initial-defender WE per PA, ARM-B regime as registered (L1-R); candidate c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "primary_metric": {
+      "name": "H_point",
+      "definition": "half-width of the 95% percentile CI of the paired mean Delta over the point set P",
+      "point_set_P": "E0 PAs whose PAIRED Delta L1-R bounds coincide (Delta lower bound == upper bound) under the baseline classification (R1_0 x R2_0) on the registered ledger; the individual policy values of such a PA may remain intervals (shared-end cancellation in the paired difference); the same P for every pair; in S6 approximately E0 10131 minus the 7 bounded PAs (worst 6, shared end 1; S6-v3.json:41-46), exact count fixed at run time",
+      "conditional_interpretation": "P is selected from the observed logged trajectories (completion, rho0 or natural-course resolution), so the mean over P is a conditional mean over the PAs in P; a common P makes the pair comparison like-for-like but does not make it the full-E0 policy-value difference (the censoring share is reported separately, D186 3-①); the synthetic worlds do not reproduce this P-selection mechanism",
+      "bootstraps": ["game", "pitcher"],
+      "r2_parameter": "R2_1 and R2_2 pairs are measured at the lambda/M selected inside the sealed evaluator",
+      "baseline_reference_approx": {"value": 0.00056855, "source": "S6-v3.json:26-28 (L2 half-width)", "status": "derived approximation; recomputed on P at run time"}
+    },
+    "secondary_metrics": ["L1-R lower and upper endpoint half-widths", "SE decomposition (point vs censored, common denominator, covariance)", "MDE values (blinded)", "ESS", "R3 pairs if enabled (diagnostic only)", "after unblinding: Delta and CI per pair"]
+  },
+  "synthetic_bias_check": {
+    "why_S5_is_not_enough": [
+      "S5 world = the planner's own model (bound G0 + TRAIN delivery pools + frozen WE, policy_semisynthetic.py:3-14), so the R2 pull toward q_hat is invisible",
+      "terminal value is the deterministic class-expected WE (rollout_policy.py:250), so there is no within-class noise and no batted-ball layer",
+      "S5 gap SE 0.00080-0.00106 (docs/results-all.md:1491-1493) is 60-85x the bias bound B"
+    ],
+    "S5X_world": {
+      "base": "S5 registration unchanged: DEV 2 games, 147 E0 starts, logs_per_start 6, truth_rollouts 12, cap 12, absorb_off_mask, candidate runtime (configs/ML-POLICY-MATERIALIZATION-v1.json:608-626; D111 docs/decisions.md:168)",
+      "added_layers": [
+        "quality: when G0 draws in-play (sum of the six in-play class probabilities), x ~ P_W(x | pitch group(a), two-strike flag), TRAIN empirical",
+        "class: e ~ P_kappa(e | x, dp, a) proportional to P_hat_TRAIN(e | x, dp) * exp(kappa * u(g(a)) * 1[e is a hit]); kappa = 0 removes the direct action dependence of the class distribution; full R1_b exclusion in this declared world requires kappa = zeta = 0 (zeta != 0 makes the advancement depend on the action)",
+        "advancement: drawn from the frozen C0 EmpiricalAdvancement distribution; zeta adds zeta * u'(g(a)) to the logit of run-scoring advancement for out with a runner on third and fewer than two outs",
+        "realized reward: frozen C0 WE of the next state (0/1 at game end)"
+      ],
+      "pitch_groups": {"value": {"FB": ["FF", "SI"], "FC": ["FC"], "BR": ["SL", "ST", "CU", "KC", "SV", "CS"], "OS": ["CH", "FS", "FO", "SC"], "other": ["KN", "EP", "FA", "PO", "UN"]}, "status": "judgment_value", "justification": "the 18 TRAIN codes (configs/ML-POLICY-MATERIALIZATION-v1.json:462) grouped by similar trajectory"},
+      "violation_sign": "u(g) in {-1, 0, +1} follows the sign of the TRAIN-measured delta_g (deliberate violation in the data-suggested direction)",
+      "settings": [
+        {"id": "X0", "kappa": 0, "zeta": 0, "laws": {"V2": "logs from pi_b_hat (acceptance S1)", "V3": "logs from tempered_alpha_0.5, estimator keeps pi_b_hat (descriptive, report only as the S5 V3 precedent; the baseline's own bias under V3 is a scientific result)"}, "planning_seeds": [0, 1, 2], "runs": 6},
+        {"id": "X1", "law": "V2 (logs from pi_b_hat)", "kappa": ["kappa_p", "2*kappa_p", "5*kappa_p"], "zeta": ["zeta_p", "2*zeta_p", "5*zeta_p"], "one_at_a_time": true, "planning_seeds": [0], "runs": 6, "acceptance": "2*kappa_p and 2*zeta_p (S2); the rest descriptive"},
+        {"id": "X2", "law": "V2 (logs from pi_b_hat)", "world_predictor": "a frozen <=2025 G0-family member different from the planner's predictor (identified at registration; not a policy re-validation; D155 untouched)", "kappa": 0, "zeta": 0, "planning_seeds": [0, 1, 2], "runs": 3, "acceptance": "S4"}
+      ],
+      "total_runs": 15,
+      "run_order": "synthetic_matrix.S5X_runs_in_order",
+      "R3_pairs": "not run in synthetic worlds (diagnostic only)",
+      "repetitions": {"value": 6, "status": "judgment_value", "justification": "splits the registered S5 budget (6 logs and 12 truth rollouts per start), so the S5-based cost estimate and the A2-S2 hang guard stay unchanged; each repetition has 147 PAs, smaller than the rehearsal, so full-size combined arms are certified in TAB (S3) and the S5-X nets stay coarse"},
+      "measures": [
+        "complete recomputation within repetitions (acceptance gap and SE): the 147 starts are fixed; each run has repetitions r = 1..6, and repetition r uses log j = r - 1 and truth rollouts 2r - 2 and 2r - 1 of every start (the registered S5 budget of 6 logs and 12 truth rollouts per start split six ways, same stream layout); on those 147 PAs the whole pipeline is recomputed (R1 surrogate, R2 estimator, lambda/M selection with the start as the SE_cl cluster unit, SN normalizers), giving the complete gap_r = Delta_hat_r - Delta_true_hat_r for each of the 12 original-denominator pairs; run gap = mean_r gap_r and acceptance SE = SD_r(gap_r) / sqrt(6), subject to decision_rules.validity_gates; S1 and S4 pool the three seed runs (acceptance); the number of repetitions is S5X_world.repetitions",
+        "descriptive only: the inherited per-run S5 SE (within-start row variances summed without cross-start covariance, policy_semisynthetic.py:163-170); it does not cover the row coupling created by lambda/M selection and SN normalizers and is never used for acceptance",
+        "R1 surrogate bias (X1), Rao-Blackwellized with common random numbers and no approximation, defined separately per surrogate with the world's exact conditional mean m(x,a,s) = E_W[r | x,a,s] = sum_e P_kappa(e | x,dp,a) * E_zeta[WE of the next state | s,e,a] (bin sums): gamma_b(s,a) = P_W(in play | s,a) * E_x[r_tilde_b(x,s) - m(x,a,s) | s,a] with r_tilde_b(x,s) = sum_e P_hat(e | x,dp) * terminal_values(s)[e] (A2-S0 table); gamma_a(s,a) = P_W(in play | s,a) * E_x[sum_e P_kappa(e | x,dp,a) * terminal_values(s)[e] - m(x,a,s) | s,a] (R1_a depends on the realized class e, so its surrogate term inside the x-expectation averages terminal_values over the world's class law P_kappa); along the S5 CRN truth rollouts (policy_truth, 12 per start, policy_semisynthetic.py:74-84) accumulate per R1 component G_pi = sum_t sum_a pi(a|s_t) * gamma(s_t,a), so E[G_c - G_r] = Delta_true(r_tilde) - Delta_true(r) by iterated expectation; b_hat_R1 = (1/n) sum_i mean_k (G_c - G_r)_ik, SE = sqrt(sum_i SE_i^2) / n with SE_i = SD_k / sqrt(12) and n = 147 starts; under V2 (exact rho) the DR is unbiased for the r_tilde value, so this equals the combined realized-WE bias of R1_x x R2_0 exactly; projection (planning arithmetic, not a measurement): SE <= B/2 corresponds to an equal per-start paired SD <= (B/2) * sqrt(12 * 147) = 42 * 6.3e-6 ~= 2.65e-4 (derived; the actual SD is unmeasured)",
+        "S2 deterministic invariant (registered check): the world's advancement model is the frozen C0 EmpiricalAdvancement that terminal_values uses (declared matching advancement model), so gamma_a = 0 identically whenever zeta = 0, including nonzero kappa; in the zeta = 0 X1 runs (kappa_p, 2*kappa_p, 5*kappa_p) |gamma_a| <= 1e-12 at every visited (s,a), otherwise a deterministic integrity failure (stop_rules.deterministic_integrity)",
+        "descriptive only: the first-order reference-trajectory approximation sum_a (pi_c - pi_r)(a|s) * gamma(s,a)"
+      ]
+    },
+    "TAB_world": {
+      "states": "count 12 x 64 situations sampled from TRAIN PA starts (fixed seed) x 8 pitcher archetypes from TRAIN pitch-group shares",
+      "actions": {"value": ["FB", "FC", "BR", "OS"], "status": "judgment_value", "justification": "smallest realistic size with exact dynamic-programming truth"},
+      "world": "pitch outcome P_W(ball, strike, foul, hbp, in play | count, group, archetype) = TRAIN league frequencies with fixed archetype perturbations; in-play layers as S5X (kappa, zeta); reward frozen C0 WE",
+      "logging": {"V2": "logs = pi_b_hat = pi_b", "V3": "logs = pi_b^0.5 renormalized, estimator keeps pi_b"},
+      "planner_misspecification": {
+        "form": "logit P_hat = logit P_W + eta * epsilon, epsilon ~ N(0,1) fixed seed",
+        "eta_p": {"definition": "eta at which the TAB planner model ECE10 equals 2 x the recorded G0 ECE10 0.0087 (docs/pm/research/experiment-proposals-2026-10-26.md:35)", "status": "judgment_value", "justification": "the factor 2 covers conditional error invisible in marginal ECE"},
+        "grid": ["0", "eta_p/2", "eta_p", "2*eta_p"]
+      },
+      "planning_noise": {"sigma": 0.01025, "derivation": "0.0145 / sqrt(2): median paired SE of planning Q in the sealed G0 run (docs/results-all.md:1572), independent per action", "q_hat": "Q_hat + independent N(0, sigma^2) (evaluation-seed MC, M-7)", "fixed_per_state": true},
+      "candidate": "kl_policy(Q_plan, pi_b, mask, tau) (rollout_policy.py:344), tau bisected so mean KL(pi_c || pi_b) = 0.0074 (docs/results-all.md:1478)",
+      "truth": "exact dynamic programming for Delta_true(r) (realized WE; the reference of every acceptance cell) and Delta_true(r_tilde) (surrogate decomposition, descriptive); the baseline's expectation E[Delta_hat_0] is exact by the same dynamic programming (the baseline DR is linear per PA; beta_0 = 0 under V2, equivalently E[Delta_hat_0] = Delta_true(r); a deterministic integrity check); R1 tables are re-estimated in every replication (including the m selection) from a synthetic TRAIN sample of the real TRAIN in-play count (A2-S0 census; unmeasured), independent of the evaluation data; R2_1 and R2_2 run the registered selection rule (closed-form game-cluster SE on the 150 pseudo-games) inside every replication, so the certified object is the combined arm",
+      "replications": {
+        "dataset_pas": 10131,
+        "pseudo_games": 150,
+        "cells_and_R": "synthetic_bias_check.synthetic_matrix (acceptance cells R = 2000, descriptive cells R = 300)",
+        "status": "judgment_value",
+        "justification": "projection only (planning arithmetic, not a measurement or a precision guarantee; synthetic_matrix.planning_arithmetic); insufficient precision gives INCONCLUSIVE"
+      },
+      "measures": ["combined bias b_hat (acceptance.estimation) with MC SE", "SD", "RMSE", "distribution of the lambda and M selected inside each replication", "invalid replication count"],
+      "blinding": "synthetic outputs are not real data and are not blinded",
+      "era_drift_descriptive": "P(e|x) shifted by the TRAIN first-half vs second-half difference; R1 bias reported, not a decision input"
+    },
+    "violation_calibration_train_only": {
+      "kappa_p": "2-fold (game_pk parity) cross-fit P_hat(hit | x, dp); per pitch group delta_g = mean(1[hit] - P_hat(hit | x, dp)); kappa_p sets the world's max group residual to max_g(|delta_g| + 1.96 * SE_g) over the groups present in that world; computed from TRAIN marginals in A2-S0, separately for S5-X (5 groups) and TAB (4 groups)",
+      "zeta_p": "same for run-scoring residual (actual runs - frozen C0 advancement expectation) on outs with a runner on third and fewer than two outs; an intentional exception to the cross-fitting rule: the expectation comes from the frozen, pre-registered C0 advancement model and nothing is learned from these rows, so there is nothing to cross-fit (kappa_p's P_hat is newly fit on TRAIN, hence the 2-fold cross-fit)",
+      "delta_g_is_also": "TRAIN diagnostic of the exclusion assumption (observational; a magnitude scale only)",
+      "values": null,
+      "values_status": "unmeasured (A2-S0)"
+    },
+    "synthetic_matrix": {
+      "pairs": "the 12 original-denominator pairs in every cell, computed on the same data within a run or replication; R2_1 and R2_2 select lambda/M by the registered rule inside each run or replication; R3 pairs are not run",
+      "S5X_runs_in_order": [
+        {"order": 1, "id": "X0-V2", "planning_seeds": [0, 1, 2], "run_index": [1, 2, 3], "role": "acceptance S1"},
+        {"order": 2, "id": "X1-V2 at 2*kappa_p and at 2*zeta_p", "planning_seeds": [0], "run_index": [4, 5], "role": "acceptance S2"},
+        {"order": 3, "id": "X2-V2", "planning_seeds": [0, 1, 2], "run_index": [6, 7, 8], "role": "acceptance S4"},
+        {"order": 4, "id": "X1-V2 at kappa_p, 5*kappa_p, zeta_p, 5*zeta_p", "planning_seeds": [0], "run_index": [9, 10, 11, 12], "role": "descriptive"},
+        {"order": 5, "id": "X0-V3 tempered alpha 0.5", "planning_seeds": [0, 1, 2], "run_index": [13, 14, 15], "role": "descriptive (report only, as the S5 V3 precedent)"}
+      ],
+      "S5X_total_runs": 15,
+      "S5X_independent_streams": {
+        "world_seed_rule": "world_seed(k) = role_seed(config, 'v2') XOR k for the registered run_index k = 1..15; role_seed(config, 'v2') = int(SeedSequence([20260929, 2]).generate_state(1)[0]) = 4115122098 (run_policy_validation.py:337-341, SEED_ROLES index 2; derived 2026-10-27, re-verified at G-CODE)",
+        "world_seed_values_derived": [4115122099, 4115122096, 4115122097, 4115122102, 4115122103, 4115122100, 4115122101, 4115122106, 4115122107, 4115122104, 4115122105, 4115122110, 4115122111, 4115122108, 4115122109],
+        "streams": "in run k: logs SeedSequence([world_seed(k), 0, i, j]) and truth SeedSequence([world_seed(k), 1, i]), the run_world layout (policy_semisynthetic.py:109,139-140); repetition r uses log j = r - 1 and truth rollouts 2r - 2 and 2r - 1 (S5X_world.measures); added layers from seeds.substreams.s5x_world with key [k, layer, i, draw] (separate log and truth namespaces, CRN between candidate and reference truth rollouts); planning seeds stay the registered policy-identity values (0, 1, 2), which already differ between pooled runs",
+        "consequence": "no two runs share a Monte-Carlo stream, so the three gaps pooled in S1 and in S4 are independent by construction; the pooled SE sqrt(sum SE^2) / 3 is used only under this construction",
+        "current_runner_note": "the existing S5 runner passes the same role_seed(config, 'v2') to every run (run_policy_validation.py:1545-1558); that file is not modified (governing_rules.not_modified_paths); the new A2 S5-X driver passes world_seed(k), and this wiring is part of the fixed-commit code review (G-CODE)"
+      },
+      "TAB_axes": {"law": ["V2", "V3"], "eta": ["0", "eta_p/2", "eta_p", "2*eta_p"], "kappa_zeta_one_at_a_time": ["(0, 0)", "(kappa_p, 0)", "(2*kappa_p, 0)", "(5*kappa_p, 0)", "(0, zeta_p)", "(0, 2*zeta_p)", "(0, 5*zeta_p)"], "cells": 56},
+      "TAB_acceptance_cells": [
+        {"id": "T-A1", "law": "V2", "eta": "eta_p", "kappa": "0", "zeta": "0", "R": 2000, "rule": "SE <= B/2 and U <= B"},
+        {"id": "T-A2", "law": "V3", "eta": "eta_p", "kappa": "0", "zeta": "0", "R": 2000, "rule": "relative: SE <= B/2 and U <= |beta_0| + B"},
+        {"id": "T-A3", "law": "V2", "eta": "eta_p", "kappa": "2*kappa_p", "zeta": "0", "R": 2000, "rule": "SE <= B/2 and U <= B"},
+        {"id": "T-A4", "law": "V2", "eta": "eta_p", "kappa": "0", "zeta": "2*zeta_p", "R": 2000, "rule": "SE <= B/2 and U <= B"}
+      ],
+      "TAB_descriptive_cells": {"cells": "the other 52 axis combinations", "R": 300, "plus": "era drift: V2, eta_p, kappa = zeta = 0, P(e|x) shifted by the TRAIN first-half vs second-half difference, R = 300", "decision_input": false},
+      "TAB_total_replications": {"value": 23900, "derivation": "4 x 2000 + 53 x 300", "cost": "unmeasured; extrapolated by the smoke"},
+      "TAB_order": "acceptance cells first, each sealed on completion; then descriptive cells in the fixed order law -> eta -> (kappa, zeta) list; a hang-guard stop after all acceptance cells are sealed leaves the remaining descriptive cells NOT_RUN (reported, not retried); a stop before that is an infrastructure failure",
+      "R_status": "judgment_value",
+      "planning_arithmetic": "projection (planning arithmetic, not a measurement or a precision guarantee): at R = 2000 the precision requirement SE <= B/2 needs SD(Delta_hat_pair - Delta_hat_baseline) <= (B/2) * sqrt(R) ~= 2.82e-4 (derived; stricter than the zero-bias U <= B condition 2.87e-4); that paired SD is unmeasured (a single pair's SD is near the S6-size 0.00029, so pairing must reduce it); insufficient precision gives INCONCLUSIVE; R is never increased after a result is seen"
+    },
+    "acceptance": {
+      "bias_bound_B": {
+        "value": 1.26e-05,
+        "unit": "WE per PA",
+        "applied_as": "exactly 1.26e-5 in every acceptance comparison (the D186 4-① text)",
+        "derivation_explanatory_only": {"formula": "0.25 * (1 - X) * SE_point_S6 * sqrt(150 / 2430) = 0.25 * 0.7 * 0.00029008 * 0.248452", "unrounded": 1.2612e-05, "use": "explanation of the approved value only; never used in an acceptance comparison"},
+        "inputs": {"SE_point_S6": "S6-v3.json:26-28 (L2 CI)", "games_2430": "full regular season, as in results/ML-POLICY-VAL-v1-S6.json:45"},
+        "status": "judgment_value",
+        "justification": "a bias of 0.25 SE raises the two-sided 5% error to 5.7% and lowers 95% CI coverage to 94.3%; taken as the tolerance at 2027 full-season precision",
+        "approved_by": "Song D186 4-① (docs/decisions.md:325), as drafted; fixed before results"
+      },
+      "certified_quantity": "combined-arm total bias b(p, c) = E_c[Delta_hat_p] - Delta_true_c(r) with r = realized WE; Delta_hat_p includes the surrogate reward (R1, with per-replication table re-estimation in TAB), the estimator (R2) and the in-run lambda/M selection; surrogate and estimator components are never bounded separately (each below B does not bound their sum)",
+      "estimation": {
+        "TAB": "common random numbers: in each replication j every pair is computed on the same synthetic data; b_hat = mean_j(Delta_hat_p_j - Delta_hat_0_j) + beta_0 and SE = SD_j(Delta_hat_p_j - Delta_hat_0_j) / sqrt(R); beta_0 = E[Delta_hat_0] - Delta_true(r) is the baseline's exact dynamic-programming value, so it carries no MC error",
+        "S5X_S2": "synthetic_bias_check.S5X_world.measures (Rao-Blackwellized CRN b_hat_R1 and SE)",
+        "bounds": "U = |b_hat| + 1.96 * SE (95% upper confidence bound on |b|); L = |b_hat| - 1.96 * SE",
+        "precision_requirement": "SE <= B/2 (= 6.3e-6), separate from and checked before the bound; SE > B/2 -> INCONCLUSIVE, never PASS",
+        "cell_outcome": "in this order: (1) SE > B/2 -> INCONCLUSIVE; (2) U <= B -> PASS; (3) L > B -> FAIL; (4) otherwise INCONCLUSIVE; V3 cells apply the same precision requirement and then the relative rule: PASS if U <= |beta_0| + B, FAIL if L > |beta_0| + B, otherwise INCONCLUSIVE; FAIL, INCONCLUSIVE and invalid (decision_rules.validity_gates) all mean not certified"
+      },
+      "S1_X0_V2_coarse": "per pair: the three X0-V2 seed runs pooled (mean of the three run gaps, SE = sqrt(sum_s SE_s^2) / 3 with SE_s = SD_r(gap_r) / sqrt(6) from the complete recomputation within repetitions, S5X_world.measures; the sum is valid only because the runs use independent complete Monte-Carlo streams, synthetic_matrix.S5X_independent_streams); the 97.5% interval (z = 2.2414) contains 0, |gap| <= 0.01 and gap SE <= 0.005; probability scope: Bonferroni over S1 and S4 covers only the interval-exclusion component, so an unbiased pair is rejected by interval exclusion with probability <= 5% only to the extent the normal approximation for SE and coverage holds (with 6 repetitions per run it is rough, and undercoverage makes the net stricter, not looser); the |gap| > 0.01 and SE > 0.005 screens are separate conditions outside that statement (S5 tolerance, M-6 and COOP-019 F1; configs/ML-POLICY-MATERIALIZATION-v1.json:616,626-627)",
+      "S2_X1_R1_surrogate": {"rule": "for every pair using R1_a or R1_b: the R1 surrogate-bias cell (gamma_a for R1_a, gamma_b for R1_b) PASSes (estimation.cell_outcome: SE <= B/2 and U <= B) in the 2*kappa_p run and in the 2*zeta_p run, and the S2 deterministic invariant (gamma_a = 0 when zeta = 0) holds; for R1_x x R2_0 this is the combined-bias certification in S5-X (V2 identity), for R1_x x R2_1..3 it is a necessary surrogate-component condition under the real planner policy (their combined certification is S3); 1x and 5x levels descriptive", "multiplier_2": {"status": "judgment_value", "justification": "headroom for out-of-sample uncertainty on top of the TRAIN upper bound that already adds 1.96 SE"}},
+      "S3_TAB_combined": "all 12 pairs: PASS in T-A1, T-A3 and T-A4 (SE <= B/2 and U <= B) and relative-rule PASS in T-A2 (SE <= B/2 and U <= |beta_0| + B) (synthetic_matrix.TAB_acceptance_cells)",
+      "S4_X2_V2_coarse": "the S1 pooled rule applied to the three X2-V2 runs",
+      "S5_rehearsal_paired_shift": "inside the sealed evaluator: the 95% CI of Delta_pair - Delta_baseline contains 0 under the game and under the pitcher bootstrap; only pass/fail is public",
+      "baseline_shared_nets": "the baseline's own S1 and S4 results are part of condition (i) for every pair (shared world and harness sanity; unbiased under V2, so under the same approximation it is rejected by interval exclusion with probability <= 5%; the 0.01 and 0.005 screens are separate); a failure is a registered statistical outcome (no retry, no modification) and then no pair is certified",
+      "summary_of_what_is_certified": "an absolute 95% upper bound <= B on the combined additional bias in the V2 acceptance cells, a baseline-relative bound (U <= |beta_0| + B) in the V3 cell, and coarse S5-X screens; within the declared synthetic worlds only, not an absolute real-data guarantee",
+      "coverage_scope": "pointwise: every 95% bound and net is nominal per pair and cell; it is not a simultaneous 95% guarantee across cells or for the pair selected among the 11 candidates; results are reported as nominal per pair/cell, and any simultaneous claim would need a prospectively registered adjustment",
+      "certification_scope": "the declared cells (synthetic_matrix) and their estimand only: the paired policy-value difference in realized WE on uncensored synthetic PAs (TAB) and on the S5-registered E0 starts (S5-X); the real ledger's P-selection (censoring) mechanism, violations outside the declared forms and 2027 era drift are not certified",
+      "fixed_before_results": true,
+      "change_rule": "X, B, grids, cells, R and z are fixed before any result; repetitions are never increased after a result is seen; any change is disclosed and needs a new registration id"
+    }
+  },
+  "decision_rules": {
+    "condition_ii_half_width": {
+      "rule": "H_point(pair) <= (1 - X) * H_point(baseline) under the game bootstrap and, separately, under the pitcher bootstrap",
+      "X": {"value": 0.30, "status": "judgment_value", "justification": "30% smaller SE ~= half the variance ~= twice the effective sample (one more season); matches the CUPED (~29% SE) and surrogate-index (~35% SE) magnitudes from the 10/26 survey and the pre-stated target (experiment-proposals-2026-10-26.md:25)", "approved_by": "Song D186 4-① (docs/decisions.md:325), as drafted; fixed before results"},
+      "why_point_not_endpoint": "the L1-R endpoint error contains the censored component the arms cannot reach (illustrative approximation: S6 about 34.5%, 2026 about 88.6%); endpoint half-widths are reported only"
+    },
+    "condition_i_bias": "every synthetic_bias_check.acceptance cell S1-S5 PASSes for the pair, plus the baseline shared nets",
+    "labels_in_precedence": [
+      {"label": "FAILED_INTEGRITY", "rule": "a deterministic integrity failure not resolved under stop_rules.deterministic_integrity"},
+      {"label": "NOT_EVALUABLE", "rule": "a mandatory baseline statistic (H_point under either bootstrap) is invalid, so (ii) cannot be evaluated"},
+      {"label": "ADOPT_FOR_2027_PROTOCOL:<pair>", "rule": "some eligible pair (original denominator, not the baseline, every mandatory statistic valid) passes (i) and (ii); the pair chosen by decision_rules.selection"},
+      {"label": "BIAS_NOT_CERTIFIED:<pairs>", "rule": "valid pairs pass (ii) but each fails (i) (FAIL, INCONCLUSIVE or invalid); listed in the total order"},
+      {"label": "NO_PRECISION_GAIN", "rule": "no valid pair passes (ii); the 2027 default stays current DR and realized WE"}
+    ],
+    "label_rule": "the first label of labels_in_precedence whose rule holds",
+    "recorded_with_label": {"r3_status": "registration_input_pins.r3_status (ENABLED_DIAGNOSTIC_ONLY or NOT_RUN:R3, fixed at registration)", "flag_SE_CALIBRATION_WARNING": "R5 h"},
+    "selection": {
+      "statistic": "H_star(p) = max(H_point_game(p), H_point_pitcher(p)); H_star_min = the smallest H_star among the pairs passing (i) and (ii)",
+      "tie_window": {"rule": "passing pairs with H_star(p) - H_star_min <= 0.02 * H_star(baseline)", "reference": "the baseline pair's H_star, fixed, so ties never chain between candidate pairs", "status": "judgment_value", "justification": "the drafted 2% tolerance, now measured against one fixed reference"},
+      "total_order": {"value": ["R1_axR2_0", "R1_bxR2_0", "R1_0xR2_3", "R1_axR2_3", "R1_bxR2_3", "R1_0xR2_2", "R1_axR2_2", "R1_bxR2_2", "R1_0xR2_1", "R1_axR2_1", "R1_bxR2_1"], "rule": "estimator rank R2_0 < R2_3 (SN, no tuning parameter) < R2_2 (Switch, one M) < R2_1 (shrinkage, one lambda), then reward rank R1_0 < R1_a (no fitted table) < R1_b (960-cell table plus m); the first pair of this order inside the tie window is chosen", "status": "judgment_value", "justification": "fewer tuning parameters are easier to freeze for 2027"},
+      "r3_pairs": "not eligible, so outside the order; in diagnostic tables each R3 pair follows its original-denominator pair",
+      "minimizer_ties": {"m": "smallest TRAIN cross-validated log-loss; tie -> the larger m (stronger pooling)", "lambda": "smallest B_hat^2 + V_hat; tie -> the larger lambda (toward inf)", "M": "smallest B_hat^2 + V_hat; tie -> the larger M (toward inf)", "tie_definition": "v_min = the global minimum over the finite objective values; tie set = {finite v : |v - v_min| <= 1e-12 * max(1, |v_min|)} (exact equality stays a tie, also when v_min = 0); the tolerance is applied first, then the larger m / lambda / M is chosen inside the tie set"}
+    },
+    "validity_gates": {
+      "inherited": {"source": "configs/ML-POLICY-MATERIALIZATION-v1.json:703-712 (S6 bootstrap; matrix_policy.POLICY_INFERENCE P8)", "minimum_games": 30, "minimum_pa_starts": 50, "invalid_replicate_share_max": 0.05, "effect": "below a minimum no interval is reported; above the invalid share the interval is null"},
+      "new": {
+        "minimum_pitchers_pitcher_bootstrap": {"value": 30, "status": "judgment_value", "justification": "the same count as the inherited game minimum"},
+        "invalid_bootstrap_replicate": "the resampled P is empty, a self-normalizer n_bar_t is zero or nonfinite, or the statistic is nonfinite",
+        "empty_or_small_P": "P empty or below the minimums -> H_point invalid",
+        "invalid_ci": "a nonfinite endpoint or lower > upper -> that CI invalid",
+        "sn_normalizer_full_sample": "zero or nonfinite n_bar_t at any depth -> every R2_3 pair invalid",
+        "selection_objective": "a grid value with a nonfinite objective leaves the candidate set; all nonfinite -> the pair invalid",
+        "synthetic_acceptance_cells": "any invalid replication (nonfinite estimate, normalizer or selection objective) makes that pair's cell invalid; invalid replications are never dropped and re-averaged; descriptive cells report invalid counts",
+        "s5x_repetitions": "the same rule for the S5-X acceptance runs: any invalid repetition (nonfinite gap, normalizer or selection objective) makes that pair's run invalid, and with it the S1, S2 or S4 net that uses the run; no repetition is dropped"
+      },
+      "adoption_requires": "every mandatory statistic of the pair valid: H_point under both bootstraps, both S-5 CIs and every acceptance cell; missing or partial results are non-adoptable; an invalid baseline H_point gives NOT_EVALUABLE"
+    },
+    "meaning_of_adoption": "eligibility as the primary estimator/reward of a future 2027 prospective registration draft only; the 2027 protocol needs its own registration, independent review and Song sign-off; no policy verdict, service change or relabeling",
+    "fixed_statements": {
+      "decision_quantity_2027": {
+        "decided_by": "Song D186 3-① (docs/decisions.md:325)",
+        "primary": "point-estimate decision: the paired mean Delta (candidate minus SupportedBC) on the point set P with its 95% interval; the quantity behind mde_point_delta_ne_0 and the center whose half-width is H_point; a conditional mean over P (estimands_metrics.primary_metric.conditional_interpretation)",
+        "reported_separately": "the censoring share next to it: the L1-R censoring width, i.e. the worst-case residual share s (mde_from_records.method.s_definition), the remaining shared-end bounds, and the censoring variance/covariance contribution (R5 f)",
+        "secondary_report_only": "the current lower-endpoint rule (95% CI lower bound of Delta_lo > MEI 0.001 WE/PA, + b_V; D108/D109) stays as a report row and is not the decision",
+        "reward_unit": "WE (defensive win expectancy at PA end), unchanged",
+        "not_fixed_here": "the numeric criterion of the point-estimate decision and the format of the censoring report (A2-C) are fixed by the 2027 prospective registration (D186 7-①) before its data are read; this registration does not set them"
+      },
+      "season_2026": "not re-evaluated; D131 and the 2026 registration/prereg stand (D127 docs/decisions.md:200, D131 docs/decisions.md:208)",
+      "rehearsal": "already-exposed <=2025 S6 150 DEV games on the sealed S6-dr-a5 ledger, read-only; development, not confirmation",
+      "honest_confirmation": "the 2027 season with every component, R1 table and lambda/M frozen before opening day (one-shot prospective), or an RS-02-style prospective ledger (D179 docs/decisions.md:311)",
+      "replication_check_2027": {"rule": "compute the current DR on the same 2027 data; if H_point(adopted) / H_point(current) > 0.85, label PRECISION_GAIN_NOT_REPLICATED", "status": "judgment_value", "justification": "less than half of the 30% target realized means the rehearsal gain is not trustworthy"},
+      "lambda_M_transfer": "values selected on the rehearsal are frozen for 2027 (not re-tuned on 2027 data); they become public at unblinding"
+    }
+  },
+  "blinding": {
+    "sealed_evaluator": "the A2-S3 step that reads the sealed S6-dr-a5 ledger and computes every signed real-data quantity internally: Delta centers and CI endpoints per pair and grid value, paired shifts Delta_pair - Delta_baseline and their CIs (S-5), lambda/M objective values and selected values, per-grid-value half-widths",
+    "sealed_file": "centers.sealed.json holds all of the above; only its sha256 is printed and recorded (stage_output_seals)",
+    "public_before_decision_allowlist": [
+      {"item": "per pair (R2_1/R2_2 at the selected lambda/M): H_point and SE under the game and the pitcher bootstrap, L1-R endpoint half-widths", "public_type": "width_or_se"},
+      {"item": "S-5 per pair and bootstrap", "public_type": "pass_fail_only"},
+      {"item": "R5 a, b, c: top-1 rates, TV/KL distributions, ESS, weight quantiles, trigger rates (per grid value, never labeled with the selected value)", "public_type": "reward_free_weight_or_policy_diagnostic"},
+      {"item": "R5 d counts and shares; R5 i path shares, missingness and mapping shares", "public_type": "count_or_share"},
+      {"item": "R5 e MDE values; R5 f variances and covariance of the point and censored parts; R5 h placebo SD ratio", "public_type": "width_se_or_variance (no center)"},
+      {"item": "R5 g: per-policy mean rho and mean PA-end cumulative W with their CIs", "public_type": "reward_free_weight_statistic_with_ci (signed values and CI endpoints allowed)"},
+      {"item": "R5 i: TRAIN residuals delta_g with SE_g per pitch group (synthetic_bias_check.violation_calibration_train_only)", "public_type": "train_only_signed_diagnostic (allowed)"},
+      {"item": "Var(r - q_hat_last) vs Var(r_tilde - q_hat_last)", "public_type": "variance"},
+      {"item": "validity flags, deterministic integrity pass/fail, sha256 of the sealed file", "public_type": "flag_or_hash"}
+    ],
+    "never_public_before_decision": ["any signed effect or shift (a pair's Delta, Delta_pair - Delta_baseline)", "endpoints of effect or shift intervals for any pair other than the already-public baseline (the reward-free weight CIs of R5 g and the TRAIN diagnostics of R5 i are not effect intervals and stay allowed)", "the selected lambda/M", "per-grid-value half-widths of reward-dependent statistics (they would reveal the selection)", "corr(r, r_tilde)", "individual placebo Delta_hat values"],
+    "why_signed_shifts_are_sealed": "the baseline values are already public from S6, so a signed shift or its CI would reveal the new pair's center and direction (no assumption about CI midpoints is needed)",
+    "selection_blinding": "lambda/M selection is outcome-dependent (it uses the size of the paired shift) but operator-blinded: the registered deterministic rule runs only inside the sealed evaluator",
+    "allowlist_enforcement": "the runner writes the public file from the typed allowlist only; a test rejects any key or value outside its public_type, in particular any signed effect or shift and any effect/shift interval endpoint (G-CODE)",
+    "unblind": "the unblind stage verifies the committed decision record sha before opening the sealed file; the selected lambda/M become public then and are frozen for 2027",
+    "baseline_exception": "baseline values were already published in S6 and are used only for the integrity reproduction gate"
+  },
+  "seeds": {
+    "game_bootstrap": {"value": 3060201743, "rule": "SeedSequence([20260929, 1]) (the registered S6 bootstrap role, index 1 of configs/ML-POLICY-MATERIALIZATION-v1.json seeds.roles)"},
+    "a2_base": {"value": 20261027, "status": "judgment_value", "justification": "new base for new roles so no S6 role seed is reused"},
+    "derivation": "int(SeedSequence([a2_base, role_index]).generate_state(1)[0])",
+    "roles": {
+      "pitcher_bootstrap": {"index": 0, "value": 3624346705},
+      "placebo": {"index": 1, "value": 883926100},
+      "tab_world": {"index": 2, "value": 4073359316},
+      "s5x_world": {"index": 3, "value": 2396189424},
+      "pigeonhole": {"index": 4, "value": 3724654704},
+      "smoke": {"index": 5, "value": 4209337365}
+    },
+    "values_status": "derived 2026-10-27 with numpy 2.5.3 (.venv) by the derivation rule; the same rule reproduces the registered S6 bootstrap seed 3060201743 from SeedSequence([20260929, 1]); re-verified at G-CODE and pinned at G-REG",
+    "substreams": {
+      "rule": "streams inside a role use SeedSequence([a2_base, role_index, *key]) with the key layouts below; no stream is shared between roles or between the smoke and the run",
+      "pitcher_bootstrap": "the role value itself (one stream, like the game bootstrap)",
+      "placebo": "[placebo_index] for xi",
+      "tab_world": "[0, component] for the fixed world draws (0 situations, 1 archetypes, 2 archetype perturbations, 3 eta epsilon, 4 planning noise, 5 q_hat noise); [1, cell_index, replication_index] for each replication's dataset and synthetic TRAIN (cell_index in synthetic_matrix order: acceptance cells T-A1..T-A4 first, then descriptive cells)",
+      "s5x_world": "[run_index, layer, start_index, draw_index] for the added quality, class and advancement layers, with separate namespaces layer 0 = log (draw_index = log index j) and layer 1 = truth (draw_index = rollout index); inside one truth rollout the candidate and the reference rollout use the same added-layer draws (CRN preserved); run_index in synthetic_matrix.S5X_runs_in_order; wiring verified at G-CODE; the log and truth streams of run k use world_seed(k) = role_seed(config, 'v2') XOR k (synthetic_bias_check.synthetic_matrix.S5X_independent_streams), not the single S5 seed",
+      "pigeonhole": "the role value itself",
+      "smoke": "[component, index]; never reused by the registered run"
+    },
+    "planning_seeds_S5X": [0, 1, 2]
+  },
+  "stages": [
+    {"id": "A2-SM", "name": "smoke_first_registered_step", "after": "G-REG", "reads": "TRAIN rows of registration_input_pins.smoke_train_subset only (approved raw files, listed columns, processed frame) and the synthetic TAB world at kappa = zeta = 0; no DEV start, no S6 ledger", "runs": "the A2-S0 code path (raw join, date guards, event mapping, table fit; tables discarded) and the A2-S1 TAB code path for registration_input_pins.smoke_tab_replications_per_cell replications (outputs discarded), seed role smoke", "records": ["wall seconds and peak RSS per component", "unit costs: wall of one table fit and of one variant estimate at a fixed grid value (outputs discarded)", "deterministic integrity checks pass/fail (date guards, join-key uniqueness, TAB V2 baseline DP expectation = DP truth within 1e-12, same-seed bit reproducibility)", "row counts and guard rejections"], "never_computed_or_read": ["cross-validated log-loss", "m selection", "lambda/M selection", "delta_g", "kappa_p", "zeta_p", "bias, SD or RMSE", "any acceptance cell", "H_point", "R5 diagnostics"], "excluded_workload": {"what": "the m selection (2 folds x 3 m values) and the lambda/M selection, which the full A2-S0/A2-S1 run but the smoke does not", "status": "unmeasured"}, "projection_term": {"label": "projection (not a measurement)", "per_replication": "6 table fits (2 folds x 3 m) + 30 variant estimates (3 R1 components x 10 finite lambda/M grid values), each priced at the smoke unit cost; conservative because it may double-count work already inside the smoke replication", "A2-S1_acceptance": "(smoke wall per replication + projection_term) x 8000 replications", "A2-S0": "(smoke S0 wall + 6 table fits priced at the smoke unit cost) x TRAIN row ratio"}, "outputs": ["smoke record appended to the external digest manifest (append-only addendum)", "projected costs of A2-S0 and of the A2-S1 acceptance cells (projection_term included before extrapolating)"], "gate": "G-SMOKE: a projected cost above that stage's hang guard -> the stage is not started; 결정 필요 to Song; the hang-guard values themselves stay unchanged"},
+    {"id": "A2-S0", "name": "train_tables_and_census", "reads": "TRAIN rows of the approved raw files (listed columns) and the processed frame", "outputs": ["R1 tables (r1_table_sha256)", "m selection", "delta_g and zeta diagnostics", "kappa_p, zeta_p per world", "TRAIN in-play count", "missingness"], "seal": "outputs manifest sealed at stage end (stage_output_seals.A2-S0_outputs_manifest_sha256) before A2-S1, A2-S2 or A2-S3 read them"},
+    {"id": "A2-S1", "name": "tab_world", "reads": "sealed A2-S0 outputs and TRAIN marginals only", "first_step": "deterministic check: the baseline's DP expectation equals the DP truth in every V2 cell within 1e-12", "order": "synthetic_matrix.TAB_order (acceptance cells first)", "outputs": ["combined bias, MC SE, SD, RMSE per pair and cell", "lambda/M selection distribution", "invalid replication counts"]},
+    {"id": "A2-S2", "name": "s5x_world", "reads": "S5-registered DEV starts, the candidate runtime and sealed A2-S0 outputs", "order": "synthetic_matrix.S5X_runs_in_order", "outputs": ["per-run repetition gaps (6 complete recomputations) and acceptance SEs", "pooled S1/S4 nets", "Rao-Blackwellized CRN R1 surrogate bias", "descriptive: the inherited per-run S5 SE"]},
+    {"id": "A2-S3", "name": "rehearsal_blinded", "reads": "sealed S6-dr-a5 ledger (read-only) + processed frame + frozen components + sealed A2-S0 outputs (+ the pinned A3 artifact if R3 is enabled); no planner calls", "first_step": "integrity reproduction of the baseline (G-INT) and the lambda = inf / M = inf identity (deterministic, inside the sealed evaluator, pass/fail public)", "outputs": ["public file (blinding.public_before_decision_allowlist)", "sealed file", "both sha256 in stage_output_seals"]},
+    {"id": "A2-S4", "name": "decision_and_unblinding", "requires": "a committed decision record computed by decision_rules from the public file and the synthetic results", "outputs": ["label", "full table of all pairs after unblinding"]}
+  ],
+  "cost_budget": {
+    "basis": "recorded runs only; new costs are unmeasured",
+    "recorded_references": {
+      "S0_census": {"wall_seconds": 495.4, "peak": "5.89 GB", "source": "docs/results-all.md:1472"},
+      "S5_v2_a1": {"wall_seconds": 2900, "source": "D111 docs/decisions.md:168; docs/results-all.md:1480", "per_world_run_estimate": "about 320 s if the 2900 s covered V2 + two V3 laws x 3 seeds = 9 runs (derived assumption)"},
+      "S5_peak_rss": {"value": "about 5.8 GiB", "source": "D125 docs/decisions.md:196"},
+      "S6_dr_a2": {"wall_seconds_decision_record": 3735, "wall_seconds_json": 3733.492600374855, "peak_rss_bytes": 6760300544, "sources": ["D115 docs/decisions.md:176", "results/ML-POLICY-VAL-v1-S6.json:48-53"]},
+      "S6_dr_a4": {"wall_seconds": 3776.0957404999062, "peak_rss_bytes": 8349351936, "source": "results/ML-POLICY-VAL-v1-S6-v3.json:104-109"},
+      "S6_dr_a5": {"wall_seconds": 3808, "peak": "6.77 GiB", "source": "docs/results-all.md:1483"},
+      "OPE_2026_a1_not_rerun": {"wall_seconds": 47827.57015162497, "peak_rss_bytes": 7189774336, "source": "results/MLB-2026-OPE-v1.json:161-166"}
+    },
+    "hang_guards_seconds": {
+      "A2-SM": {"value": 7200, "basis": "D10 local 2 h ceiling, as A2-S0"},
+      "A2-S0": {"value": 7200, "basis": "S0 rule (D10 local 2 h ceiling)"},
+      "A2-S1": {"value": 7200, "status": "judgment_value", "justification": "D10 local 2 h ceiling; TAB cost unmeasured; acceptance cells run first (synthetic_matrix.TAB_order)"},
+      "A2-S2": {"value": 9667, "basis": "2 x (15/9) x 2900 s (D109 x2 hang-guard rule scaled from the S5 record)"},
+      "A2-S3": {"value": 7616, "basis": "2 x S6-dr-a5 3808 s"},
+      "A2-S4": {"value": 3600, "status": "judgment_value", "justification": "no estimation, file assembly only"}
+    },
+    "expected_wall": {"A2-S2": "about 4800 s (scaled, new layers unmeasured)", "others": null, "others_status": "unmeasured"},
+    "rss_cap_gib": {"value": 8, "status": "judgment_value", "justification": "just above the largest recorded S6 peak (S6-dr-a4 7.78 GiB)"},
+    "free_memory_guard_gib": {"value": 4, "status": "judgment_value", "justification": "leaves room for the recorder and the OS on the 24 GiB Mac mini"},
+    "machine": "Mac mini CPU only; no GPU, no ssh"
+  },
+  "operations": {
+    "heavy_lock": "common .heavy.lock of the artifact root (docs/AI_COLLABORATION.md:53)",
+    "nice": "os.nice(10) (docs/pm/resources.md:23 convention)",
+    "game_windows": "D186 2-② (docs/decisions.md:325): run on game days in the window after 13:30 KST on the Mac CPU, never inside the recorder/publisher protection window 06:30-13:30 KST (a stage starts only if its hang guard would end before 06:30 KST of the next game day); not waiting for the end of the World Series; the three track-A experiments run sequentially under the common heavy lock",
+    "recorder_protection": ["never signal other processes", "check free memory before and during the run; abort self below the guard", "never write inside sealed T7 stage directories"],
+    "work_queue": "the PM posts the #37 CLAIM; sub-agents do not post separately"
+  },
+  "stop_rules": {
+    "deterministic_integrity": {
+      "class": "harness or data defect",
+      "checks": ["G-INT baseline reproduction within 1e-12", "lambda = inf and M = inf variants reproduce the baseline within 1e-12 (inside the sealed evaluator)", "TAB V2 baseline DP expectation equals the DP truth within 1e-12", "S2 invariant: |gamma_a| <= 1e-12 in the zeta = 0 X1 runs", "same-seed reruns bit-identical", "hash or stage-seal mismatch", "date or path guard: any 2026 date or path, or a non-TRAIN row reaching table fitting -> stop before outputs", "public-file allowlist violation"],
+      "on_failure": "stop the stage; no new arm is computed from its outputs",
+      "fix_and_retry_before_unblinding": "allowed only with (1) a deterministic failing test that reproduces the defect independent of any statistical outcome, (2) the fix commit and the test recorded as an append-only addendum in the external digest manifest, (3) a different-model code review of the fix diff, (4) a rerun of the whole affected stage with the same registered seeds and settings, (5) all attempts' outputs preserved and reported; at most 2 attempts per stage; unresolved -> FAILED_INTEGRITY (the bug-fix retry of the CLAUDE.md light gates)"
+    },
+    "statistical_outcomes": {
+      "covers": ["S1-S5 cell outcomes (PASS, FAIL, INCONCLUSIVE)", "baseline shared-net results", "V3 descriptive gaps", "half-width ratios", "the placebo ratio"],
+      "rule": "registered outcomes: recorded as they are and never a reason to retry, rerun or modify arms, grids, R, X, B, tables, seeds or data; a gap CI excluding 0 is not by itself a defect (V3 deliberately misspecifies the denominator, and a 95% interval excludes 0 without any defect 5% of the time); a suspicious outcome is investigated only through deterministic checks, and only a reproduced deterministic defect opens fix_and_retry_before_unblinding"
+    },
+    "infrastructure": "hang guard, RSS cap or free-memory guard trips -> at most 2 attempts per stage; logs and partial outputs preserved; partial centers never opened; partial results are not adoptable; a second failure -> 결정 필요 to Song",
+    "after_unblinding": "no re-run, no change to arms, grids, X, B, R, tables or data; any change needs a new registration id"
+  },
+  "pre_run_gates": [
+    {"id": "G-CLAIM", "what": "PM CLAIM on the #37 work queue", "status": "open"},
+    {"id": "G-REV", "what": "independent design review by a model different from the author (D182 gates 1 and 3: pre-execution registration, sealed/OPE boundary; docs/decisions.md:317); scope: arm definitions, synthetic matrix and acceptance, decision rule (incl. the D186 fixed values), blinding, data guards; PASS with blocker 0 before G-CODE", "status": "open"},
+    {"id": "G-CODE", "what": "after G-REV PASS: a model different from the author reviews the fixed commit (new modules, runner, synthetic tests on synthetic ledgers only) and the config to be registered with every registration-time input pin filled; code reading and synthetic tests only, no real-data execution; PASS with blocker 0; the reviewed commit becomes registration_input_pins.execution_source_commit", "status": "open"},
+    {"id": "G-REG", "what": "after G-CODE PASS: configs/EXP-OPE-RES-01.json registered from this draft with all judgment values, grids, seeds, registration_input_pins and the R3 status fixed; stage_output_seals stay null in the config; the config digest (registration.config_digest) is appended to the external digest manifest and must equal the digest of the G-CODE-reviewed config; status REGISTERED, registered=true and execution enabled only then", "status": "open"},
+    {"id": "G-SMOKE", "what": "A2-SM ran as the first registered step, its record is in the external digest manifest, and the projected cost of A2-S0 and of the A2-S1 acceptance cells (stages[A2-SM].projection_term added for the unmeasured selection workload before extrapolating) is within their hang guards; otherwise the stage is not started (결정 필요); hang guards unchanged", "status": "open"},
+    {"id": "G-DATA", "what": "zero 2026 rows: max(game_date) <= 2025-12-31 everywhere, <= 2025-04-30 for A2's own tables; an R3 artifact only under arms.R3_behavior_policy.eligibility (rows <= 2025-05-31, no June, DEV/S6 or 2026 rows); no 2026 ledger or result directory opened", "status": "open"},
+    {"id": "G-SEAL", "what": "sealed ledgers read-only with hash verification; D108/D109/D119/D120/D131/D155 records and labels unchanged; docs/decisions.md only appended by the PM; every stage verifies the upstream stage_output_seals before reading", "status": "open"},
+    {"id": "G-INT", "what": "first step of A2-S3 (deterministic): baseline (R1_0 x R2_0, game bootstrap seed 3060201743) reproduces the S6-v3 L1-R bounds, endpoint CIs, L2, ESS and resolution counts within 1e-12, and the lambda = inf / M = inf variants reproduce the baseline within 1e-12 inside the sealed evaluator (pass/fail public); failure -> stop_rules.deterministic_integrity", "status": "open"},
+    {"id": "G-BLIND", "what": "signed quantities computed only inside the sealed evaluator; public outputs restricted to blinding.public_before_decision_allowlist; centers opened only after registration, review and a committed decision record", "status": "open"},
+    {"id": "G-OPS", "what": "heavy lock held, D186 run window respected (after 13:30 KST on game days, never inside 06:30-13:30 KST), memory guards armed", "status": "open"},
+    {"id": "G-SIGN", "what": "Song's run approval: D186 2-② (docs/decisions.md:325) approves running the registered plan after independent review and registration in the game-day window after 13:30 KST (G-CODE and the smoke are PM design-stage steps inside that order); any departure from this draft's arms, thresholds, cost caps or rehearsal scope goes back to Song as 결정 필요", "status": "approved_D186_conditional_on_G-REV_G-CODE_and_G-REG"}
+  ],
+  "review_requirements": {
+    "independent_model": "a model different from the author's (e.g. Codex Astra cross-review per D182)",
+    "same_model_review_counts_as_independent": false,
+    "code_review": {"gate": "G-CODE", "when": "after G-REV PASS, before G-REG", "scope": ["fixed commit of the new modules and the runner", "synthetic tests (synthetic ledgers only)", "the config to be registered with registration-time input pins filled", "unchanged sha256 of governing_rules.not_modified_paths"], "real_data_execution": false},
+    "focus": [
+      "sealed evaluator and the typed public allowlist (blinding.public_before_decision_allowlist): no signed effect or shift, no endpoint of an effect or shift interval (other than the already-public baseline) and no selected value before the decision; the allowlisted R5 g weight CIs and R5 i TRAIN residuals are permitted",
+      "complete synthetic matrix and combined realized-WE bias certification (UCB, INCONCLUSIVE)",
+      "registration input pins versus stage-output seals; R3 status fixed at registration",
+      "deterministic integrity versus statistical outcome failure classes",
+      "completeness of the selection rule and of the validity gates",
+      "R1 exclusion assumption and violation design",
+      "directional bias of R2 variants toward the planner model (design.md 0-e)",
+      "point-set metric choice versus L1-R endpoints",
+      "blinding mechanics and leakage paths",
+      "data guards (no 2026, TRAIN-only tables)",
+      "integrity reproduction gate",
+      "judgment values X, B, grids",
+      "D186 fixed values (2027 decision quantity, WE reward unit, X, B, run window) reflected consistently in the design and this JSON"
+    ],
+    "pass_rule": "PASS or PASS-with-conditions with blocker 0 at G-REV and at G-CODE; conditions applied before registration"
+  },
+  "identities": {
+    "candidate_policy_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "behavior_policy_bc_p_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
+    "support_table_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4",
+    "identity_sources": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json identities (copied, not re-verified here)",
+    "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
+    "game_values_sha256": "aa6c4e486cc6b027758d966ab680566a4a4ce2afa4a918dd26f8fb65c8957677",
+    "pin_status": "fixed identities (copied from the 2026 preregistration, not re-verified here); registration-time inputs are in registration_input_pins, stage outputs in stage_output_seals"
+  },
+  "registration_input_pins": {
+    "s6_dr_a5_ledger_path": null,
+    "s6_dr_a5_ledger_sha256": null,
+    "s6_dr_a5_manifest_sha256": null,
+    "train_raw_files_sha256": {"statcast_2023.parquet": null, "statcast_2024.parquet": null, "statcast_2025.parquet": null},
+    "processed_frame_identity": null,
+    "processed_frame_aligned": {
+      "path": "pitches.split-aligned.parquet (outside the repository; the absolute path is recorded at G-REG from the A3 preparation record)",
+      "sha256": "b10eaa519049a110862441a44ad70e11045fd5ef208220ce38b90413a348ea16",
+      "identity_manifest_path": null,
+      "identity_manifest_sha256": "a567efbf161a12c9d8b9a7f9ab1fd81920c4acb16417aca42dcb6061d2f91c6f",
+      "source_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+      "status": "prepared 2026-10-27 16:35 KST by the PM with the A3 tool, identity manifest result PASS; re-verified at G-REG; identity_manifest_path recorded at G-REG (data_roles.processed_frame_input)"
+    },
+    "x2_world_predictor_identity": null,
+    "execution_source_commit": null,
+    "new_files_sha256": null,
+    "new_files_sha256_scope": "every new source file of design section 6 items 1-6 and the new tests; excludes the registration config configs/EXP-OPE-RES-01.json itself, whose identity is the config digest (registration.config_digest)",
+    "digest_manifest_path": null,
+    "r3_status": null,
+    "r3_status_allowed": ["ENABLED_DIAGNOSTIC_ONLY", "NOT_RUN:R3"],
+    "a3_behavior_policy_sha256": null,
+    "a3_provenance_manifest_sha256": null,
+    "smoke_train_subset": null,
+    "smoke_tab_replications_per_cell": null,
+    "rule": "all filled at G-REG from sources that exist before any registered stage runs (reviewed at G-CODE); a3 fields are the literal NOT_APPLICABLE when r3_status is NOT_RUN:R3; the smoke subset lies inside TRAIN"
+  },
+  "stage_output_seals": {
+    "A2-SM_smoke_record_sha256": null,
+    "A2-S0_outputs_manifest_sha256": null,
+    "r1_table_sha256": null,
+    "A2-S0_contents": "R1_b tables (r1_table_sha256) and the R1_a value map, selected m, kappa_p and zeta_p per world, delta_g diagnostics, TRAIN in-play count, missingness",
+    "A2-S1_tab_results_sha256": null,
+    "A2-S2_s5x_results_sha256": null,
+    "A2-S3_public_outputs_sha256": null,
+    "A2-S3_centers_sealed_sha256": null,
+    "A2-S4_decision_record_commit": null,
+    "rule": "sealed when the stage completes (manifest sha256 appended to the external digest manifest, registration.config_digest) and verified by every downstream stage before reading; never filled at registration and never written back into the config (these fields stay null in it); a mismatch is a deterministic integrity failure"
+  },
+  "not_claimed": [
+    "no policy superiority or harm verdict; no new label for tau 0.1 P3",
+    "no 2026 re-evaluation or relabeling",
+    "not a causal effect (identification assumptions stated, not evidenced; BLK-04)",
+    "rehearsal half-width gains are measurements on exposed development data, not independent confirmation",
+    "synthetic certification is limited to the declared worlds, cells and estimand (realized-WE paired Delta on uncensored synthetic PAs and on the S5 E0 starts); the real ledger's P-selection (censoring) mechanism is not certified",
+    "R3 pairs are diagnostic only; no adoption from R3",
+    "surrogate WE is not claimed equal to realized WE (exclusion-conditional)",
+    "no ARM-A or target-location evaluation",
+    "no service, policy identity, G15 or demo change",
+    "MDE numbers are normal approximations from percentile CIs; the decomposition (about 89% at 2026 scale) is an illustrative independence approximation across different populations and denominators",
+    "the planner-claimed gain of about 0.0061 WE/PA is an approximation, not a measurement"
+  ],
+  "song_decisions": {
+    "source": "D186 (docs/decisions.md:325, Song 2026-10-27 10:4x KST) and the consolidated list in docs/pm/research/track-a/README.md",
+    "decided": [
+      {"id": "Q1", "question": "2027 reward currency", "decision": "keep WE", "ref": "D186 3-①", "history": "draft options 1 keep WE (recommended), 2 RE24 (design.md 0-b; new q_hat and MEI), 3 WE primary + RE24 secondary"},
+      {"id": "Q2", "question": "2027 decision quantity", "decision": "point-estimate decision with the censoring share reported separately; the current L1-R lower-endpoint rule is a secondary report row (decision_rules.fixed_statements.decision_quantity_2027)", "ref": "D186 3-①", "reason_from_draft": "at 2026 scale about 89% of the endpoint error variance is attributed to censoring by an illustrative independence approximation (mde_from_records.decomposition); under the lower-endpoint rule a 30% point-SE cut moves the MDE by only 0.7% (mde_from_records)", "history": "draft options 1 keep the L1-R lower-endpoint rule, 2 point-estimate decision with censoring reported as separate bounds/sensitivity (recommended, chosen), 3 decide after A2 results"},
+      {"id": "Q3", "question": "judgment values X = 30%, B = 1.26e-5", "decision": "approved as drafted; fixed before results", "ref": "D186 4-①", "history": "relaxations 2 X = 20% and 3 B = 0.5 SE (2.5e-5, type I about 7.9%) not taken"},
+      {"id": "Q4", "question": "run timing", "decision": "game days, window after 13:30 KST on the Mac CPU, outside the recorder/publisher protection window 06:30-13:30 KST; not waiting for the end of the World Series; independent review -> registration -> execution; track A sequential", "ref": "D186 2-②", "history": "draft options 1 after the World Series, S0 to S4 at once (then recommended), 2 stage by stage between games, 3 hold; the between-games window was chosen"}
+    ],
+    "not_settled_by_D186": [
+      {"id": "Q5", "question": "rehearsal scope", "status": "this design keeps option 1 (S6 150 games only, fixed in decision_rules.fixed_statements.rehearsal); the approved 30% threshold is measured on that rehearsal; option 2 (all DEV games, runtime re-run, about 8 h by S6-dr-a5 3808 s x 87759/11350 PAs; wider OPE exposure) would need a new decision and a new registration"}
+    ]
+  },
+  "unverified_items": [
+    "S6-dr-a5 ledger path and hashes (inferred from the stage_dir naming of a2/a4; not opened)",
+    "whether the policy-runner frame (run_ml_benchmark.regular_frame) carries launch_speed, launch_angle, hc_x, hc_y (only pitchmdp data.py RAW_COLUMNS checked)",
+    "EV/LA/hc missingness, TRAIN in-play count, in-play PA share",
+    "exact MSE bound of Su et al. 2020, Switch-DR arXiv id, Owen 2007",
+    "S5 per-run cost (2900 s / 9 is an assumption)",
+    "S6-dr-a2 wall time 3735 s (D115) vs 3733.5 s (JSON), apparently rounding",
+    "2026 worst-case clustering (cannot be checked without reopening the 2026 ledger)",
+    "planner-claimed gain approximation (KL symmetry, June decisions per PA)",
+    "10/26 survey magnitudes (CUPED, surrogate index, StuffPro 500 vs 27 pitches) not checked at source",
+    "which G0-family member can serve as the X2 world predictor",
+    "2027 Statcast definitions of hc_x/hc_y and EV/LA (2026 changed plate_x/z and zone definitions; audit with A4 before use)",
+    "SD of the paired differences (TAB) and of the Rao-Blackwellized CRN differences (S5-X): unmeasured, so whether R = 2000 and 12 rollouts per start reach PASS precision is unknown (INCONCLUSIVE otherwise)",
+    "whether A3 delivers an adopted primary artifact meeting arms.R3_behavior_policy.eligibility (otherwise NOT_RUN:R3)",
+    "TAB cost of 23,900 replications (extrapolated by the smoke)",
+    "S5 runner seed wiring: checked in code, the existing runner passes the same role_seed(config, 'v2') to every run (run_policy_validation.py:1545-1558); the A2 per-run world seeds (synthetic_matrix.S5X_independent_streams) are verified at G-CODE"
+  ],
+  "revisions": [
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "initial draft (design only, unregistered, execution disabled)"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "Song D186 decisions fixed: 2027 decision quantity (point estimate + censoring share reported separately, lower-endpoint rule secondary), WE reward unit, X and B approved, run window after 13:30 KST on game days, order review -> registration -> execution; still unregistered, execution disabled"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "independent review review-A2-astra-001 (FAIL: blocker 1, major 6, minor 4, note 2) addressed: signed shifts, S-5 and lambda/M selection inside the sealed evaluator with a public allowlist; registration input pins separated from stage-output seals and the R3 status fixed at registration; B applied as exactly 1.26e-5; complete synthetic matrix with combined realized-WE bias and UCB/INCONCLUSIVE certification (Rao-Blackwellized CRN in S5-X, CRN with an exact baseline in TAB); deterministic integrity versus statistical outcome failure classes; deterministic selection rule; validity gates; R3 provenance rule (rows <= 2025-05-31, no June, DEV/S6 or 2026 rows; PM decision) and R3 diagnostic only; seed roles with index and value; P conditional interpretation, E1 with game state, illustrative decomposition, R5 f with a common denominator and covariance; G-CODE before registration and the smoke as the first registered step; still unregistered, execution disabled"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "round-2 review review-A2-astra-002 (FAIL) addressed with PM decisions: beta_0 = 0 under V2 wording; separate gamma_a and gamma_b with the registered invariant gamma_a = 0 when zeta = 0; minimizer tie tolerance against the finite global minimum; real-data estimand difference stays uncertified; separate precision requirement SE <= B/2; independent complete Monte-Carlo streams per S5-X run (world_seed = role_seed v2 XOR run index); typed public allowlist with the endpoint prohibition scoped to effect/shift intervals; config digest over canonical JSON with nulled self-referential fields and an external append-only digest manifest; pinned cluster-SE formula; smoke projection term for the unmeasured selection workload; still unregistered, execution disabled"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "round-3 review review-A2-astra-003 (FAIL) addressed with PM decisions: S1/S4 acceptance SE from 6 complete recomputations per run (fixed starts; lambda/M selection and SN normalizers recomputed; SE = SD/sqrt(6)), the inherited per-run S5 SE descriptive only; separate log/truth namespaces for the added-layer streams with CRN kept; no in-config digest field, exact serialization and nulled JSON paths, new_files_sha256 excludes the config; review/test wording tied to the typed allowlist and effect/shift interval endpoints; probability statement limited to the interval-exclusion component; kappa/zeta exclusion wording; L2 population includes rho_zero and rho_zero_before_node; still unregistered, execution disabled"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "round-4 review review-A2-astra-004 (PASS_WITH_NOTES) notes closed: adoption summary limited to what section 4 certifies (V2 absolute bound, V3 baseline-relative bound, coarse S5-X screens, synthetic worlds only); s defined exactly as the worst-case residual share with shared-end bounds and the censoring variance/covariance named separately; 95% bounds stated as pointwise per pair and cell; thresholds unchanged; still unregistered, execution disabled"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "fixed-commit code review (docs/pm/research/track-a/reviews/CODE-REVIEW-A2-ASTRA-001.md, items 12 and 14): point set P defined by coinciding paired-Delta L1-R bounds under the baseline classification on the registered ledger (individual policy values may remain intervals; same P for every pair); zeta residuals from the frozen C0 model stated as an intentional cross-fitting exception; still unregistered, execution disabled"},
+    {"date": "2026-10-27", "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58", "what": "G-REG dry run 2026-10-27 19:0x: strict TRAIN plan refused on the original layout -> aligned input reused (A3 prepared copy pitches.split-aligned.parquet b10eaa51..., identity manifest a567efbf..., source 9f65d1db...; data_roles.processed_frame_input, registration_input_pins.processed_frame_aligned, integrity test added); still unregistered, execution disabled"}
+  ]
+}

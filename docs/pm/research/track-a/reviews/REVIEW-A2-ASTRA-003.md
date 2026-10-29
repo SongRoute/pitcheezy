@@ -1,0 +1,99 @@
+VERDICT: FAIL
+
+## Findings
+
+1. **major — New: S-1/S-4 reuse an SE formula that does not cover the new estimators.**  
+   Both files apply the existing S5 per-run SE to all twelve pairs ([design:236](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:236), [JSON:356](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:356)). That formula computes within-start row variances and sums them without cross-start covariance ([policy_semisynthetic.py:163](/Users/song/Projects/pitcheezy/experiments/pitchmdp/pitchmdp/policy_semisynthetic.py:163), [170](/Users/song/Projects/pitcheezy/experiments/pitchmdp/pitchmdp/policy_semisynthetic.py:170)). However, λ/M selection uses the whole run, and SN uses shared, estimated E0 normalizers ([JSON:394](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:394), [247](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:247)). These operations couple the row contributions. The inherited SE omits selection/normalizer uncertainty and is not guaranteed conservative. Independent **run** streams resolve the previous cross-run problem, but do not repair this within-run calculation. S-1/S-4 remain adoption gates ([design:276](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:276), [308](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:308)).  
+   **Required fix:** Register uncertainty estimation for the complete selected/normalized estimator, preserving the fixed starts and recomputing λ/M selection and SN normalizers in the appropriate repetitions/resamples. Alternatively, explicitly revise the gates’ scope. Fix this before registration.
+
+2. **minor — Round-2 #15: PARTIALLY RESOLVED. Typed permissions are correct; blanket prohibitions remain.**  
+   The revised allowlist permits R5-g weight CIs and R5-i TRAIN residuals, while restricting effect/shift endpoints ([design:193](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:193), [197](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:197), [JSON:515](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:515), [520](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:520)). But test/review instructions still prohibit CI endpoints without that qualification ([design:372](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:372), [JSON:622](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:622)). This is a remaining specification contradiction, not an identified center leak.  
+   **Required fix:** Make both instructions reference the typed allowlist and prohibit **effect/shift** endpoints specifically.
+
+3. **minor — Round-2 #16: PARTIALLY RESOLVED. The external manifest fixes the concept, but the digest contract remains ambiguous.**  
+   Digest/receipts are external-only, with mutable fields nulled for hashing ([design:413](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:413), [JSON:27](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:27)). Yet every registration input pin must be filled, including `config_sha256` ([JSON:23](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:23), [656](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:656), [665](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:665)). UTF-8, sorted keys and indent 2 also leave Unicode escaping and the final newline unspecified.  
+   **Required fix:** Explicitly exempt/remove the in-config digest pin under the external-only design; specify exact serialization and exact null paths. Define `new_files_sha256` to exclude the registration config itself, since the new-file list includes it ([design:360](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:360), [JSON:655](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:655)).
+
+4. **minor — New: added-layer streams lack an explicit log/truth namespace.**  
+   The added-layer key is `[run_index,start_index,draw_index]`, without specifying disjoint log/truth indices ([JSON:545](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:545)); the inherited gap variance adds log and truth variances ([policy_semisynthetic.py:170](/Users/song/Projects/pitcheezy/experiments/pitchmdp/pitchmdp/policy_semisynthetic.py:170)). A collision is not established, but independence is underspecified.  
+   **Required fix:** Register separate log/truth domains, preserving CRN between candidate/reference truth rollouts, and verify their wiring at G-CODE.
+
+5. **minor — New: the ≤5% rejection statement overstates Bonferroni’s scope.**  
+   S-1/S-4 also reject on `|gap| > 0.01` or `SE > 0.005`; Bonferroni’s interval argument does not bound rejection from those additional screens ([design:276](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:276), [281](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:281), [JSON:442](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:442), [447](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:447)).  
+   **Required fix:** Limit the probability statement to the interval-exclusion component, conditional on valid SE/coverage approximations.
+
+6. **minor — New: “κ=0 makes exclusion exact” omits ζ.**  
+   The next layer explicitly allows action-dependent advancement when ζ≠0 ([design:226](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:226), [JSON:341](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:341)).  
+   **Required fix:** Say κ=0 removes direct action dependence from the class distribution; full R1-b exclusion in this declared world requires κ=ζ=0.
+
+7. **minor — New: the recorded L2 population is described too narrowly.**  
+   The decomposition calls L2 the conditional mean over completed E0 PAs ([design:84](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:84), [JSON:131](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:131)). Under L1-R, implementation also includes `rho_zero` and `rho_zero_before_node` resolutions ([policy_estimator.py:250](/Users/song/Projects/pitcheezy/experiments/pitchmdp/pitchmdp/policy_estimator.py:250), [394](/Users/song/Projects/pitcheezy/experiments/pitchmdp/pitchmdp/policy_estimator.py:394)).  
+   **Required fix:** Correct that population description. The copied numbers and illustrative-decomposition qualification need not change.
+
+8. **note — The other eight requested round-2 items are RESOLVED at specification level.**
+
+   | Round-2 item | Status and revised evidence |
+   |---|---|
+   | **#4** | **RESOLVED:** `β₀=0`, equivalently `E[Δ̂₀]=Δ_true(r)`. [Design:251](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:251), [JSON:374](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:374). |
+   | **#5** | **RESOLVED:** separate γ_a/γ_b; γ_a averages over `Pκ`; ζ=0 ⇒ γ_a=0, including nonzero κ, is a registered invariant. [Design:237](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:237), [JSON:357](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:357). |
+   | **#7** | **RESOLVED:** finite-global-minimum tolerance, zero handling and larger-m/λ/M preference are explicit. [Design:328](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:328), [JSON:474](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:474). |
+   | **#11** | **RESOLVED:** synthetic-world differences are distinguished from uncertified real-data differences. [Design:144](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:144), [JSON:221](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:221). |
+   | **#12** | **RESOLVED:** `SE≤B/2` precedes the bound test; inadequate precision produces `INCONCLUSIVE`. [Design:274](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:274), [JSON:439](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:439). |
+   | **#14** | **RESOLVED for cross-run independence:** world seeds are `4115122098 XOR k`; planning seeds remain separate policy-identity fields. The listed XOR values agree with that arithmetic. [Design:294](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:294), [JSON:404](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:404). Findings 1 and 4 concern different uncertainty/stream issues. |
+   | **#17** | **RESOLVED:** cluster SE pins centering, normalization and finite-cluster correction: `G/(G−1) × Σ(T_g−n_gΔ̄)²/N²`. [Design:151](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:151), [JSON:232](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:232). |
+   | **#18** | **RESOLVED:** excluded selection work is marked unmeasured; six fits plus thirty variant estimates enter the explicitly labelled projection before G-SMOKE, without changing guards. [Design:381](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:381), [JSON:552](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:552). |
+
+   **Required fix:** None for these original issues; implementation verification remains pending G-CODE.
+
+9. **note — Earlier RESOLVED items have not regressed.**
+
+   | Item | Current evidence |
+   |---|---|
+   | **#1 blinding** | Signed shifts/selection remain sealed; unblinding requires the committed decision record. [JSON:507](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:507), [524](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:524). |
+   | **#2 generated pins/R3 fallback** | Stage outputs remain separate; R3 is fixed at registration, with `NOT_RUN:R3` and no later insertion. [JSON:268](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:268), [677](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:677). Digest ambiguity is finding 3. |
+   | **#3 B** | Acceptance uses exactly `1.26e-5`. [JSON:425](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:425). |
+   | **#6 retries** | Statistical failures cannot authorize retries; deterministic defects require documented repair and different-model review. [JSON:595](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:595), [599](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:599). |
+   | **#8 validity** | Missing/invalid mandatory statistics cannot support adoption. [JSON:476](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:476), [487](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:487). |
+   | **#9 R3 provenance** | The previously reviewed ≤2025-05-31 complete-artifact rule, XF exclusion and diagnostic-only status remain; A2 R1 retains April-30 TRAIN cutoff. [JSON:263](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:263), [269](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:269), [A3:218](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A3-behavior-policy-design.md:218). |
+   | **#10 pitcher seed** | Role index 0 and value `3624346705` are defined. [JSON:278](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:278), [532](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:532). |
+
+   **Required fix:** None for these previously resolved issues.
+
+10. **note — Recorded-summary arithmetic verifies within disclosed rounding.**  
+    Using `SE=CI width/3.92` and `MDE=2.8016×SE`, the following are **derived arithmetic**, from the cited S6 and 2026 summaries ([S6:13](/Users/song/Projects/pitcheezy/results/ML-POLICY-VAL-v1-S6-v3.json:13), [26](/Users/song/Projects/pitcheezy/results/ML-POLICY-VAL-v1-S6-v3.json:26), [50](/Users/song/Projects/pitcheezy/results/ML-POLICY-VAL-v1-S6-v3.json:50); [2026:30](/Users/song/Projects/pitcheezy/results/MLB-2026-OPE-v1.json:30), [64](/Users/song/Projects/pitcheezy/results/MLB-2026-OPE-v1.json:64), [77](/Users/song/Projects/pitcheezy/results/MLB-2026-OPE-v1.json:77), [102](/Users/song/Projects/pitcheezy/results/MLB-2026-OPE-v1.json:102)):
+
+    | Derived quantity | S6 | 2026 |
+    |---|---:|---:|
+    | SE_lo | 0.0003584942 | 0.0002442886 |
+    | SE_point | 0.0002900758 | 0.0000823537 |
+    | Point MDE | 0.0008126765 | 0.0002307222 |
+    | Current-rule MDE | 0.0025965991 | 0.0027410784 |
+    | Current-rule MDE + b_V | 0.0053313286 | 0.0054758080 |
+    | Illustrative variance share | 34.5275% | 88.6352% |
+
+    Further derived checks: `0.25×0.7×0.000290×√(150/2430)=1.260893887e-5`; `0.000290/√2000=6.484597e-6`, above `B/2=6.3e-6`. Actual paired SD remains unmeasured, with insufficient precision now handled correctly. Cost scaling gives `2900×15/9=4833.333… s` and doubled guard `9666.666…→9667 s`, consistent with the disclosed assumption ([design:252](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:252), [266](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:266), [JSON:563](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:563), [574](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:574)).  
+    **Required fix:** None to this arithmetic; retain the approximation and unmeasured-cost labels.
+
+11. **note — README reconciliation remains PM-owned.**  
+    README still contrasts the already-decided 2027 quantities and says “code reading only,” while its adjacent rule and A2 allow synthetic tests ([README:12](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/README.md:12), [34](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/README.md:34), [35](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/README.md:35), [design:409](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:409)). Its A3→A1→A2 order is expressly a PM decision ([README:32](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/README.md:32)).  
+    **Required fix:** PM reconciliation only; these differences do not determine this verdict.
+
+## Sections
+
+- **A — FAIL.** Arm sets, grids, fifteen S5-X runs, TAB 56+1 cells, repetitions, labels and tie rules align. The inherited S5-X SE is incompatible with the selected/normalized estimators; smaller specification contradictions remain. [Design:287](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:287), [JSON:394](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:394).
+
+- **B — PASS.** D186’s ID, WE, point estimate with interval, separate censoring report, secondary lower-endpoint rule, X/B and execution window are fixed. Deferring the 2027 numerical criterion/A2-C format is acceptable because A2 adoption confers protocol eligibility only. [D186:325](/Users/song/Projects/pitcheezy/docs/decisions.md:325), [design:339](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:339), [JSON:489](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:489).
+
+- **C — NOTE.** Selection is correctly outcome-dependent but operator-blinded; centers, shifts and selection details remain sealed until the committed decision record. Resolve the residual allowlist/digest contradictions. [Design:185](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:185), [JSON:506](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:506), [602](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:602).
+
+- **D — PASS.** TRAIN-only R1, allowlisted raw joins, summary-only 2026 arithmetic, exposed-DEV interpretation and the revised complete R3 provenance restriction are explicit. [Design:137](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:137), [JSON:165](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:165), [263](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:263).
+
+- **E — PASS at specification level.** The five copied identity hashes match the preregistration; closure files, sealed verdicts, service and G15 remain protected. Sealed artifact bytes were not reopened or verified. [JSON:49](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:49), [638](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:638), [preregistration:595](/Users/song/Projects/pitcheezy/configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:595).
+
+- **F — FAIL.** G-INT, precision/validity checks, retry limits and missing-R3 fallback are present; start-time plus hang-guard deadline is enforceable as a design rule. Finding 1 still prevents valid certification of every eligible arm. [Design:394](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:394), [417](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:417), [JSON:268](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:268).
+
+- **G — NOTE.** Sample arithmetic and cost derivations verify; new workloads remain unmeasured and smoke selection overhead is explicitly projected. Correct the L2 population wording. [Design:84](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:84), [381](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:381), [JSON:559](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:559).
+
+- **H — FAIL.** Conditional P, surrogate assumptions, planner-favoring bias risk and eligibility-only adoption are appropriately limited. Nevertheless, the unresolved S5-X uncertainty calculation prevents accepting the stated certification. [Design:144](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:144), [155](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:155), [282](/Users/song/Projects/pitcheezy/docs/pm/research/track-a/A2-ope-redesign-design.md:282).
+
+Read-only review completed. No files changed, prohibited artifacts opened, or experiments/tests executed.
