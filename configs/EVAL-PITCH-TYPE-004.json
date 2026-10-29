@@ -1,0 +1,15 @@
+{
+  "id": "EVAL-PITCH-TYPE-004", "mode": "HISTORICAL_DEVELOPMENT_REPLAY",
+  "source": {"file": "statcast_2024.parquet", "bytes": 103060977, "rows": 711899, "sha256": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274"},
+  "columns": ["pitch_type", "game_date", "game_type", "game_pk", "at_bat_number", "pitch_number", "pitcher", "stand", "p_throws", "balls", "strikes", "on_1b", "on_2b", "on_3b", "outs_when_up", "bat_score", "fld_score"],
+  "labels": ["FF", "SI", "FC", "SL", "ST", "CU", "CH", "FS", "OT"],
+  "label_map": {"FF":"FF","FA":"FF","SI":"SI","FC":"FC","SL":"SL","SV":"SL","ST":"ST","CU":"CU","KC":"CU","CS":"CU","CH":"CH","FS":"FS","FO":"FS","KN":"OT","SC":"OT","EP":"OT"},
+  "roles": {"FIT":["2024-04-01","2024-06-01"], "SELECT":["2024-06-01","2024-06-08"], "CAL":["2024-06-08","2024-06-15"], "EVAL":["2024-06-15","2024-07-01"]},
+  "features": ["pitcher", "balls", "strikes", "batter_side", "pitcher_hand", "bases", "outs", "score_diff"],
+  "alpha": 4.0, "calibration": "identity", "tree": {"criterion":"log_loss", "max_depth":8, "min_samples_leaf":100, "random_state":0},
+  "bootstrap": {"seed":20261029,"draws":1000},
+  "primary_pair": ["context_control", "tree_candidate"], "primary_metric":"nll",
+  "decision": "descriptive_only_no_winner_or_practical_superiority",
+  "budget": {"max_source_rows":800000,"max_fit_rows":300000,"max_eval_rows":100000,"max_fits":1,"cpu_threads":1,"wall_seconds":1800,"address_space_gib":8},
+  "availability": "UNKNOWN_final_snapshot", "exposure":"UNKNOWN_OR_PREVIOUSLY_EXPOSED_NOT_INDEPENDENT_TEST"
+}
