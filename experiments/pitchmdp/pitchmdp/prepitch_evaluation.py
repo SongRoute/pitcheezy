@@ -142,6 +142,8 @@ def evaluate(config, eligible, predictions):
             validate_probabilities(np.array([LABELS.index(roster[key]['label'])]), [row['probabilities']])
             available, generated = _time(row['input_available_at']), _time(row['generated_at'])
             deadline = _time(roster[key]['deadline'])
+            if generated <= _time(config['training_cutoffs'][model]):
+                raise ValueError('prediction generation must follow model training cutoff')
             if available > generated or available >= deadline:
                 raise ValueError('input must be available before deadline and by generation')
             if generated >= deadline:

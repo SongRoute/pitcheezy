@@ -156,3 +156,20 @@ def test_cli_deterministic_serialization_and_no_overwrite(tmp_path):
     assert subprocess.run([*args, str(first)], capture_output=True).returncode != 0
     assert first.read_bytes() == previous
     assert subprocess.run([*args, str(tmp_path / 'three.json'), '--input', 'real.json'], capture_output=True).returncode != 0
+
+
+@pytest.mark.parametrize('generated', ['1999-01-01T00:00:00Z', '2000-01-01T00:00:00Z'])
+def test_generation_before_or_equal_training_cutoff_rejected(sample, generated):
+    config, roster, predictions = sample
+    predictions[0]['input_available_at'] = '1998-12-31T23:59:00Z'
+    predictions[0]['generated_at'] = generated
+    with pytest.raises(ValueError, match='training cutoff'):
+        evaluate(config, roster, predictions)
+
+
+def test_generation_strictly_after_training_cutoff_allowed(sample):
+    config, roster, predictions = sample
+    predictions[0]['input_available_at'] = '2000-01-01T00:00:00Z'
+    predictions[0]['generated_at'] = '2000-01-01T00:00:00.000001Z'
+    result = evaluate(config, roster, predictions)
+    assert result['coverage'][MODELS[0]]['timely_ok'] == 4

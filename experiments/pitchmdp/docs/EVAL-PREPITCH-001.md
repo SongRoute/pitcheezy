@@ -19,7 +19,7 @@
 
 ## 투구 전 정보와 시각의 의미
 
-정상 행은 `input_available_at ≤ generated_at < deadline`을 만족해야 한다. 입력 시각이 마감과 같거나 이후면 거절하고, 생성만 늦으면 `late`로 남긴다. 시각은 시간대가 포함된 ISO 문자열이며 모델 학습 cutoff는 합성 holdout 시작보다 엄격히 앞서야 한다. 양쪽 정상 예측의 입력 fingerprint는 같은 명부 행의 SHA256 선언과 일치해야 한다.
+정상 행은 `input_available_at ≤ generated_at < deadline`을 만족해야 한다. 입력 시각이 마감과 같거나 이후면 거절하고, 생성만 늦으면 `late`로 남긴다. 시각은 시간대가 포함된 ISO 문자열이며 모델 학습 cutoff는 합성 holdout 시작과 각 정상 예측의 생성 시각보다 엄격히 앞서야 한다(지연 예측도 검사). 양쪽 정상 예측의 입력 fingerprint는 같은 명부 행의 SHA256 선언과 일치해야 한다.
 
 이 검사는 **선언의 일관성만 검사한다**. fingerprint 문자열과 시각을 제출했다고 동일한 정보·실제 당시 가용성·실제 학습 cutoff가 증명되는 것은 아니다. 실자료에서는 입력 내용/피처 허용목록, 불변 최초 수신 기록, 파생 이력의 as-of, 모델 provenance를 감사해야 한다. 사후 공식 정정자료로 만든 retrospective replay와 실제 마감 전에 저장한 prospective 예측도 별도로 표기해야 한다. 현재 합성 결과는 둘 중 어느 실측도 아니다.
 
