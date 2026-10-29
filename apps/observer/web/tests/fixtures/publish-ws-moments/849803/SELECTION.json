@@ -1,0 +1,254 @@
+{
+ "schema": "pitcheezy-moment-selection-v1",
+ "run_dir": "/Users/song/Projects/pitcheezy-pm-jobs/20261029-demo-ws-moments/run-849803-ledger-001",
+ "index_lines": 746,
+ "final_pitches": 367,
+ "rules": "``<run>/moments/INDEX.jsonl`` (one line per kept cycle):\n  first-rec       the first line whose display state is ``recommended`` (the game's first shown recommendation)\n  reference-card  the first line with ``reference == published`` (an A2 card for a pitcher the live policy refused)\n  mid-rec         among ``recommended`` lines, the one whose pitch count is closest to half the final file's pitch count\n                  (ties: the earlier cycle)\n  last-rec        the last ``recommended`` line (the game's last shown recommendation)\nA rule with no line is reported as absent, never substituted. Stdlib only.",
+ "chosen": {
+  "first-rec": {
+   "cycle": 125,
+   "folder": "moments/00125",
+   "sequence": 125,
+   "simulated": 1793145044.083,
+   "pitch_key": "849803:1:1",
+   "state": "recommended",
+   "reason": "ledger_recorded",
+   "recommendation": "published",
+   "reference": "none",
+   "phase": "pre_pitch",
+   "pitches": 0,
+   "game_sha256": "7c353d267f9926d5ed52cbb6c8b677cd2a8aef58ac5a33e8c9d8486fb979282c",
+   "files": [
+    {
+     "path": "v1/dates.json",
+     "bytes": 177,
+     "gzip_bytes": 157,
+     "sha256": "d7c59e24d49af74fd043634eb6ab5db8495b6f9cefd1c56c337a0a3f6644a513"
+    },
+    {
+     "path": "v1/game/849803.json",
+     "bytes": 7147,
+     "gzip_bytes": 2388,
+     "sha256": "7c353d267f9926d5ed52cbb6c8b677cd2a8aef58ac5a33e8c9d8486fb979282c"
+    },
+    {
+     "path": "v1/games/2026-10-27.json",
+     "bytes": 420,
+     "gzip_bytes": 277,
+     "sha256": "cfb4a2a78f0d3a622a1ffe3ee397f7e75cfaf6a9002980466e20653940468abd"
+    },
+    {
+     "path": "v1/games/2026-10-28.json",
+     "bytes": 1014,
+     "gzip_bytes": 526,
+     "sha256": "570046a604be90dc1854674c0fcf63ea0405fcf56d0c7b5039ec667026f97f17"
+    },
+    {
+     "path": "v1/games/2026-10-29.json",
+     "bytes": 420,
+     "gzip_bytes": 278,
+     "sha256": "bd393bb9125936e306727f972989128657ae73c1a60df96d58bf3a8620cbda9a"
+    },
+    {
+     "path": "v1/health.json",
+     "bytes": 407,
+     "gzip_bytes": 221,
+     "sha256": "16a17b8bdb05b3828edba6a8b2137f9ff9ca040dceefde32d760c1aaa3d754fc"
+    },
+    {
+     "path": "v1/manifest.json",
+     "bytes": 669,
+     "gzip_bytes": 334,
+     "sha256": "c7130dacefd6ccbd70d742fb8ec759d73a584d0b1f1c96f5f07e58ac6a4936c6"
+    }
+   ]
+  },
+  "reference-card": {
+   "cycle": 1614,
+   "folder": "moments/01614",
+   "sequence": 1614,
+   "simulated": 1793159934.083,
+   "pitch_key": "849803:83:1",
+   "state": "unsupported",
+   "reason": "unknown_pitcher",
+   "recommendation": "none",
+   "reference": "published",
+   "phase": "pre_pitch",
+   "pitches": 317,
+   "game_sha256": "71abfde33aa258d76cc62f3e4984d181ac6152940823578df1a7eced347d582e",
+   "files": [
+    {
+     "path": "v1/dates.json",
+     "bytes": 178,
+     "gzip_bytes": 158,
+     "sha256": "35cd440b3a048fb9dade55782c38cdede7a7f4c8de31cccbceb70d7f4a1157ca"
+    },
+    {
+     "path": "v1/game/849803.json",
+     "bytes": 961097,
+     "gzip_bytes": 74470,
+     "sha256": "71abfde33aa258d76cc62f3e4984d181ac6152940823578df1a7eced347d582e"
+    },
+    {
+     "path": "v1/games/2026-10-27.json",
+     "bytes": 421,
+     "gzip_bytes": 280,
+     "sha256": "3a0bd098d5eb359e6269a8ef489c2848855c3e2bb566cbfd4378239bc63be2fb"
+    },
+    {
+     "path": "v1/games/2026-10-28.json",
+     "bytes": 1020,
+     "gzip_bytes": 529,
+     "sha256": "ed929bb5f131dc9e458c240a41899642105979a48c43cd19ec9adf6dadf94a8e"
+    },
+    {
+     "path": "v1/games/2026-10-29.json",
+     "bytes": 421,
+     "gzip_bytes": 280,
+     "sha256": "cfca020c83c4efc3fde900113dabf68e1af3344c53bf2ed3578114d3d95b4162"
+    },
+    {
+     "path": "v1/health.json",
+     "bytes": 411,
+     "gzip_bytes": 222,
+     "sha256": "e8d680c04ae399b34468b48732471803ead073580e201079ea0db4adad362a56"
+    },
+    {
+     "path": "v1/manifest.json",
+     "bytes": 670,
+     "gzip_bytes": 336,
+     "sha256": "9c42b6df45c969be3b9e5aafe98c61aab3b5e776230e44b8314f415fbb1b5042"
+    }
+   ]
+  },
+  "mid-rec": {
+   "cycle": 1001,
+   "folder": "moments/01001",
+   "sequence": 1001,
+   "simulated": 1793153804.083,
+   "pitch_key": "849803:50:5",
+   "state": "recommended",
+   "reason": "ledger_recorded",
+   "recommendation": "published",
+   "reference": "none",
+   "phase": "pre_pitch",
+   "pitches": 183,
+   "game_sha256": "9aa94863be88e74fdf455c9e3bd0722d3b9fa6f494e8c4179d577d24444115a3",
+   "files": [
+    {
+     "path": "v1/dates.json",
+     "bytes": 178,
+     "gzip_bytes": 156,
+     "sha256": "8b327fa9751a8fc333b8c6f32fb74009f2de3e3455b8c3571ab4cfd5f06d90e8"
+    },
+    {
+     "path": "v1/game/849803.json",
+     "bytes": 559185,
+     "gzip_bytes": 44141,
+     "sha256": "9aa94863be88e74fdf455c9e3bd0722d3b9fa6f494e8c4179d577d24444115a3"
+    },
+    {
+     "path": "v1/games/2026-10-27.json",
+     "bytes": 421,
+     "gzip_bytes": 279,
+     "sha256": "38c43d0b076b9c730bbeafc08c6c25f9a53ca7fd962b864b090c3049326c790d"
+    },
+    {
+     "path": "v1/games/2026-10-28.json",
+     "bytes": 1020,
+     "gzip_bytes": 529,
+     "sha256": "261055ef4d0e45d7c5157ce144376893e070094ee05425662721e020cc51a7b2"
+    },
+    {
+     "path": "v1/games/2026-10-29.json",
+     "bytes": 421,
+     "gzip_bytes": 279,
+     "sha256": "d98c15e94eb33871033f360481e9d66e7e5eb1b6dc47def6a55f98337adab9bd"
+    },
+    {
+     "path": "v1/health.json",
+     "bytes": 411,
+     "gzip_bytes": 222,
+     "sha256": "108e53afc9419f93559dc0a61ade7cd8d2bb61e9da25a3c2043585b381904bb2"
+    },
+    {
+     "path": "v1/manifest.json",
+     "bytes": 670,
+     "gzip_bytes": 335,
+     "sha256": "23f616dbe7d08e2f472e2488c049786a843763d7e5f11ff126f588f328d79eac"
+    }
+   ]
+  },
+  "last-rec": {
+   "cycle": 1726,
+   "folder": "moments/01726",
+   "sequence": 1726,
+   "simulated": 1793161054.083,
+   "pitch_key": "849803:89:1",
+   "state": "recommended",
+   "reason": "ledger_recorded",
+   "recommendation": "published",
+   "reference": "none",
+   "phase": "pre_pitch",
+   "pitches": 352,
+   "game_sha256": "170357c7684525224f067fafe5e12906cd3f964b838b5b9105964bd353c0e3df",
+   "files": [
+    {
+     "path": "v1/dates.json",
+     "bytes": 178,
+     "gzip_bytes": 157,
+     "sha256": "0a82a2a1393cea6bc821e8a17af2239b1a60fa9b0532b258a0768942dc6f704c"
+    },
+    {
+     "path": "v1/game/849803.json",
+     "bytes": 1042222,
+     "gzip_bytes": 79145,
+     "sha256": "170357c7684525224f067fafe5e12906cd3f964b838b5b9105964bd353c0e3df"
+    },
+    {
+     "path": "v1/games/2026-10-27.json",
+     "bytes": 421,
+     "gzip_bytes": 278,
+     "sha256": "14464f965f5002dfc8649688889d16fdad1ee72b565db7bcd8c2c95491e0ec41"
+    },
+    {
+     "path": "v1/games/2026-10-28.json",
+     "bytes": 1020,
+     "gzip_bytes": 530,
+     "sha256": "06f68457d15a0950b2ef1fa974d2427a6649887d35187b78b63d6f19c4bbad45"
+    },
+    {
+     "path": "v1/games/2026-10-29.json",
+     "bytes": 421,
+     "gzip_bytes": 278,
+     "sha256": "56ae55115afbd07a694dace95eb85e704a106715bf41d0bf53a9f6f15871511a"
+    },
+    {
+     "path": "v1/health.json",
+     "bytes": 411,
+     "gzip_bytes": 224,
+     "sha256": "8116e7e645eea5243b18a18120182b9cb5125842b4303bd79ecb3a64eaf9ec70"
+    },
+    {
+     "path": "v1/manifest.json",
+     "bytes": 670,
+     "gzip_bytes": 336,
+     "sha256": "5d0afb63c46ece31e5f3525a55040a73136eda96b070e17c5885f3c0adc6b41c"
+    }
+   ]
+  }
+ },
+ "metrics": {
+  "file": "/Users/song/Projects/pitcheezy-pm-jobs/20261029-demo-ws-moments/METRICS.json",
+  "pass": true,
+  "verdict": {
+   "M1_ledger_equality": true,
+   "M2_final_pairing": true,
+   "M3_final_body": true,
+   "M4_run_record": true,
+   "M5_cards_placement": true,
+   "M6_moments_selection": true,
+   "M8_policy_answers": true
+  }
+ }
+}

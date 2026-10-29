@@ -4,8 +4,10 @@ from contextlib import closing
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 
 import pytest
@@ -259,3 +261,74 @@ def test_the_command_refuses_unregistered_ledger_inputs_before_writing_anything(
     assert 'observer_app.main' in sys.modules  # a full ledger run is refused in this process for the usual reason, after every input check passed
     assert refused(base+['--policy', 'ledger', *full], 'before its folders could be pinned')
     assert sorted(p.name for p in job.iterdir()) == ['input', 'replay_config.json']  # nothing was written
+
+
+def test_a_row_naming_another_pitch_is_never_shown_and_a_feed_without_a_pending_pitch_gets_nothing(tmp_path):
+    (a, key_a, body_a), (b, key_b, _) = ready_states()[:2]
+    # the live store holds, for state A, a row that names pitch B: the loader accepts it (its own key and pitch_key agree) ...
+    rows = ledger_policy.load_rows(live_store(tmp_path, [(a, key_b, [CAND['SL']])]), LIVE_GAME)
+    policy = ledger_policy.LedgerPolicy(rows, {}, game_pk=LIVE_GAME)
+    closed = policy(body_a)  # ... but this policy, asked for state A whose pending pitch is A, fails closed
+    assert closed['key'] == key_a and closed['pitch']['key'] == key_a and closed['pitch']['pre']['recommendation'] is None
+    assert closed['pitch']['status'] == ledger_policy.NO_ROW_STATUS and closed['pitch']['pre']['reason'] == ledger_policy.NO_ROW_REASON
+    assert policy.counters == {'ledger_key_differs': 1} and policy.record()['rows_used'] == 0 and policy.record()['rows_never_asked'] == 1
+    assert policy({'gameData': {'game': {'pk': LIVE_GAME}}}) is None and policy.counters['no_pending_pitch'] == 1
+
+
+def test_conflict_rows_are_not_answers(tmp_path):
+    (a, key_a, body_a), = ready_states()[:1]
+    path = live_store(tmp_path, [(a, key_a, [CAND['SL']])])
+    with closing(sqlite3.connect(path, isolation_level=None)) as db:  # the same decision, another content, kept as a conflict row
+        body = json.loads(db.execute('SELECT body FROM served_recommendations').fetchone()[0])
+        other = body | {'displayed': body['displayed'] | {'recommendation': {'candidates': [CAND['FF']]}}}
+        db.execute('INSERT INTO served_recommendations(decision_id, game_pk, pitch_key, outcome, decided, decision_clock, store_seq, sha, body) '
+                   'VALUES (?,?,?,?,?,?,?,?,?)', (body['decision_id'], LIVE_GAME, key_a, 'conflict', BASE+5, 'observer_local', 1, 'f'*64, _canonical(other)))
+        db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    rows = ledger_policy.load_rows(path, LIVE_GAME)
+    assert len(rows) == 1 and rows[a]['displayed']['recommendation'] == {'candidates': [CAND['SL']]}
+    assert ledger_policy.LedgerPolicy(rows, {}, game_pk=LIVE_GAME)(body_a)['pitch']['pre']['recommendation'] == {'candidates': [CAND['SL']]}
+
+
+LEDGER_DRIVER = '''
+import sys
+sys.path[:0] = [{backend!r}, {scripts!r}]
+import publisher_replay
+sys.exit(publisher_replay.execute(sys.argv[1:]))
+'''
+
+
+def test_the_whole_command_with_the_ledger_policy_and_kept_moments_runs_to_a_completed_record(tmp_path):
+    """The registered code path end to end in its own process: refusal checks, the pinned folders, the tripwire, the
+    stand-in policy built inside the run, the kept moments and the before/after check."""
+    job, original = tmp_path/'job', tmp_path/'original'
+    original.mkdir()
+    (original/'live.sqlite3').write_bytes(b'the original store')
+    path = capture_db(job/'input')
+    (a, key_a, _), (b, key_b, body_b) = ready_states()[:2]
+    ledger = live_store(job/'input', [(a, key_a, [CAND['SL']])])
+    support = support_file(job/'input', {str(ledger_policy.pending_pitcher(body_b)): {'status': 'UNSUPPORTED_UNKNOWN_PITCHER'}})
+    sha = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    config = job/'replay_config.json'
+    config.write_text(json.dumps(LIMITS | {'capture_original_dir': str(original)}))
+    driver = tmp_path/'driver.py'
+    driver.write_text(LEDGER_DRIVER.format(backend=str(BACKEND), scripts=str(REPO/'scripts')))
+    env = {key: value for key, value in os.environ.items() if not key.startswith('PITCHEEZY_') and key != 'TMPDIR'}
+    argv = [sys.executable, '-B', str(driver), '--job-dir', str(job), '--run-name', 'run-001', '--game', str(LIVE_GAME), '--capture-db', str(path),
+            '--capture-sha256', sha(path), '--commit', publisher_replay.head_commit(), '--config', str(config), '--config-sha256', sha(config),
+            '--policy', 'ledger', '--ledger-db', str(ledger), '--ledger-sha256', sha(ledger), '--ledger-support', str(support),
+            '--ledger-support-sha256', sha(support), '--keep-moments', '--allow-dirty']
+    record_sha = sha(ledger)
+    done = subprocess.run(argv, capture_output=True, text=True, timeout=300, env=env, cwd=tmp_path)
+    assert done.returncode == 0, done.stderr[-3000:]
+    run = job/'run-001'
+    summary = json.loads((run/'SUMMARY.json').read_text())
+    assert (summary['status'], summary['incomplete'], summary['stop']) == ('COMPLETED', False, None)
+    assert summary['policy']['source'] == 'ledger' and summary['policy']['requested'] is True and summary['policy']['registered_device'] is None
+    assert summary['policy']['ledger']['answers'].get('ledger') == 1 and summary['policy']['ledger']['answers'].get('unsupported', 0) >= 1
+    assert summary['invariants']['all_held'] is True and summary['fs_audit']['violations'] == [] and summary['outside_check']['overall'] == 'passed'
+    assert summary['capture_copy']['unchanged'] is True and summary['moments']['kept'] >= 2 and (run/'moments'/'INDEX.jsonl').is_file()
+    assert hashlib.sha256(ledger.read_bytes()).hexdigest() == record_sha  # the live store copy was only read
+    record = json.loads((run/'RUN.json').read_text())
+    assert record['policy'] == 'ledger' and record['keep_moments'] is True and record['ledger']['rows'] == 1 and record['ledger']['db_sha256'] == sha(ledger)
+    assert '정책 조회(장부, 계산 아님)' in (run/'SUMMARY.md').read_text()
+    assert sorted(p.name for p in (job/'input').iterdir()) == ['capture.sqlite3', 'live-copy.sqlite3', 'support.json']

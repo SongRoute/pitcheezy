@@ -1,8 +1,9 @@
 """A stand-in for the live ARM-B policy in an OFFLINE replay (``scripts/publisher_replay.py --policy ledger``):
 every pending game state is answered with the recommendation the LIVE run's append-only ledger
 (``served_recommendations``, ``live_store.LiveSnapshotStore``) recorded for that very state. Nothing is computed:
-no model, no T7, no MPS. The replayed body therefore shows the recommendation that was on fans' screens during
-the game, not a recomputation of it (DEMO-WS-MOMENTS-1029, Song's decision 2026-10-29 "장부 값으로 진행").
+no model, no T7, no MPS. The replayed body therefore shows the recommendation the live ledger recorded for that
+very state (what the live publisher was about to display), not a recomputation of it (DEMO-WS-MOMENTS-1029, Song's
+decision 2026-10-29 "장부 값으로 진행"). The ledger does not say what was on a given fan's screen at a given second.
 
 How a state is matched: the ledger keys a decision by ``state_sha256`` = sha256 of ``live_armb.state_key(feed)``,
 every pre-pitch input the policy read. The replay hands this policy the same stored feed bodies the live run
@@ -20,6 +21,9 @@ What this policy answers, in the shape ``demo_precompute.LivePolicy`` returns (`
 * no row, any other pitcher -> 추천 없음 with ``NO_ROW_REASON`` (``pitch.status`` ``LEDGER_NO_ROW``): live had no
   recorded recommendation for this state (not computed in time, or the state was gated), and this replay never
   invents one. ``display_state`` turns it into ``unsupported / policy_refused`` with that sentence.
+* a row whose ``displayed.key`` is not the pending pitch's key (cannot happen when the live and replay code name
+  pitches the same way; counted as ``ledger_key_differs``) is answered like no row: fail closed, never another
+  pitch's recommendation under this pitch's name.
 
 ``pa_pitches`` is empty and ``previous``/``home_we_now`` are None: the ledger stores neither the at-bat's earlier
 recomputations nor a win expectancy, so the body's ``win_expectancy`` slot reads ``unavailable`` and the screen
@@ -59,7 +63,10 @@ def load_rows(path, game_pk):
         raise LedgerUnusable('ledger copy missing')
     if any(Path(str(path)+suffix).exists() and Path(str(path)+suffix).stat().st_size for suffix in ('-wal',)):
         raise LedgerUnusable('the ledger copy has a non-empty WAL')
-    db = sqlite3.connect(f'file:{path.resolve()}?mode=ro&immutable=1', uri=True, isolation_level=None)
+    try:
+        db = sqlite3.connect(f'file:{path.resolve()}?mode=ro&immutable=1', uri=True, isolation_level=None)
+    except sqlite3.Error as error:
+        raise LedgerUnusable(f'the ledger copy cannot be opened: {type(error).__name__}') from None
     try:
         db.execute('PRAGMA query_only=1')
         try:
@@ -151,16 +158,16 @@ class LedgerPolicy:
             return None
         state = hashlib.sha256(state_key(feed).encode()).hexdigest()
         row = self.rows.get(state)
-        if row is not None:
+        differs = row is not None and row['displayed']['key'] != key
+        if row is not None and not differs:
             displayed = row['displayed']
-            how = 'ledger' if displayed['key'] == key else 'ledger_key_differs'
-            pitch = {'key': displayed['key'], 'pitch_number': _number(displayed['key']), 'status': READY_STATUS,
+            how = 'ledger'
+            pitch = {'key': key, 'pitch_number': _number(key), 'status': READY_STATUS,
                      'pre': {'status': 'ready', 'reason': displayed['reason'], 'recommendation': copy.deepcopy(displayed['recommendation'])},
                      'actual': None}
-            key = displayed['key']
-        else:
+        else:  # no row for this state, or (fail closed) a row that names another pitch
             status = self.support.get(pending_pitcher(feed))
-            how = 'unsupported' if status else 'no_row'
+            how = 'ledger_key_differs' if differs else 'unsupported' if status else 'no_row'
             pitch = {'key': key, 'pitch_number': _number(key), 'status': status or NO_ROW_STATUS,
                      'pre': {'status': 'unsupported', 'reason': None if status else NO_ROW_REASON, 'recommendation': None},
                      'actual': None}
@@ -171,11 +178,11 @@ class LedgerPolicy:
 
     def record(self):
         """What this policy did, for the run's summary (counts and names only, no candidates)."""
+        used = {s for s, _, how in self.answered if how == 'ledger'}
         return {'kind': 'ledger', 'live_policy_identity': self.identity, 'rows': len(self.rows),
                 'unsupported_pitchers': {str(k): v for k, v in sorted(self.support.items())},
-                'answers': dict(self.counters), 'rows_used': len({s for s, _, how in self.answered if how.startswith('ledger')}),
-                'rows_never_asked': len(self.rows)-len({row['state_sha256'][:16] for row in self.rows.values()}
-                                                       & {s for s, _, how in self.answered if how.startswith('ledger')})}
+                'answers': dict(self.counters), 'rows_used': len(used),
+                'rows_never_asked': len(self.rows)-len({row['state_sha256'][:16] for row in self.rows.values()} & used)}
 
 
 def _number(key):

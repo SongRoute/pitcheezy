@@ -879,7 +879,9 @@ def summary_text(s):
                  if isinstance(s['policy'].get('ledger'), dict) else ''),
              f"- 보존한 시점(moments): {show((s.get('moments') or {}).get('kept'))}개" if (s.get('moments') or {}).get('requested') else '- 보존한 시점(moments): 요청 안 함',
              f"- 종료 표시까지(재생 시계 초): {show(s['final']['simulated_seconds_from_feed_final_to_publish_final'])}",
-             f"- 정책 계산: 전체 {show(s['policy'].get('computations'))}회(표시 판정이 막은 상태 포함), 그중 추천이 실제로 발행된 것 {show((s['policy'].get('published') or {}).get('computations'))}회, 발행된 것 중 {show(s['policy'].get('live_wait_s'))}초 초과 {show((s['policy'].get('published') or {}).get('computations_over_the_live_wait'))}회 — 이 기계에서 이 재생 중에 잰 **오프라인 추정**이며 실시간 측정이 아니다",
+             (f"- 정책 계산: 전체 {show(s['policy'].get('computations'))}회(표시 판정이 막은 상태 포함), 그중 추천이 실제로 발행된 것 {show((s['policy'].get('published') or {}).get('computations'))}회, 발행된 것 중 {show(s['policy'].get('live_wait_s'))}초 초과 {show((s['policy'].get('published') or {}).get('computations_over_the_live_wait'))}회 — 이 기계에서 이 재생 중에 잰 **오프라인 추정**이며 실시간 측정이 아니다"
+              if s['policy'].get('source') != 'ledger' else
+              f"- 정책 조회(장부, 계산 아님): {show(s['policy'].get('computations'))}회 — 모델은 돌지 않았고 compute_s는 조회 시간이다; 추천은 live 장부의 행 그대로"),
              f"- 추천 원장 행: {show(s['ledger']['rows'])}", '', '## 불변 조건', '']
     lines += [f"- {name}: {'지켜짐' if ok else '미측정' if ok is None else '**깨짐**'}" for name, ok in s['invariants']['held'].items()]
     if 'outside_check' in s:

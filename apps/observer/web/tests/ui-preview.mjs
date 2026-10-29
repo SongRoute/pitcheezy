@@ -38,7 +38,7 @@ import { INDEX as INDEX_FILES, joinIndex } from './publish-join.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const web = path.join(here, '..');
-const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>]... [--ws] [--ws-moment <label>]... [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
+const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>]... [--ws] [--ws-moment <label>] [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
 const WS = ['2026-10-24', '2026-10-27', '2026-10-28'].map((d) => path.join(here, 'fixtures', 'publish-ws', d));   // G1 849805, G3 849804, G4 849803
 const MOMENTS = path.join(here, 'fixtures', 'publish-ws-moments', '849803');   // replayed mid-game bodies of G4 (README there): not live-published bytes
 
@@ -48,7 +48,7 @@ for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i], next = () => { const v = process.argv[++i]; if (v === undefined) die(`${a} needs a value`); return v; };
   if (a === '--fixture') args.fixtures.push(path.resolve(next()));
   else if (a === '--ws') args.ws = true;
-  else if (a === '--ws-moment') args.moments.push(next());
+  else if (a === '--ws-moment') { if (args.moments.length) die('--ws-moment takes one label (two moments of the same game would hide each other)'); args.moments.push(next()); }
   else if (a === '--dist') args.dist = path.resolve(next());
   else if (a === '--clock') args.clock = next();
   else if (a === '--host') args.host = next();
@@ -61,7 +61,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else die(`unknown option ${a}\n${USAGE}`);
 }
 function die(msg) { console.error(msg); process.exit(2); }
-for (const label of args.moments) {   // a moment goes FIRST: its game and date files win over the final ones of --ws
+for (const label of args.moments) {   // the moment goes before the --ws folders (after any --fixture given): its game and date files win over the final ones
   if (!/^[a-z0-9-]+$/.test(label) || !existsSync(path.join(MOMENTS, label, 'v1', 'manifest.json'))) die(`no such moment: ${label} (see ${path.join(MOMENTS, 'README.md')})`);
   args.fixtures.push(path.join(MOMENTS, label));
 }
