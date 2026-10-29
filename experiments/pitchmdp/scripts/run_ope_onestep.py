@@ -1,28 +1,30 @@
-"""EXP-OPE-1STEP-01 runner (spec v2): one-step dose-response OPE on a sealed decision-ledger stage (side experiment).
+"""EXP-OPE-1STEP-01 runner (spec v3): one-step dose-response OPE on a sealed decision-ledger stage (side experiment).
 
     .venv/bin/python experiments/pitchmdp/scripts/run_ope_onestep.py --config CONFIG.json --check
-    .venv/bin/python experiments/pitchmdp/scripts/run_ope_onestep.py --config CONFIG.json --run [--max-seconds N]
+    .venv/bin/python experiments/pitchmdp/scripts/run_ope_onestep.py --config CONFIG.json --run
 
-Design: docs/pm/research/side-onestep-ope-proposal-2026-10-29.md + SPEC DELTA v2; estimator: pitchmdp/ope_onestep.py.
+Design: docs/pm/research/side-onestep-ope-proposal-2026-10-29.md + SPEC DELTA v2 + SPEC DELTA 2; estimator:
+pitchmdp/ope_onestep.py; config template: scripts/run_ope_onestep.config-template.json.
 
-Order (fail closed; IntegrityError = refusal, exit 2):
+Order (fail closed; IntegrityError = refusal before the output exists (exit 2), study-level INVALID after it):
 1. the config is validated (unknown or missing keys refused); the output ``<output_dir>/<check|run>`` must be a NEW
    directory outside the stage directory; with ``source_commit`` the code at HEAD must be that commit's code;
 2. every pinned stage file (ledger, pa_values.parquet, dr.json, manifest.json, started.json) is hashed and compared
-   with its pin BEFORE any of them is parsed; the stage manifest must list the others with the same sha256; the
-   ledger is hashed again while it is streamed and must still equal its pin; the ledger header must exist and pin a
-   P3 candidate at the sealed tau whose DR q-hat source is the registered one;
-3. PA facts (``--pa-facts-source frame``, the only source): the registered PA-end reward recomputed from the processed
-   frame and the frozen C0 WE through the registered loaders (run_policy_validation.load_inputs with store=False,
-   policy_identity.load_pinned_we, run_policy_validation.select_games / game_blocks, policy_requests.game_table /
-   pa_outcome / pa_manifest) and checked PA by PA against pa_values (policy_estimator.pa_value re-run on the ledger
-   rows reproduces the sealed row). No ``derived`` source: fl(fl(G - q) + q) != G in general and PAs censored after
-   their decisions carry no terminal residual;
-4. one streamed ledger pass (ope_onestep.Scan): row validation, the sealed-candidate identity check, D, the population;
-5. prediag.json (no G: ESS, noise ratio, KL, evaluability per family x tau) is written FIRST; ``--check`` then writes
-   check.json; ``--run`` computes every G-dependent section and writes results.json and per_tau.csv; SHA256SUMS last.
-Every run records wall/CPU seconds, peak RSS, seeds, the git commit and the python/numpy/pandas versions. A hang guard
-(``--max-seconds``: SIGALRM plus loop checkpoints) and an optional peak-RSS guard abort with failed.json (exit 3).
+   with its pin BEFORE any of them is parsed; the stage manifest must list the others with the same sha256; the ledger
+   is hashed again while it is streamed; the ledger header must exist and pin a P3 candidate at the sealed tau with
+   its sha256 and the registered DR q-hat source;
+3. PA facts (``frame``, the only source): every ML-POLICY registration link, the local config, the processed frame and
+   the WE contract are verified against their pins before they are read; the registered PA-end reward and WE_start
+   are recomputed through the registered loaders (run_policy_validation.load_inputs with store=False,
+   policy_identity.load_pinned_we, select_games / game_blocks, policy_requests.game_table / pa_outcome / pa_manifest)
+   and checked PA by PA against the sealed pa_values columns (pa_id, game, in_population, status, kind, reason,
+   end_kind; policy_estimator.pa_value re-run) plus the aggregate L2 reward of dr.json. No ``derived`` source;
+4. one streamed ledger pass (G-INT, D, populations), prediag.json (G-free: gate per family x tau x contrast) FIRST;
+   ``--check`` writes check.json; ``--run`` computes every G-dependent section, the registered ``decide`` step
+   (results.json ``decision``), per_tau.csv; SHA256SUMS last.
+Guards: the registered hang guard (seconds) and peak-RSS guard (GiB) from the config (CLI values may only tighten
+them); a fired guard leaves failed.json (exit 3). Every run records wall/CPU seconds, peak RSS, seeds, the git commit
+and the python/numpy/pandas versions.
 """
 from __future__ import annotations
 
@@ -60,9 +62,10 @@ from pitchmdp.policy_artifacts import IntegrityError, _require
 MODES = ('check', 'run')
 FIXED_PINS = ('pa_values.parquet', 'dr.json', 'manifest.json', 'started.json')
 REQUIRED = ('experiment_id', 'stage_dir', 'ledger', 'pins', 'output_dir', 'tau_grid', 'sealed_tau',
-            'identity_tolerance', 'expected_dr_q_source', 'families', 'primary', 'disagreement', 'eligibility',
-            'evaluability', 'placebos', 'sensitivities', 'bootstrap', 'pa_facts')
-OPTIONAL = ('exposure_label', 'candidate_identity_sha256', 'source_commit', 'outputs', 'notes')
+            'identity_tolerance', 'ratio_rtol', 'expected_dr_q_source', 'candidate_identity_sha256', 'families',
+            'primary', 'confirmatory', 'disagreement', 'eligibility', 'gate', 'sample_minima', 'placebos',
+            'sensitivities', 'bootstrap', 'decision', 'guards', 'pa_facts')
+OPTIONAL = ('exposure_label', 'source_commit', 'outputs', 'notes')
 CODE_PATHS = ('experiments/pitchmdp',)
 EXIT = {'ok': 0, 'error': 1, 'refused': 2, 'guard': 3}
 HEX = set('0123456789abcdef')
@@ -109,6 +112,11 @@ def _pin(block, name):
     return {'path': block['path'], 'sha256': block['sha256']}
 
 
+def _resolve(value):
+    """A registered path: absolute, or relative to this checkout (as run_policy_validation resolves registered paths)."""
+    return Path(value) if Path(value).is_absolute() else REPO / value
+
+
 def validate_config(config):
     """The registered config as a normalised spec (taus parsed); anything unknown or missing is refused."""
     _keys(config, 'config', REQUIRED, OPTIONAL)
@@ -122,10 +130,12 @@ def validate_config(config):
     _require(all(_sha(v) for v in pins.values()), 'every stage pin must be a sha256 hex digest')
     sealed_tau = ope.parse_tau(config['sealed_tau'])
     taus = ope.check_grid([ope.parse_tau(t) for t in config['tau_grid']], sealed_tau)
-    tol = config['identity_tolerance']
-    _require(_number(tol) and 0 <= tol < 1e-6, 'identity_tolerance must be a number in [0, 1e-6)')
+    for key in ('identity_tolerance', 'ratio_rtol'):
+        _require(_number(config[key]) and 0 <= config[key] < 1e-6, f'{key} must be a number in [0, 1e-6)')
     _require(isinstance(config['expected_dr_q_source'], str) and config['expected_dr_q_source'],
              'expected_dr_q_source required (e.g. "evaluation_seed")')
+    identity = config['candidate_identity_sha256']
+    _require(identity is None or _sha(identity), 'candidate_identity_sha256: null or a sha256')
     families = config['families']
     _require(isinstance(families, list) and families and families[0] == 'temperature'
              and set(families) <= set(ope.MAIN_FAMILIES) and len(set(families)) == len(families),
@@ -134,58 +144,72 @@ def validate_config(config):
     _keys(primary, 'primary', ('family', 'tau', 'subset', 'variant'))
     _require(primary['family'] == 'temperature' and primary['subset'] == 'all' and primary['variant'] == 'dr'
              and ope.parse_tau(primary['tau']) == sealed_tau, 'primary: temperature, dr, subset all, the sealed tau')
+    _require(config['confirmatory'] == ope.CONFIRMATORY, f'confirmatory family must be {ope.CONFIRMATORY}')
     dis = config['disagreement']
     _keys(dis, 'disagreement', ('q', 'ties', 'margins', 'confident'))
     margins = dis['margins']
     _require(dis['q'] == ope.Q_PI and dis['ties'] == 'not_in_D' and isinstance(margins, list) and margins
-             and margins[0] == 0 and all(m == '1se' or (_number(m) and m >= 0) for m in margins)
-             and len(set(map(str, margins))) == len(margins) and dis['confident'] in [ope.margin_key(m) for m in margins],
-             'disagreement: q "q_planning", ties "not_in_D", margins [0, ...] (numbers or "1se"), confident in margins')
+             and margins[0] == 0 and '1se' in margins and all(m == '1se' or (_number(m) and m >= 0) for m in margins)
+             and len(set(map(str, margins))) == len(margins) and dis['confident'] == '1se',
+             'disagreement: q "q_planning", ties "not_in_D", margins [0, ..., "1se"], confident "1se"')
     elig = config['eligibility']
     _keys(elig, 'eligibility', ('statuses', 'population', 'require_reward'))
     _require(isinstance(elig['statuses'], list) and elig['statuses'] and set(elig['statuses']) <= set(ope.RESULT_STATUSES)
              and len(set(elig['statuses'])) == len(elig['statuses']), f'eligibility.statuses within {ope.RESULT_STATUSES}')
     _require(elig['population'] == 'E0' and elig['require_reward'] is True,
              'eligibility: population "E0" and require_reward true (whole PAs without a reward are excluded)')
-    evaluability = config['evaluability']
-    _keys(evaluability, 'evaluability', ('ess_ratio_min', 'noise_q90_max', 'game_ess_min', 'pa_ess_min'))
-    _require(all(_number(v) and v >= 0 for v in evaluability.values()), 'evaluability thresholds must be numbers >= 0')
+    gate = config['gate']
+    _keys(gate, 'gate', ('ess_ratio_min', 'max_weight_share', 'games_min', 'pitchers_min', 'noise_q90_max', 'noise_exempt'))
+    _require(all(_number(gate[k]) and gate[k] >= 0 for k in ('ess_ratio_min', 'max_weight_share', 'games_min',
+                                                               'pitchers_min', 'noise_q90_max')),
+             'gate thresholds must be numbers >= 0')
+    _require(isinstance(gate['noise_exempt'], list) and all(
+        isinstance(e, dict) and set(e) == {'family', 'tau'} and e['family'] in ope.MAIN_FAMILIES
+        and ope.parse_tau(e['tau']) in taus for e in gate['noise_exempt']), 'gate.noise_exempt: [{family, tau}]')
+    minima = config['sample_minima']
+    _keys(minima, 'sample_minima', ('games', 'pas', 'pitchers'))
+    _require(all(_int(v, 1) for v in minima.values()), 'sample_minima: positive ints')
     plac = config['placebos']
-    _keys(plac, 'placebos', ('perm_draws', 'perm_seed', 'kl_tolerance', 'outcome_shuffle_draws', 'outcome_shuffle_seed',
-                             'neg'))
-    _require(_int(plac['perm_draws']) and _int(plac['perm_seed']) and _int(plac['outcome_shuffle_draws'])
-             and _int(plac['outcome_shuffle_seed']) and isinstance(plac['neg'], bool) and _number(plac['kl_tolerance'])
-             and 0 < plac['kl_tolerance'] < 1, 'placebos: nonnegative int draws/seeds, kl_tolerance in (0, 1), bool neg')
+    _keys(plac, 'placebos', ('perm_draws', 'perm_seed', 'kl_tolerance', 'tau_bracket_factor', 'bisection_iterations',
+                             'outcome_shuffle_null_draws', 'outcome_shuffle_null_seed', 'neg'))
+    _require(_int(plac['perm_draws']) and _int(plac['perm_seed']) and _int(plac['outcome_shuffle_null_draws'])
+             and _int(plac['outcome_shuffle_null_seed']) and _int(plac['bisection_iterations'], 1)
+             and isinstance(plac['neg'], bool) and _number(plac['kl_tolerance']) and 0 < plac['kl_tolerance'] < 1
+             and _number(plac['tau_bracket_factor']) and plac['tau_bracket_factor'] > 1,
+             'placebos: nonnegative int draws/seeds, iterations >= 1, kl_tolerance in (0, 1), bracket factor > 1')
     sens = config['sensitivities']
     _keys(sens, 'sensitivities', ('switch_caps', 's_pos', 'cross_replicate'))
     _require(isinstance(sens['switch_caps'], list) and all(_number(c) and c > 0 for c in sens['switch_caps'])
-             and len(set(sens['switch_caps'])) == len(sens['switch_caps']) and isinstance(sens['s_pos'], bool)
-             and isinstance(sens['cross_replicate'], bool), 'sensitivities: positive switch caps, bool s_pos/cross')
+             and len(set(sens['switch_caps'])) == len(sens['switch_caps']) and sens['s_pos'] is True
+             and isinstance(sens['cross_replicate'], bool),
+             'sensitivities: positive switch caps, s_pos true (the decision reads it), bool cross_replicate')
     boot = config['bootstrap']
-    _keys(boot, 'bootstrap', ('draws', 'seeds', 'invalid_share_max', 'minimum'))
+    _keys(boot, 'bootstrap', ('draws', 'seeds', 'invalid_share_max'))
     _require(_int(boot['draws'], 2), 'bootstrap.draws: int >= 2')
     _keys(boot['seeds'], 'bootstrap.seeds', ope.UNITS, ('trend',))
     _require(all(_int(v) for v in boot['seeds'].values()), 'bootstrap seeds must be nonnegative ints')
     _require(_number(boot['invalid_share_max']) and 0 <= boot['invalid_share_max'] <= 1, 'bootstrap.invalid_share_max')
-    _keys(boot['minimum'], 'bootstrap.minimum', ('games', 'pitchers', 'pas'))
-    _require(all(_int(v, 1) for v in boot['minimum'].values()), 'bootstrap.minimum: positive ints')
+    decision = config['decision']
+    _keys(decision, 'decision', ('alpha_one_sided', 'mde_multiplier'))
+    _require(_number(decision['alpha_one_sided']) and 0 < decision['alpha_one_sided'] < .5
+             and _number(decision['mde_multiplier']) and decision['mde_multiplier'] > 0, 'decision: alpha in (0, .5), MDE')
+    guards = config['guards']
+    _keys(guards, 'guards', ('max_seconds', 'max_rss_gb'))
+    _require(all(_number(v) and v > 0 for v in guards.values()), 'guards: positive max_seconds and max_rss_gb')
     source = config.get('source_commit')
     _require(source is None or _sha(source, 40), 'source_commit: null or a 40-hex commit')
-    identity = config.get('candidate_identity_sha256')
-    _require(identity is None or _sha(identity), 'candidate_identity_sha256: null or a sha256')
     outputs = config.get('outputs', {'decisions_parquet': False})
     _keys(outputs, 'outputs', ('decisions_parquet',))
     _require(isinstance(outputs['decisions_parquet'], bool), 'outputs.decisions_parquet: bool')
     facts = config['pa_facts']
-    _keys(facts, 'pa_facts', ('source', 'split', 'policy_registration', 'local_config'),
-          ('processed_frame_sha256', 'value_tolerance', 'check_selection'))
+    _keys(facts, 'pa_facts', ('source', 'split', 'policy_registration', 'local_config', 'processed_frame',
+                              'we_contract_sha256'), ('value_tolerance', 'check_selection'))
     _require(facts['source'] == 'frame', 'pa_facts.source: "frame" is the only PA-facts source (no exact "derived" identity)')
     _require(isinstance(facts['split'], str) and facts['split'], 'pa_facts.split required')
     registration = facts['policy_registration']
-    _keys(registration, 'pa_facts.policy_registration', ('config',), ('addenda',))
-    _require(isinstance(registration.get('addenda', []), list), 'pa_facts.policy_registration.addenda must be a list')
-    processed = facts.get('processed_frame_sha256')
-    _require(processed is None or _sha(processed), 'pa_facts.processed_frame_sha256: null or a sha256')
+    _keys(registration, 'pa_facts.policy_registration', ('config', 'addenda'))
+    _require(isinstance(registration['addenda'], list), 'pa_facts.policy_registration.addenda must be a list')
+    _require(_sha(facts['we_contract_sha256']), 'pa_facts.we_contract_sha256 must be a sha256')
     value_tol = facts.get('value_tolerance', 1e-12)
     _require(_number(value_tol) and 0 <= value_tol < 1e-6, 'pa_facts.value_tolerance in [0, 1e-6)')
     _require(isinstance(facts.get('check_selection', True), bool), 'pa_facts.check_selection: bool')
@@ -193,21 +217,24 @@ def validate_config(config):
     return {
         'experiment_id': config['experiment_id'], 'exposure_label': config.get('exposure_label'),
         'stage_dir': Path(config['stage_dir']), 'ledger': config['ledger'], 'pins': dict(pins),
-        'output_dir': Path(config['output_dir']), 'taus': taus, 'sealed_tau': sealed_tau, 'identity_tolerance': float(tol),
-        'expected_dr_q_source': config['expected_dr_q_source'], 'main_families': list(families),
-        'scan_families': scan_families, 'primary': {**primary, 'tau': sealed_tau}, 'margins': list(margins),
-        'confident': dis['confident'], 'statuses': list(elig['statuses']), 'evaluability': dict(evaluability),
-        'variants': [*BASE_VARIANTS, *[f'switch:{c:g}' for c in sens['switch_caps']]], 'sensitivities': dict(sens),
-        'placebos': {**plac, 'kl_tolerance': float(plac['kl_tolerance'])},
+        'output_dir': Path(config['output_dir']), 'taus': taus, 'sealed_tau': sealed_tau,
+        'identity_tolerance': float(config['identity_tolerance']), 'ratio_rtol': float(config['ratio_rtol']),
+        'expected_dr_q_source': config['expected_dr_q_source'], 'candidate_identity_sha256': identity,
+        'main_families': list(families), 'scan_families': scan_families, 'margins': list(margins),
+        'statuses': list(elig['statuses']), 'gate': {**gate, 'noise_exempt': [dict(e) for e in gate['noise_exempt']]},
+        'minima': dict(minima), 'variants': [*BASE_VARIANTS, *[f'switch:{c:g}' for c in sens['switch_caps']]],
+        'sensitivities': dict(sens), 'placebos': {**plac, 'kl_tolerance': float(plac['kl_tolerance'])},
         'bootstrap': {'draws': boot['draws'], 'seeds': dict(boot['seeds'])},
-        'invalid_share_max': float(boot['invalid_share_max']), 'minimum': dict(boot['minimum']),
-        'source_commit': source, 'candidate_identity_sha256': identity, 'outputs': outputs,
+        'invalid_share_max': float(boot['invalid_share_max']), 'alpha': float(decision['alpha_one_sided']),
+        'mde_multiplier': float(decision['mde_multiplier']), 'guards': dict(guards), 'source_commit': source,
+        'outputs': outputs,
         'pa_facts': {'source': 'frame', 'split': facts['split'],
                      'policy_registration': {'config': _pin(registration['config'], 'policy_registration.config'),
                                              'addenda': [_pin(a, 'policy_registration.addenda[]')
-                                                         for a in registration.get('addenda', [])]},
+                                                         for a in registration['addenda']]},
                      'local_config': _pin(facts['local_config'], 'pa_facts.local_config'),
-                     'processed_frame_sha256': processed, 'value_tolerance': float(value_tol),
+                     'processed_frame': _pin(facts['processed_frame'], 'pa_facts.processed_frame'),
+                     'we_contract_sha256': facts['we_contract_sha256'], 'value_tolerance': float(value_tol),
                      'check_selection': facts.get('check_selection', True)}}
 
 
@@ -251,43 +278,47 @@ class Environment:
         return state
 
     def load_frame_and_we(self, spec, checkpoint):
-        """(frame, defense_we, ML-POLICY config, provenance) through the registered loaders. The ML-POLICY chain and the
-        local config are verified against their pins before they are parsed, the processed-frame pin (optional, A2
-        verify_processed_pin) before any row is decoded."""
+        """(frame, defense_we, ML-POLICY config, provenance) through the registered loaders. Every ML-POLICY chain link,
+        the local config, the processed frame (path, quality manifest and bytes; A2 verify_processed_pin) and the WE
+        contract are verified against their pins before they are read or decoded."""
         import run_policy_validation as rpv
         from pitchmdp import policy_identity as pid
         links = [spec['policy_registration']['config'], *spec['policy_registration']['addenda']]
         for link in links:
-            _require(file_sha256(link['path']) == link['sha256'],
+            _require(file_sha256(_resolve(link['path'])) == link['sha256'],
                      f'ML-POLICY registration file differs from its pin: {link["path"]}')
-        reg = rpv.load_registration(Path(links[0]['path']), [Path(link['path']) for link in links[1:]])
+        reg = rpv.load_registration(_resolve(links[0]['path']), [_resolve(link['path']) for link in links[1:]])
         _require([link['sha256'] for link in reg['chain']] == [link['sha256'] for link in links],
                  'the loaded ML-POLICY chain differs from its pins')
         config = reg['config']
         _require(config.get('protocol') == rpv.PROTOCOL, 'not an ML-POLICY materialization/validation config')
-        raw = Path(spec['local_config']['path']).read_bytes()
+        local_pin = spec['local_config']
+        raw = _resolve(local_pin['path']).read_bytes()
         local_sha = hashlib.sha256(raw).hexdigest()
-        _require(local_sha == spec['local_config']['sha256'] == config['le2025_validation_plan']['local_config']['sha256'],
+        _require(local_sha == local_pin['sha256'] == config['le2025_validation_plan']['local_config']['sha256'],
                  'local config differs from its pins')
         local = json.loads(raw)
-        if spec['processed_frame_sha256'] is not None:
-            root = Path(local['artifact_root'])
-            quality = json.loads((root / 'reports' / 'data_quality.json').read_text())
-            _require(quality.get('processed_sha256') == spec['processed_frame_sha256'],
-                     'the processed-frame pin differs from the quality manifest (processed_sha256)')
-            _require(file_sha256(root / 'processed' / 'pitches.parquet') == spec['processed_frame_sha256'],
-                     'processed frame bytes differ from their pin')
+        frame_pin = spec['processed_frame']
+        root = Path(local['artifact_root'])
+        _require(Path(frame_pin['path']).resolve() == (root / 'processed' / 'pitches.parquet').resolve(),
+                 'processed_frame path differs from the registered processed frame of the local config')
+        quality = json.loads((root / 'reports' / 'data_quality.json').read_text())
+        _require(quality.get('processed_sha256') == frame_pin['sha256'],
+                 'the processed-frame pin differs from the quality manifest (processed_sha256)')
+        _require(file_sha256(frame_pin['path']) == frame_pin['sha256'], 'processed frame bytes differ from their pin')
+        ident = config['identity_registration']
+        _require(ident['we_contract_sha256'] == spec['we_contract_sha256'],
+                 'the registered WE contract pin differs from the ML-POLICY identity registration')
         checkpoint()
         inputs = rpv.load_inputs(config, local, store=False)  # the registered frame: same loader, order and date guard
         checkpoint()
-        ident = config['identity_registration']
-        values, we_identity = pid.load_pinned_we(inputs['paths'], ident['we_contract_sha256'], ident['classes']['we'])
+        values, we_identity = pid.load_pinned_we(inputs['paths'], spec['we_contract_sha256'], ident['classes']['we'])
         we = values['we']
 
         def defense(state, defender_is_home):  # = policy_identity.BoundComponents.defense_we
             return float(we.predict_defense(state, defender_is_home))
         provenance = {'policy_registration_chain': reg['chain'], 'policy_config_sha256': reg['config_sha256'],
-                      'local_config_sha256': local_sha, 'processed_frame_sha256': spec['processed_frame_sha256'],
+                      'local_config_sha256': local_sha, 'processed_frame': dict(frame_pin),
                       'g0_bundle_file_sha256': inputs['bundle_sha'], 'we_identity': we_identity,
                       'frame_rows': int(len(inputs['frame'])),
                       'loaders': ['run_policy_validation.load_inputs(store=False)', 'policy_identity.load_pinned_we']}
@@ -393,17 +424,18 @@ def execute(spec, mode, verified, manifest, env, guard, write):
     censoring = censoring_of(dr)
     facts, facts_provenance = frame_pa_facts(env, spec['pa_facts'], dr, guard.checkpoint)
     guard.checkpoint()
-    table = pd.read_parquet(io.BytesIO(verified['pa_values.parquet']))
+    table = pd.read_parquet(io.BytesIO(verified['pa_values.parquet']), columns=list(ope.PA_VALUE_COLUMNS))
     sealed = ope.sealed_rows(table.to_dict('records'))
     del table
     _require(list(sealed) == list(facts), 'pa_values PAs differ from the frame blocks of the stage games (ids or order)')
     pas = {pa_id: {**facts[pa_id], 'in_population': sealed[pa_id]['in_population'], 'pa_status': sealed[pa_id]['status']}
            for pa_id in sealed}
     scan = ope.Scan(taus=spec['taus'], sealed_tau=spec['sealed_tau'], identity_tolerance=spec['identity_tolerance'],
-                    statuses=spec['statuses'], families=spec['scan_families'], margins=spec['margins'],
-                    expected_q_source=spec['expected_dr_q_source'], runtime_sha256=head['runtime_sha256'])
+                    ratio_rtol=spec['ratio_rtol'], statuses=spec['statuses'], families=spec['scan_families'],
+                    margins=spec['margins'], expected_q_source=spec['expected_dr_q_source'],
+                    runtime_sha256=head['runtime_sha256'])
     stream = ope.LedgerStream(ledger_path)
-    check = ope.FactsCheck(censoring, spec['pa_facts']['value_tolerance'])
+    check = ope.FactsCheck(censoring)
     scan.run(stream.decisions(), pas, sealed=sealed, facts_check=check, checkpoint=guard.checkpoint)
     _require(stream.sha256 == spec['pins'][spec['ledger']], 'ledger bytes changed after their pin was verified')
     _require(stream.header == header, 'streamed ledger header differs from the header read first')
@@ -423,32 +455,39 @@ def execute(spec, mode, verified, manifest, env, guard, write):
                                                                     'registration_chain')},
                             'games': len(dr['games']), 'censoring_rule_of_pa_values': censoring},
                   'ledger': {'rows': stream.rows, 'head_sha256': stream.head, 'kinds': dict(stream.kinds), 'header': head},
-                  'pa_facts': {'source': 'frame', 'provenance': facts_provenance, 'crosscheck': check.record()},
+                  'pa_facts': {'source': 'frame', 'provenance': facts_provenance,
+                               'crosscheck': check.record(dr, spec['pa_facts']['value_tolerance'])},
                   'identity_check': records['identity_check'], 'q_source': records['q_source'],
                   'vocabulary_size': records['vocabulary_size'],
                   'seeds': {'bootstrap': spec['bootstrap']['seeds'], 'perm_placebo': spec['placebos']['perm_seed'],
-                            'outcome_shuffle': spec['placebos']['outcome_shuffle_seed']}}
+                            'outcome_shuffle_null': spec['placebos']['outcome_shuffle_null_seed']}}
     counts = {'by_status': records['by_status'], **records['counts'], 'disagreement': records['disagreement']}
     guard.checkpoint()
-    diag = ope.prediag(tab, spec['evaluability'])
+    diag = ope.prediag(tab, spec['gate'])
     write('prediag.json', {'provenance': provenance, 'counts': counts, 'prediag': diag,
                            'note': 'written before any G-dependent number is computed'})
     doc = {'provenance': provenance, 'counts': counts, 'prediag': diag}
     files = {}
     if mode == 'run':
         guard.checkpoint()
-        sections, csv_sections = ope.analysis(
-            tab, diag, primary=spec['primary'], variants=spec['variants'], main_families=spec['main_families'],
-            margins=spec['margins'], bootstrap=spec['bootstrap'], minimum=spec['minimum'],
-            invalid_share_max=spec['invalid_share_max'], placebos=spec['placebos'], sensitivities=spec['sensitivities'],
-            identity_tolerance=spec['identity_tolerance'], checkpoint=guard.checkpoint)
+        rule = {'primary_tau': spec['sealed_tau'], 'variants': spec['variants'], 'main_families': spec['main_families'],
+                'margins': spec['margins'], 'bootstrap': spec['bootstrap'], 'invalid_share_max': spec['invalid_share_max'],
+                'minima': spec['minima'], 'placebos': spec['placebos'], 'sensitivities': spec['sensitivities'],
+                'alpha': spec['alpha'], 'mde_multiplier': spec['mde_multiplier']}
+        sections, csv_sections, inputs = ope.analysis(tab, diag, rule=rule, checkpoint=guard.checkpoint)
         doc.update(sections)
-        doc['reading'] = ('stage 1 is EXPLORATORY_REANALYSIS on exposed <=2025 DEV: no adoption label; judgment '
-                          'statistics (trend, max_t) use evaluable taus only, other rows are descriptive')
+        doc['decision'] = {'inputs': inputs, **decide(inputs)}
+        doc['reading'] = ('stage 1 is EXPLORATORY_REANALYSIS on exposed <=2025 DEV: the decision is the registered '
+                          'stage-2 entry rule, not an adoption label; non-evaluable rows are descriptive')
         files['per_tau.csv'] = per_tau_csv(ope.per_tau_rows(csv_sections))
         if spec['outputs']['decisions_parquet']:
             files['decisions.parquet'] = decisions_parquet(tab)
     return doc, files
+
+
+def decide(inputs):
+    """The runner's registered decide step (SPEC DELTA 2 item 9): ope_onestep.decide on the decision inputs."""
+    return ope.decide(inputs)
 
 
 def per_tau_csv(rows):
@@ -461,7 +500,7 @@ def per_tau_csv(rows):
 
 
 def decisions_parquet(tab):
-    """Per observed decision of the temperature family: ids, count, D, status, M, C, D_t and rho' per tau."""
+    """Per estimation decision of the temperature family: ids, count, D, status, M_dr, M_pi, C, D_t, rho' per tau."""
     obs = tab['observed']
     f = tab['families'].index('temperature')
     on = tab['on_mask'][obs][:, None]
@@ -473,9 +512,10 @@ def decisions_parquet(tab):
                           **{f'D:{ope.margin_key(m)}': tab['D'][obs, i] for i, m in enumerate(tab['margins'])}})
     for j, tau in enumerate(tab['taus']):
         key = ope.tau_key(tau)
-        frame[f'M_{key}'] = tab['model'][obs, f, j]
+        frame[f'M_dr_{key}'] = tab['model_dr'][obs, f, j]
+        frame[f'M_pi_{key}'] = tab['model_pi'][obs, f, j]
         frame[f'C_{key}'] = corr[:, j]
-        frame[f'delta_{key}'] = tab['model'][obs, f, j] + corr[:, j]
+        frame[f'delta_{key}'] = tab['model_dr'][obs, f, j] + corr[:, j]
         frame[f'rho_{key}'] = tab['rho'][obs, f, j]
     buffer = io.BytesIO()
     frame.to_parquet(buffer, index=False)
@@ -502,8 +542,10 @@ def parse(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check', action='store_true', help='pins, counts, identity, facts and prediag; no G-dependent value')
     mode.add_argument('--run', action='store_true', help='the full registered computation')
-    parser.add_argument('--max-seconds', type=float, default=None, help='hang guard (wall seconds)')
-    parser.add_argument('--max-rss-gb', type=float, default=None, help='abort once peak RSS exceeds this many GiB')
+    parser.add_argument('--max-seconds', type=float, default=None,
+                        help='tighten the registered hang guard (wall seconds); never loosens it')
+    parser.add_argument('--max-rss-gb', type=float, default=None,
+                        help='tighten the registered peak-RSS guard (GiB); never loosens it')
     parser.add_argument('--pa-facts-source', choices=('frame',), default=None,
                         help='PA facts source; must equal the config (frame is the only source)')
     args = parser.parse_args(argv)
@@ -515,9 +557,8 @@ def parse(argv=None):
 
 
 def _stop_alarm(max_seconds, previous):
-    if max_seconds is not None:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, signal.SIG_DFL if previous is None else previous)
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    signal.signal(signal.SIGALRM, signal.SIG_DFL if previous is None else previous)
 
 
 def main(argv=None, env=None):
@@ -542,16 +583,16 @@ def main(argv=None, env=None):
         print(f'REFUSED: {error}', file=sys.stderr)
         return EXIT['refused']
     out.mkdir(parents=True)
+    max_seconds = min(spec['guards']['max_seconds'], args.max_seconds or math.inf)
+    max_rss_gb = min(spec['guards']['max_rss_gb'], args.max_rss_gb or math.inf)
     run_info = {'mode': mode, 'argv': list(sys.argv if argv is None else argv), 'config_path': str(args.config),
                 'config_sha256': hashlib.sha256(raw).hexdigest(), 'started_utc': datetime.now(timezone.utc).isoformat(),
                 'git': git, 'source_commit_enforced': spec['source_commit'] is not None, 'environment': environment(),
-                'max_seconds': args.max_seconds, 'max_rss_gb': args.max_rss_gb}
+                'guards': {'max_seconds': max_seconds, 'max_rss_gb': max_rss_gb, 'registered': spec['guards']}}
     dump(out / 'started.json', {**run_info, 'config': config})
-    guard = Guard(args.max_seconds, args.max_rss_gb)
-    previous = None
-    if args.max_seconds is not None:
-        previous = signal.signal(signal.SIGALRM, _raise_hang)
-        signal.setitimer(signal.ITIMER_REAL, float(args.max_seconds) + 5.)
+    guard = Guard(max_seconds, max_rss_gb)
+    previous = signal.signal(signal.SIGALRM, _raise_hang)
+    signal.setitimer(signal.ITIMER_REAL, float(max_seconds) + 5.)
 
     def write(name, value):
         dump(out / name, {**value, 'run': {**run_info, 'wall_seconds_so_far': time.monotonic() - wall,
@@ -559,17 +600,18 @@ def main(argv=None, env=None):
     try:
         doc, files = execute(spec, mode, verified, manifest, env, guard, write)
     except BaseException as error:
-        _stop_alarm(args.max_seconds, previous)
+        _stop_alarm(max_seconds, previous)
         code = (EXIT['refused'] if isinstance(error, IntegrityError) else
                 EXIT['guard'] if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded)) else EXIT['error'])
         dump(out / 'failed.json', {**run_info, 'error_type': type(error).__name__, 'error': str(error),
+                                   'study_label': 'INVALID' if isinstance(error, IntegrityError) else None,
                                    'traceback': traceback.format_exc(limit=8), 'wall_seconds': time.monotonic() - wall,
                                    'peak_rss_bytes': peak_rss_bytes(), 'citable': False})
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
         if code == EXIT['error'] and not isinstance(error, Exception):
             raise
         return code
-    _stop_alarm(args.max_seconds, previous)
+    _stop_alarm(max_seconds, previous)
     doc['provenance']['run'] = {**run_info, 'wall_seconds': time.monotonic() - wall,
                                 'cpu_seconds': time.process_time() - cpu, 'peak_rss_bytes': peak_rss_bytes(),
                                 'finished_utc': datetime.now(timezone.utc).isoformat()}

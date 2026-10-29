@@ -1,0 +1,62 @@
+{
+  "experiment_id": "EXP-OPE-1STEP-01",
+  "exposure_label": "EXPLORATORY_REANALYSIS",
+  "notes": "Template (spec v3). Replace every FILL_* value at registration; the runner refuses non-sha placeholders. Pins taken from configs/EXP-OPE-RES-01.json (A2) and configs/ML-POLICY-MATERIALIZATION-v1.json at ca55f47c: the 9 chain links were re-hashed in this worktree and match. pa_values / dr.json / started.json pins: copy them from the sealed S6-dr-a5 manifest.json artifact_sha256 (the runner checks the manifest lists them). Relative paths resolve against the runner's checkout.",
+  "stage_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a5",
+  "ledger": "ledger-dev-0.jsonl",
+  "pins": {
+    "ledger-dev-0.jsonl": "4555989946a6f72fb593b3b8cdb905205b65338b007788b170206e04e208a4a0",
+    "pa_values.parquet": "FILL_FROM_S6_MANIFEST",
+    "dr.json": "FILL_FROM_S6_MANIFEST",
+    "manifest.json": "0bf8981b5bcbefe33c30de614ad36c6a441e9be15f9bac16c0e4cf61fcadfd17",
+    "started.json": "FILL_FROM_S6_MANIFEST"
+  },
+  "output_dir": "FILL_NEW_ABSOLUTE_DIRECTORY",
+  "tau_grid": ["inf", 0.5, 0.2, 0.1, 0.09, 0.07, 0.05, 0.02],
+  "sealed_tau": 0.1,
+  "identity_tolerance": 1e-12,
+  "ratio_rtol": 1e-12,
+  "expected_dr_q_source": "evaluation_seed",
+  "candidate_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+  "families": ["temperature", "shrinkage"],
+  "primary": {"family": "temperature", "tau": 0.1, "subset": "all", "variant": "dr"},
+  "confirmatory": {"P": "all", "P_D": "D:1se"},
+  "disagreement": {"q": "q_planning", "ties": "not_in_D", "margins": [0, 0.005, "1se"], "confident": "1se"},
+  "eligibility": {"statuses": ["SUPPORTED", "OUTSIDE_POLICY_SUPPORT", "UNSUPPORTED_LOGGING_POSITIVITY"],
+                  "population": "E0", "require_reward": true},
+  "gate": {"ess_ratio_min": 0.5, "max_weight_share": 0.01, "games_min": 30, "pitchers_min": 30, "noise_q90_max": 0.5,
+           "noise_exempt": [{"family": "temperature", "tau": 0.1}]},
+  "sample_minima": {"games": 30, "pas": 50, "pitchers": 30},
+  "placebos": {"perm_draws": 100, "perm_seed": 4255355903, "kl_tolerance": 0.01, "tau_bracket_factor": 100,
+               "bisection_iterations": 60, "outcome_shuffle_null_draws": 100, "outcome_shuffle_null_seed": 3477356613,
+               "neg": true},
+  "sensitivities": {"switch_caps": [5, 10], "s_pos": true, "cross_replicate": true},
+  "bootstrap": {"draws": 10000, "seeds": {"game": 1322940374, "pitcher": 1542332542, "trend": 2753817544},
+                "invalid_share_max": 0.05},
+  "decision": {"alpha_one_sided": 0.025, "mde_multiplier": 2.8016},
+  "guards": {"max_seconds": 7200, "max_rss_gb": 8},
+  "pa_facts": {
+    "source": "frame",
+    "split": "dev",
+    "policy_registration": {
+      "config": {"path": "configs/ML-POLICY-MATERIALIZATION-v1.json", "sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469"},
+      "addenda": [
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json", "sha256": "ccb6fb5f3857486d0692d002c7b54ffb70acb4261b564905a93d13827c992d90"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json", "sha256": "827d5e388a410738a6bc09299652b3cb28d9d9ddde85ce8c51e81928de9cdcad"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json", "sha256": "0c0965a31ba105a609074b20afd0614a323c215d834f0ecb7665747ba1559f1b"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json", "sha256": "6e3ba6210f37b83244db95b8ba589d2efe3706d579b7645ac2178d35af35487c"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json", "sha256": "49d3c59794ada271692cd0fb0ff30ff1a645d4cbba7ff43d509a35355d71a32c"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json", "sha256": "4cd224d35dc7696ff651c4b8e0f19fb59fa1a01a442408f619ce60b62dcd5e33"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json", "sha256": "7ca90595b5c6a8c44289b7f79d57735a177eef3ef3cad68166befaf8bc2dad94"},
+        {"path": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json", "sha256": "2c93dddaf9e6866724fdf0c7035054051c56693561ec4bc110ff8b249bddf39c"}
+      ]
+    },
+    "local_config": {"path": "experiments/pitchmdp/configs/local.json", "sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"},
+    "processed_frame": {"path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet", "sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27"},
+    "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
+    "value_tolerance": 1e-12,
+    "check_selection": true
+  },
+  "source_commit": "FILL_CODE_COMMIT_OR_NULL",
+  "outputs": {"decisions_parquet": false}
+}

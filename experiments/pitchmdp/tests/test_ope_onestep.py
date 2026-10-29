@@ -1,11 +1,12 @@
-"""SYNTHETIC-ONLY tests for EXP-OPE-1STEP-01 spec v2 (pitchmdp/ope_onestep.py, scripts/run_ope_onestep.py).
+"""SYNTHETIC-ONLY tests for EXP-OPE-1STEP-01 spec v3 (pitchmdp/ope_onestep.py, scripts/run_ope_onestep.py).
 
-The sealed-candidate identity (passes and fails deterministically), tau = inf, the enumerated-toy exactness of the
-one-step DR and IPS terms (correct and wrong q-hat), the outcome-shuffle null, the model-term identity M = tau (KL(pi||
-ref) + KL(ref||pi)) when q_pi == q_dr, off-mask / positivity rows, the shrinkage family, D margins and ties, the perm
-RNG and KL matching, the row-wise kl_policy mirror, the shared cluster bootstrap (determinism, invalid replicates,
-paired identical columns exactly 0), the runner's refusals, and --check / --run on a synthetic sealed stage built
-through the registered runtime (v3), request generator, PA-end rule and estimator. No real data, no 2026 rows.
+G-INT (identity, ratios, positivity rows; deterministic pass/fail), tau = inf, the enumerated-toy exactness of the
+one-step DR and IPS terms (correct and wrong q-hat), the model-term identity M = tau (KL(pi||ref) + KL(ref||pi)), off-mask
+rows, the shrinkage family via tau/c (c = 1 is T bit for bit), D margins and ties, the perm RNG, the flat K-draw mirror
+and the common placebo temperature (NOT_MATCHABLE), the outcome-shuffle null (and its power against an injected logging
+misspecification), the shared cluster bootstrap, H_P bounds, every branch of the registered decide step, the runner's
+refusals, and --check / --run on a synthetic sealed stage built through the registered runtime (v3), request generator,
+PA-end rule and estimator. No real data, no 2026 rows.
 """
 import copy
 import hashlib
@@ -42,7 +43,10 @@ TAUS = [ope.parse_tau(t) for t in GRID]
 LEDGER = 'ledger-dev-0.jsonl'
 STAGE_FILES = (LEDGER, 'pa_values.parquet', 'dr.json', 'manifest.json', 'started.json')
 MARGINS = [0, .005, '1se']
-OPEN = {'ess_ratio_min': 0., 'noise_q90_max': 1e9, 'game_ess_min': 0., 'pa_ess_min': 0.}
+OPEN = {'ess_ratio_min': 0., 'max_weight_share': 1., 'games_min': 1, 'pitchers_min': 1, 'noise_q90_max': 1e9,
+        'noise_exempt': [{'family': 'temperature', 'tau': TAU}]}
+STRICT = {'ess_ratio_min': .5, 'max_weight_share': .01, 'games_min': 30, 'pitchers_min': 30, 'noise_q90_max': .5,
+          'noise_exempt': [{'family': 'temperature', 'tau': TAU}]}
 
 
 def sha(path):
@@ -121,9 +125,9 @@ class SyntheticStage:
         return {p: {**f, 'in_population': e0[p]} for p, f in self.facts.items()}
 
     def scan(self, families=('temperature', 'shrinkage', 'cross_replicate', 'neg'), tau=TAU):
-        return ope.Scan(taus=TAUS, sealed_tau=tau, identity_tolerance=1e-12, statuses=list(ope.RESULT_STATUSES),
-                        families=list(families), margins=MARGINS, expected_q_source='evaluation_seed').run(
-            self.ledger.iter_decisions(), self.pas())
+        return ope.Scan(taus=TAUS, sealed_tau=tau, identity_tolerance=1e-12, ratio_rtol=1e-12,
+                        statuses=list(ope.RESULT_STATUSES), families=list(families), margins=MARGINS,
+                        expected_q_source='evaluation_seed').run(self.ledger.iter_decisions(), self.pas())
 
 
 class SyntheticEnvironment(runner.Environment):
@@ -146,19 +150,27 @@ def make_config(stage_dir, output_dir, **overrides):
         'experiment_id': 'EXP-OPE-1STEP-01-SYNTHETIC', 'exposure_label': 'SYNTHETIC', 'stage_dir': str(stage_dir),
         'ledger': LEDGER, 'pins': {name: sha(Path(stage_dir) / name) for name in STAGE_FILES},
         'output_dir': str(output_dir), 'tau_grid': GRID, 'sealed_tau': TAU, 'identity_tolerance': 1e-12,
-        'expected_dr_q_source': 'evaluation_seed', 'families': ['temperature', 'shrinkage'],
+        'ratio_rtol': 1e-12, 'expected_dr_q_source': 'evaluation_seed', 'candidate_identity_sha256': None,
+        'families': ['temperature', 'shrinkage'],
         'primary': {'family': 'temperature', 'tau': TAU, 'subset': 'all', 'variant': 'dr'},
+        'confirmatory': {'P': 'all', 'P_D': 'D:1se'},
         'disagreement': {'q': 'q_planning', 'ties': 'not_in_D', 'margins': MARGINS, 'confident': '1se'},
         'eligibility': {'statuses': list(ope.RESULT_STATUSES), 'population': 'E0', 'require_reward': True},
-        'evaluability': dict(OPEN),
-        'placebos': {'perm_draws': 3, 'perm_seed': 4255355903, 'kl_tolerance': .01, 'outcome_shuffle_draws': 4,
-                     'outcome_shuffle_seed': 709946931, 'neg': True},
+        'gate': copy.deepcopy(OPEN), 'sample_minima': {'games': 1, 'pas': 1, 'pitchers': 1},
+        'placebos': {'perm_draws': 3, 'perm_seed': 4255355903, 'kl_tolerance': .01, 'tau_bracket_factor': 100,
+                     'bisection_iterations': 60, 'outcome_shuffle_null_draws': 4, 'outcome_shuffle_null_seed': 3477356613,
+                     'neg': True},
         'sensitivities': {'switch_caps': [5, 10], 's_pos': True, 'cross_replicate': True},
         'bootstrap': {'draws': 200, 'seeds': {'game': 1322940374, 'pitcher': 1542332542, 'trend': 2753817544},
-                      'invalid_share_max': .5, 'minimum': {'games': 1, 'pitchers': 1, 'pas': 1}},
+                      'invalid_share_max': .5},
+        'decision': {'alpha_one_sided': .025, 'mde_multiplier': 2.8016},
+        'guards': {'max_seconds': 600, 'max_rss_gb': 8},
         'pa_facts': {'source': 'frame', 'split': 'dev',
-                     'policy_registration': {'config': {'path': '/nonexistent/ML-POLICY.json', 'sha256': 'a' * 64}},
-                     'local_config': {'path': '/nonexistent/local.json', 'sha256': 'b' * 64}}}
+                     'policy_registration': {'config': {'path': '/nonexistent/ML-POLICY.json', 'sha256': 'a' * 64},
+                                             'addenda': []},
+                     'local_config': {'path': '/nonexistent/local.json', 'sha256': 'b' * 64},
+                     'processed_frame': {'path': '/nonexistent/pitches.parquet', 'sha256': 'c' * 64},
+                     'we_contract_sha256': 'd' * 64}}
     config.update(overrides)
     return config
 
@@ -190,7 +202,7 @@ class StageCase(unittest.TestCase):
 
 
 class FamilyAndTermTests(StageCase):
-    def test_identity_check_passes_and_fails_deterministically(self):
+    def test_gint_passes_and_fails_deterministically(self):
         rows = self.result_rows()
         self.assertEqual({r['status'] for r in rows}, set(ope.RESULT_STATUSES))
         for row in rows:
@@ -198,20 +210,43 @@ class FamilyAndTermTests(StageCase):
             self.assertTrue(np.array_equal(ope.policy_tau(row, TAU), candidate))  # bit for bit
             d = ope.decision_arrays(row, 3)
             self.assertTrue(np.array_equal(ope.policy_tau(row, ope.INF), d['reference']))
-            pi = ope.policy_tau(row, TAU)
-            self.assertEqual(pi[d['a']] / d['b_a'] if d['on_mask'] else 0., row['result']['rho_candidate'])
+            self.assertEqual(ope.gint(row, d, TAU, 1e-12, 1e-12), 0.)
         scan = self.stage.scan()
         self.assertEqual((scan.identity['rows_checked'], scan.identity['max_abs_diff_candidate'],
-                          scan.identity['max_abs_diff_rho']), (len(rows), 0., 0.))
+                          scan.identity['positivity_rows_checked']), (len(rows), 0., 1))
         other = SyntheticStage(self.root / 'other', tau=.11, name='S6-tau011')  # candidate built at another tau
         for _ in range(2):  # deterministic refusal
-            with self.assertRaisesRegex(pa.IntegrityError, 'identity check failed'):
+            with self.assertRaisesRegex(pa.IntegrityError, 'G-INT .*kl_policy'):
                 other.scan()
         swapped = copy.deepcopy(rows[0])  # the candidate is NOT reproduced from q_reference
         swapped['result']['q_planning'] = swapped['result']['q_reference']
         self.assertFalse(np.array_equal(ope.policy_tau(swapped, TAU), np.array(rows[0]['result']['candidate'])))
 
-    def test_enumerated_toy_unbiasedness_selection_bias_and_outcome_shuffle_null(self):
+    def test_positivity_row_gint_path(self):
+        row = next(r for r in self.result_rows() if r['status'] == pr.LOGGING_POSITIVITY)
+        d = ope.decision_arrays(row, 3)
+        self.assertEqual((d['b_a'], d['candidate'][d['a']], d['rho_candidate'], d['rho_reference']), (0., 0., 0., 0.))
+        self.assertEqual(ope.gint(row, d, TAU, 1e-12, 1e-12), 0.)  # no division on a positivity row
+        bad = copy.deepcopy(d)
+        bad['rho_reference'] = 1e-300
+        with self.assertRaisesRegex(pa.IntegrityError, 'positivity row needs'):
+            ope.gint(row, bad, TAU, 1e-12, 1e-12)
+        supported = next(r for r in self.result_rows() if r['status'] == pr.SUPPORTED)
+        d = ope.decision_arrays(supported, 3)
+        drifted = {**d, 'rho_candidate': d['rho_candidate'] * (1 + 1e-10)}  # relative 1e-10 > rtol 1e-12
+        with self.assertRaisesRegex(pa.IntegrityError, 'rho_candidate'):
+            ope.gint(supported, drifted, TAU, 1e-12, 1e-12)
+        zero_se = copy.deepcopy(supported)  # a second zero of the paired-difference SE: INVALID
+        mask = zero_se['result']['mask']
+        zero_se['result']['q_planning_diff_se'] = [0. if m else None for m in mask]
+        with self.assertRaisesRegex(pa.IntegrityError, 'must be 0 exactly at the argmax'):
+            ope.decision_arrays(zero_se, 3)
+        with self.assertRaisesRegex(pa.IntegrityError, 'q_source'):
+            ope.Scan(taus=TAUS, sealed_tau=TAU, identity_tolerance=1e-12, ratio_rtol=1e-12,
+                     statuses=list(ope.RESULT_STATUSES), families=['temperature'], margins=MARGINS,
+                     expected_q_source='planning_reuse').run(self.stage.ledger.iter_decisions(), self.stage.pas())
+
+    def test_enumerated_toy_unbiasedness_and_selection_bias(self):
         # actions: 0 off the mask with logging mass (OUTSIDE_POLICY_SUPPORT), 1-3 on the mask, 4 off without mass
         mask, logging = [False, True, True, True, False], [.15, .4, .3, .15, 0.]
         reference = [0., .5, .3, .2, 0.]
@@ -224,7 +259,7 @@ class FamilyAndTermTests(StageCase):
                 d0 = toy_decision(mask, logging, reference, q_hat, 1, q_pi)
                 pi = ope.tilt(d0['q_pi'], d0['reference'], d0['mask'], tau)
                 truth = float(((pi - d0['reference']) * np.where(d0['mask'], q_true, 0.)).sum())
-                dr = ips = conditional = kept = shuffle_dr = shuffle_ips = 0.
+                dr = ips = conditional = kept = null_dr = null_ips = 0.
                 for a in range(5):
                     d = toy_decision(mask, logging, reference, q_hat, a, q_pi)
                     for g, p in zip(*outcomes[a]):
@@ -234,14 +269,14 @@ class FamilyAndTermTests(StageCase):
                         if mask[a]:  # what dropping the OUTSIDE_POLICY_SUPPORT action would estimate
                             conditional += logging[a] * p * (model + correction)
                             kept += logging[a] * p
-                    for g, p in marginal:
+                    for g, p in marginal:  # an outcome independent of the action: true advantage 0
                         model, correction, ips_term, _ = ope.onestep_terms(pi, d, g)
-                        shuffle_dr += logging[a] * p * (model + correction)
-                        shuffle_ips += logging[a] * p * ips_term
+                        null_dr += logging[a] * p * (model + correction)
+                        null_ips += logging[a] * p * ips_term
                 self.assertAlmostEqual(dr, truth, places=14)
                 self.assertAlmostEqual(ips, truth, places=14)
-                self.assertAlmostEqual(shuffle_dr, 0., places=14)  # the outcome-shuffle null is 0 in expectation
-                self.assertAlmostEqual(shuffle_ips, 0., places=14)
+                self.assertAlmostEqual(null_dr, 0., places=14)
+                self.assertAlmostEqual(null_ips, 0., places=14)
                 if q_hat is not q_true:
                     self.assertGreater(abs(conditional / kept - truth), 1e-4)  # selection on a_t biases DR
 
@@ -258,10 +293,9 @@ class FamilyAndTermTests(StageCase):
             for tau in (.5, .1, .02):
                 pi = ope.tilt(d['q_pi'], ref, mask, tau)
                 model = ope.onestep_terms(pi, d, .5)[0]
-                sym = ope.kl(pi, ref, mask) + ope.kl(ref, pi, mask)
-                self.assertAlmostEqual(model, tau * sym, places=14)  # M = tau (KL(pi||ref) + KL(ref||pi))
+                self.assertAlmostEqual(model, tau * (ope.kl(pi, ref, mask) + ope.kl(ref, pi, mask)), places=14)
 
-    def test_off_mask_and_positivity_rows_keep_only_the_model_term(self):
+    def test_off_mask_rows_keep_only_the_model_term(self):
         rows = self.result_rows()
         positivity = next(r for r in rows if r['status'] == pr.LOGGING_POSITIVITY)
         outside = next(r for r in rows if r['status'] == pr.OUTSIDE_POLICY_SUPPORT)
@@ -273,46 +307,43 @@ class FamilyAndTermTests(StageCase):
             model, correction, ips, rho = ope.onestep_terms(pi, d, .9)
             self.assertEqual((correction, ips, rho), (0., 0., 0.))
             self.assertTrue(np.isfinite(model) and model != 0.)
-        self.assertEqual(ope.decision_arrays(positivity, 3)['b_a'], 0.)
-        bad = copy.deepcopy(positivity)
-        bad['result']['rho_reference'] = .5
-        with self.assertRaisesRegex(pa.IntegrityError, 'recorded rho must be 0'):
-            ope.decision_arrays(bad, 3)
         bad = copy.deepcopy(outside)
         bad['result']['q_planning'][bad['result']['logged_index']] = .4
-        with self.assertRaisesRegex(pa.IntegrityError, 'off the mask'):
+        with self.assertRaisesRegex(pa.IntegrityError, 'exactly on the mask'):
             ope.decision_arrays(bad, 3)
         with self.assertRaisesRegex(pa.IntegrityError, 'no recorded result'):
             ope.decision_arrays(next(r for r in self.stage.decisions if r['status'] == pr.MID_PA), 3)
 
-    def test_shrinkage_factor_and_zero_shrinkage_is_the_reference(self):
-        rng = np.random.default_rng(1)
-        for _ in range(50):
-            k = int(rng.integers(1, 6))
-            mask = np.ones(k, dtype=bool)
-            q, se = rng.random(k), rng.random(k) * rng.choice([.01, .3, 3.])
-            c = ope.shrink_factor(q, se, mask)
-            self.assertTrue(0. <= c <= 1.)
-            if k < 2:
-                self.assertEqual(c, 0.)
+    def test_shrinkage_is_kl_policy_at_tau_over_c(self):
         mask = np.array([True, True, True])
-        q, se = np.array([.4, .5, .6]), np.array([1., 1., 1.])  # noise far above the spread: c = 0
-        self.assertEqual(ope.shrink_factor(q, se, mask), 0.)
+        q, se = np.array([.4, .5, .7]), np.array([.05, .02, 0.])  # argmax 2 carries the zero SE
+        sigma2 = (.05 ** 2 / 2 + .02 ** 2 / 2) / 2
+        expected = 1 - sigma2 / np.var(q, ddof=1)
+        self.assertAlmostEqual(ope.shrink_factor(q, se, mask), expected, places=15)
         d = toy_decision(mask, [.3, .3, .4], [.3, .3, .4], q, 0, q)
         d['se'] = se
-        for tau in (.5, .02):
-            pi, _, c = ope.family_policy('shrinkage', d, tau)
-            self.assertEqual(c, 0.)
-            self.assertTrue(np.array_equal(pi, d['reference']))  # exactly
-        d['se'] = np.zeros(3)  # no noise: c = 1, the temperature law
-        pi, _, c = ope.family_policy('shrinkage', d, .1)
-        self.assertEqual(c, 1.)
-        self.assertTrue(np.allclose(pi, ope.tilt(q, d['reference'], mask, .1), rtol=0, atol=1e-15))
+        c = ope.shrink_factor(q, se, mask)
+        for tau in (.5, .1, .02):
+            self.assertTrue(np.array_equal(ope.family_policy('shrinkage', d, tau), ope.tilt(q, d['reference'], mask,
+                                                                                            tau / c)))
+            fq = (d['q_pi'], d['q_dr'], 1., False)  # c = 1 reproduces T bit for bit
+            self.assertTrue(np.array_equal(ope.family_policy('shrinkage', d, tau, fq),
+                                           ope.family_policy('temperature', d, tau)))
+        noisy = np.array([1., 1., 0.])  # sigma2 far above the spread: c = 0, the reference exactly
+        self.assertEqual(ope.shrink_factor(q, noisy, mask), 0.)
+        d['se'] = noisy
+        self.assertTrue(np.array_equal(ope.family_policy('shrinkage', d, .02), d['reference']))
+        self.assertEqual(ope.shrink_factor(np.array([.5]), np.array([0.]), np.array([True])), 0.)  # mask < 2
+        self.assertEqual(ope.shrink_factor(np.array([.5, .5]), np.array([0., .1]), mask[:2]), 0.)  # var 0
+        rng = np.random.default_rng(1)
+        for _ in range(50):
+            k = int(rng.integers(2, 6))
+            self.assertTrue(0. <= ope.shrink_factor(rng.random(k), rng.random(k), np.ones(k, dtype=bool)) <= 1.)
 
     def test_disagreement_margins_and_ties(self):
         mask = np.array([True, True, True, False])
         ref = np.array([.5, .3, .2, 0.])
-        se = np.array([.004, .0, .01, np.nan])  # se[ref_best = 0] = 0.004
+        se = np.array([.004, .0, .01, np.nan])  # se[ref_best = 0] = 0.004, 0 at the q argmax 1
         q = np.array([.1, .9, .2, np.nan])
         self.assertEqual(ope.disagreement(q, ref, mask, se, MARGINS), ([True, True, True], False, False))
         close = np.array([.5, .503, .2, np.nan])  # gap .003: in D_0 only
@@ -324,52 +355,126 @@ class FamilyAndTermTests(StageCase):
         self.assertEqual(ope.disagreement(np.array([.1, .9, .9, np.nan]), ref, mask, se, MARGINS),
                          ([False] * 3, True, False))
         self.assertEqual(ope.disagreement(q, np.array([.4, .4, .2, 0.]), mask, se, MARGINS), ([False] * 3, False, True))
+        with self.assertRaisesRegex(pa.IntegrityError, 'SE at the reference argmax must be > 0'):
+            ope.disagreement(q, ref, mask, np.array([0., 0., .01, np.nan]), MARGINS)
 
-    def test_perm_rng_kl_matching_and_the_row_mirror(self):
+
+def flat_table(n=300, v=5, seed=2):
+    """A small observed table with only what FlatRows / common_tau read."""
+    rng = np.random.default_rng(seed)
+    mask = rng.random((n, v)) < .7
+    mask[:, 0] = True
+    ref = np.where(mask, rng.random((n, v)) + .05, 0.)
+    ref /= ref.sum(axis=1, keepdims=True)
+    a = np.array([rng.choice(np.flatnonzero(m)) for m in mask])
+    return {'observed': np.ones(n, dtype=bool), 'mask': mask, 'ref': ref, 'q_pi': np.where(mask, rng.random((n, v)), np.nan),
+            'q_dr': np.where(mask, rng.random((n, v)), np.nan), 'a': a, 'on_mask': np.ones(n, dtype=bool),
+            'b_a': ref[np.arange(n), a], 'sha8': rng.integers(2 ** 32, size=n)}
+
+
+class PlaceboTests(StageCase):
+    def test_perm_rng_flat_mirror_and_common_tau(self):
         row = self.result_rows()[0]
         sha8 = int(row['sha256'][:8], 16)
         q, mask = np.array([.1, .2, .3, .4, .5, np.nan]), np.array([True] * 5 + [False])
         a = ope.permuted(q, mask, 4255355903, 0, sha8)
         self.assertEqual(sorted(a[mask]), sorted(q[mask]))
         self.assertTrue(np.array_equal(a, ope.permuted(q, mask, 4255355903, 0, sha8), equal_nan=True))
-        draws = {tuple(ope.permuted(q, mask, 4255355903, k, sha8)[mask]) for k in range(20)}
-        self.assertGreater(len(draws), 1)  # the draw index drives it
         expected = np.random.default_rng(np.random.SeedSequence([4255355903, 3, sha8])).permutation(5)
         self.assertTrue(np.array_equal(ope.permuted(q, mask, 4255355903, 3, sha8)[mask], q[mask][expected]))
-        d = toy_decision([True, True], [.5, .5], [.5, .5], [.3, .7], 0)
-        for tau in (.5, .1, .01):
-            real = ope.tilt(d['q_pi'], d['reference'], d['mask'], tau)
-            neg = ope.tilt(-d['q_pi'], d['reference'], d['mask'], tau)
-            self.assertAlmostEqual(ope.onestep_terms(neg, d, .5)[0], -ope.onestep_terms(real, d, .5)[0], places=15)
-        rng = np.random.default_rng(2)
-        n, v = 300, 5
-        mask = rng.random((n, v)) < .7
-        mask[:, 0] = True
-        ref = np.where(mask, rng.random((n, v)) + .05, 0.)
-        ref /= ref.sum(axis=1, keepdims=True)
-        q = np.where(mask, rng.random((n, v)), np.nan)
-        for tau in (.5, .07, .02):  # the row-wise mirror is kl_policy
-            rows = ope.tilt_rows(q, ref, mask, tau)
-            worst = max(float(np.abs(rows[i] - ope.tilt(q[i], ref[i], mask[i], tau)).max()) for i in range(n))
+        table = flat_table()
+        flat = ope.FlatRows(table)
+        for tau in (.5, .07, .02):  # the flat mirror is kl_policy
+            pi = flat.tilt(flat.q_pi, tau)
+            worst = 0.
+            for i in range(flat.n):
+                ref_pi = ope.tilt(table['q_pi'][i], table['ref'][i], table['mask'][i], tau)
+                s, m = flat.starts[i], flat.lengths[i]
+                worst = max(worst, float(np.abs(pi[s:s + m] - ref_pi[table['mask'][i]]).max()))
             self.assertLessEqual(worst, 1e-15)
-        target = float(ope._kl_rows(ope.tilt_rows(q, ref, mask, .05), ref, mask).mean())
-        shuffled = q.copy()
-        for i in range(n):
-            idx = np.flatnonzero(mask[i])
-            shuffled[i, idx] = q[i, idx[rng.permutation(len(idx))]]
-        tau_p, value, matched = ope.match_tau(shuffled, ref, mask, target, .01)
-        self.assertTrue(matched)
-        self.assertLessEqual(abs(value - target), .01 * target)  # converged within the tolerance
-        self.assertAlmostEqual(float(ope._kl_rows(ope.tilt_rows(shuffled, ref, mask, tau_p), ref, mask).mean()), value)
-        self.assertFalse(ope.match_tau(shuffled, ref, mask, 50., .01)[2])  # an unreachable boldness is flagged
-        self.assertEqual(ope.match_tau(shuffled, ref, mask, 0., .01)[:2], (ope.INF, 0.))
+        k0 = flat.permutation(4255355903, 0)  # the flat permutation is the per-row registered RNG
+        for i in range(5):
+            s, m = flat.starts[i], flat.lengths[i]
+            expected = ope.permuted(table['q_pi'][i], table['mask'][i], 4255355903, 0, table['sha8'][i])
+            self.assertTrue(np.array_equal(flat.q_pi[k0][s:s + m], expected[table['mask'][i]]))
+        perms = np.stack([flat.permutation(4255355903, k) for k in range(8)])
+        target = flat.mean_kl(flat.tilt(flat.q_pi, .05))
+        tau_p, value, status = ope.common_tau(flat, perms, target, .05, factor=100, iterations=60, tol=.01)
+        self.assertEqual(status, 'MATCHED')
+        self.assertLessEqual(abs(value - target), .01 * target)  # one temperature for every draw, within 1%
+        self.assertTrue(.05 / 100 <= tau_p <= .05 * 100)
+        tau_p, _, status = ope.common_tau(flat, perms, 50., .05, factor=100, iterations=60, tol=.01)
+        self.assertEqual((status, tau_p), ('NOT_MATCHABLE', .05))  # outside the attainable range: tau_p = tau
+        self.assertEqual(ope.common_tau(flat, perms, 0., .05, factor=100, iterations=60, tol=.01)[2], 'MATCHED')
+
+    def test_outcome_shuffle_null_has_power_against_a_logging_misspecification(self):
+        def suspect(shift):
+            table = power_table(shift)
+            eng = ope.Engine(table, draws=400, seeds={'game': 5, 'pitcher': 6}, invalid_share_max=.05,
+                             minima={'games': 1, 'pas': 1, 'pitchers': 1})
+            accs, info = ope.outcome_shuffle_null(eng, draws_k=20, seed=3477356613, subsets=['all', 'D:1se'])
+            flags = []
+            for (variant, sub), acc in accs.items():
+                cell = acc.cell().at(1, eng.draws, eng.share, '0.1')
+                flags.append(all(cell['delta'][u]['ci95'] is not None and (cell['delta'][u]['ci95'][0] > 0 or
+                                                                           cell['delta'][u]['ci95'][1] < 0)
+                                 for u in ope.UNITS))
+            return any(flags), info
+        flagged, info = suspect(0.)
+        self.assertFalse(flagged)  # the correct logging law: no ESTIMATOR_SUSPECT
+        self.assertEqual(info['pas_shuffled'], info['pas'])
+        flagged, _ = suspect(.25)
+        self.assertTrue(flagged)  # logging mass moved between two actions trips the flag
+
+    def test_derangement_never_self_donates(self):
+        rng = np.random.default_rng(0)
+        for m in (2, 3, 7):
+            for _ in range(50):
+                perm = ope.derangement(rng, m)
+                self.assertEqual(sorted(perm.tolist()), list(range(m)))
+                self.assertFalse((perm == np.arange(m)).any())
+
+
+def power_table(shift, seed=11, n_pa=1500, games=60, pitchers=40):
+    """True one-step advantage 0 (G independent of the action), actions drawn from b = [.5, .3, .2]; the recorded
+    logging law (and habit) moves ``shift`` of mass from action 0 to action 1."""
+    rng = np.random.default_rng(seed)
+    v, per_pa = 3, 2
+    n = n_pa * per_pa
+    pa_index = np.repeat(np.arange(n_pa), per_pa)
+    b_true = np.array([.5, .3, .2])
+    logging = np.array([.5 - shift, .3 + shift, .2])
+    a = rng.choice(v, size=n, p=b_true)
+    mask = np.ones((n, v), dtype=bool)
+    ref = np.tile(logging, (n, 1))
+    q = np.array([.6, .4, .5]) + .02 * rng.standard_normal((n, v))
+    taus = [ope.INF, .1]
+    model, rho = np.zeros((n, 1, 2)), np.zeros((n, 1, 2))
+    for j, tau in enumerate(taus):
+        pi = ope.tilt_rows(q, ref, mask, tau)
+        model[:, 0, j] = ((pi - ref) * q).sum(axis=1)
+        rho[:, 0, j] = pi[np.arange(n), a] / logging[a]
+    we_start = (.4 + .2 * rng.random(n_pa))[pa_index]
+    reward = (we_start[::per_pa] + .3 + .1 * rng.standard_normal(n_pa))[pa_index]
+    d = np.zeros((n, 3), dtype=bool)
+    d[:, 0] = rng.random(n) < .5
+    d[:, 2] = d[:, 0] & (rng.random(n) < .6)
+    first = np.zeros(n, dtype=bool)
+    first[::per_pa] = True
+    return {'n': n, 'families': ['temperature'], 'taus': taus, 'margins': MARGINS, 'dr_uses_pi': [False],
+            'observed': np.ones(n, dtype=bool), 'game': (pa_index % games) + 900000,
+            'pitcher': (pa_index % pitchers).astype(str).astype(object), 'pa_index': pa_index, 'G': reward,
+            'we_start': we_start, 'rho_ref': np.ones(n), 'on_mask': np.ones(n, dtype=bool), 'model_dr': model,
+            'model_pi': model.copy(), 'rho': rho, 'qa': q[np.arange(n), a][:, None], 'D': d,
+            'strikes': np.zeros(n, dtype=np.int64), 'pa_pos': np.zeros(n, dtype=bool), 'first_D0': d[:, 0] & first,
+            'first_eligible': first, 'status': np.array([pr.SUPPORTED] * n, dtype=object)}
 
 
 class BootstrapTests(StageCase):
-    def engine(self, minimum=None, draws=300):
+    def engine(self, draws=300):
         table = self.stage.scan().table()
-        return table, ope.Engine(table, draws=draws, seeds={'game': 5, 'pitcher': 6},
-                                 minimum=minimum or {'games': 1, 'pitchers': 1, 'pas': 1}, invalid_share_max=.5)
+        return table, ope.Engine(table, draws=draws, seeds={'game': 5, 'pitcher': 6}, invalid_share_max=.5,
+                                 minima={'games': 1, 'pas': 1, 'pitchers': 1})
 
     def test_cluster_bootstrap_is_deterministic_and_counts_invalid_replicates(self):
         keys = ['b', 'a', 'c', 'a', 'b', 'c', 'c']
@@ -380,29 +485,34 @@ class BootstrapTests(StageCase):
         self.assertTrue(np.array_equal(one.m, np.stack([np.bincount(s, minlength=3) for s in sample]).astype(float)))
         self.assertTrue(np.allclose(one.replicate(np.arange(7.)), one.m @ np.array([1 + 3, 0 + 4, 2 + 5 + 6])))
         table, eng = self.engine()
-        positivity_rows = eng.t['status'] == pr.LOGGING_POSITIVITY
-        self.assertEqual(int(positivity_rows.sum()), 1)
+        positivity = eng.t['status'] == pr.LOGGING_POSITIVITY  # the one positivity row lies in game 201
+        self.assertEqual(int(positivity.sum()), 1)
+        validity = eng.validity('two_strike')
+        self.assertTrue(np.array_equal(validity['units']['game'],
+                                       eng.boots['game'].replicate((eng.t['strikes'] == 2).astype(float)) > 0))
+        one_game = dict(table)  # D_0 kept only inside game 201: a replicate without game 201 is invalid
+        one_game['D'] = table['D'].copy()
+        one_game['D'][:, 0] &= table['game'] == 201
+        self.assertGreater(int(one_game['D'][table['observed'], 0].sum()), 0)
+        local = ope.Engine(one_game, draws=300, seeds={'game': 5, 'pitcher': 6}, invalid_share_max=1.,
+                           minima={'games': 1, 'pas': 1, 'pitchers': 1})
+        expected = int((local.boots['game'].m[:, local.boots['game'].order.index(201)] == 0).sum())
+        self.assertGreater(expected, 0)
+        self.assertEqual(local.record(local.family_cell('temperature', 'dr', 'D:0'))['0.1']['delta']['game'][
+            'invalid_replicates'], expected)
+        self.assertIsNone(ope.Engine(one_game, draws=300, seeds={'game': 5, 'pitcher': 6}, invalid_share_max=.05,
+                                     minima={'games': 1, 'pas': 1, 'pitchers': 1}).record(
+            local.family_cell('temperature', 'dr', 'D:0'))['0.1']['delta']['game']['ci95'])  # share > 0.05: INVALID
         cell = eng.family_cell('temperature', 'dr', 'all')
         again = self.engine()[1].family_cell('temperature', 'dr', 'all')
         for unit in ope.UNITS:
             self.assertTrue(np.array_equal(cell.reps[unit]['delta'], again.reps[unit]['delta'], equal_nan=True))
-        game_201 = eng.boots['game'].order.index(201)  # S-pos subset: PAs with a positivity node removed
-        validity = eng.validity('two_strike')
-        count = eng.boots['game'].replicate((eng.t['strikes'] == 2).astype(float))
-        self.assertTrue(np.array_equal(validity['units']['game'], count > 0))
-        self.assertGreater(game_201, -1)
-        strict = ope.Engine(table, draws=300, seeds={'game': 5, 'pitcher': 6},
-                            minimum={'games': 2, 'pitchers': 1, 'pas': 1}, invalid_share_max=.5)
-        expected_invalid = int((strict.boots['game'].drawn.sum(axis=1) < 2).sum())  # both games must be drawn
-        record = strict.record(strict.family_cell('temperature', 'dr', 'all'))[ope.tau_key(.05)]
-        self.assertEqual(record['delta']['game']['invalid_replicates'], expected_invalid)
-        self.assertGreater(expected_invalid, 0)
-        below = ope.Engine(table, draws=300, seeds={'game': 5, 'pitcher': 6},
-                           minimum={'games': 3, 'pitchers': 1, 'pas': 1}, invalid_share_max=.5)
-        self.assertIn('below the registered minimum',
-                      below.record(below.family_cell('temperature', 'dr', 'all'))['0.1']['delta']['game']['reason'])
+        strict = ope.Engine(table, draws=300, seeds={'game': 5, 'pitcher': 6}, invalid_share_max=.5,
+                            minima={'games': 30, 'pas': 50, 'pitchers': 30})
+        self.assertTrue(strict.validity('all')['below_minima'])  # a contrast-level fact, not an interval rule
+        self.assertIsNotNone(strict.record(strict.family_cell('temperature', 'dr', 'all'))['0.1']['delta']['game']['ci95'])
 
-    def test_paired_difference_of_identical_columns_is_exactly_zero(self):
+    def test_paired_difference_of_identical_columns_and_cell_identities(self):
         _, eng = self.engine()
         cell = eng.family_cell('temperature', 'dr', 'all')
         same = ope.paired(cell, eng.family_cell('temperature', 'dr', 'all'))
@@ -415,29 +525,107 @@ class BootstrapTests(StageCase):
         r = eng.record(cell)
         self.assertIsNone(r['inf']['R']['mean'])  # M = 0 at tau = inf: the realized/promised ratio is undefined
         self.assertEqual(r['inf']['delta']['mean'], 0.)
-        m, c, dlt = r['0.05']['M']['mean'], r['0.05']['C']['mean'], r['0.05']['delta']['mean']
+        m, c, dlt = r['0.05']['M_dr']['mean'], r['0.05']['C']['mean'], r['0.05']['delta']['mean']
         self.assertAlmostEqual(m + c, dlt, places=15)
         self.assertAlmostEqual(r['0.05']['R']['mean'], dlt / m, places=12)
+        self.assertGreater(r['0.05']['M_pi']['mean'], 0.)  # the KL argmax property of the temperature law
+        self.assertAlmostEqual(r['0.05']['R_pi']['mean'], dlt / r['0.05']['M_pi']['mean'], places=12)
+        p_plus, p_minus = r['0.05']['delta']['game']['p_plus'], r['0.05']['delta']['game']['p_minus']
+        self.assertAlmostEqual(p_plus + p_minus, 1., places=12)
 
-    def test_trend_max_t_and_bounds(self):
-        table, eng = self.engine()
+    def test_trend_max_t(self):
+        _, eng = self.engine()
         cell = eng.family_cell('temperature', 'dr', 'all')
-        ev = {ope.tau_key(t): True for t in TAUS}
-        result = ope.trend(cell, TAUS, ev, eng.draws, .5)
+        used = [ope.tau_key(t) for t in TAUS[1:]]
+        result = ope.trend(cell, TAUS, used, eng.draws, .5)
         x = np.log(1 / np.array(TAUS[1:]))
-        y = cell.point['delta'][1:]
-        self.assertAlmostEqual(result['slope'], float(np.polyfit(x, y, 1)[0]), places=12)
-        self.assertEqual(ope.trend(cell, TAUS, {'0.1': True}, eng.draws, .5)['slope'], None)  # one evaluable tau
-        mt = ope.max_t(cell, TAUS, ev, eng.draws, .5)
-        self.assertTrue(0. <= mt['game']['p_value'] <= 1.)
+        self.assertAlmostEqual(result['slope'], float(np.polyfit(x, cell.point['delta'][1:], 1)[0]), places=12)
+        self.assertIsNone(ope.trend(cell, TAUS, ['0.1'], eng.draws, .5)['slope'])  # one evaluable tau
+        mt = ope.max_t(cell, TAUS, used, eng.draws, .5, .025)
+        self.assertEqual(mt['p'], max(mt['game']['p_value'], mt['pitcher']['p_value']))
+        self.assertEqual(mt['significant'], mt['p'] <= .025)
+
+    def test_h_p_bounds_arithmetic_on_a_toy(self):
+        # PA 0 observed (2 rows), PA 1 unobserved (2 SUPPORTED rows), PA 2 unobserved (1 off-mask row)
+        taus = [ope.INF, .1]
+        model = np.zeros((5, 1, 2))
+        model[:, 0, 1] = [.01, .02, .03, -.01, .05]
+        rho = np.ones((5, 1, 2))
+        rho[:, 0, 1] = [1.5, .5, 2., .25, 0.]
+        rho[4, 0, 0] = 0.
+        table = {'families': ['temperature'], 'taus': taus, 'dr_uses_pi': [False], 'model_dr': model,
+                 'model_pi': model.copy(), 'rho': rho, 'rho_ref': np.array([1., 1., 1., 1., 0.]),
+                 'on_mask': np.array([True, True, True, True, False]), 'qa': np.array([[.4], [.5], [.3], [.6], [0.]]),
+                 'G': np.array([.7, .7, np.nan, np.nan, np.nan]), 'observed': np.array([True, True, False, False, False]),
+                 'pa_index': np.array([0, 0, 1, 1, 2])}
         b = ope.bounds(table, 'temperature')
-        self.assertEqual((b['unobserved_decisions'], b['unobserved_pas']), (4, 1))
-        observed = int(table['observed'].sum())
-        for key, (lo, hi) in b['bounds'].items():
-            point = eng.record(cell)[key]['delta']['mean'] * observed / len(table['observed'])
-            self.assertLessEqual(lo, hi)
-            self.assertLessEqual(lo, point + 1e-15)  # the unobserved PAs' model terms enter both ends
-        self.assertEqual(b['bounds']['inf'], [0., 0.])
+        observed = (.01 + .5 * (.7 - .4)) + (.02 - .5 * (.7 - .5))
+        c0 = 1. * (0 - .3) + (-.75) * (0 - .6)  # PA 1: sum (rho' - rho_r)(g - q_dr[a]) at g = 0 and g = 1
+        c1 = 1. * (1 - .3) + (-.75) * (1 - .6)
+        lo = (observed + (.03 - .01) + min(c0, c1) + .05) / 5
+        hi = (observed + (.03 - .01) + max(c0, c1) + .05) / 5
+        self.assertAlmostEqual(b['bounds']['0.1'][0], lo, places=15)
+        self.assertAlmostEqual(b['bounds']['0.1'][1], hi, places=15)
+        self.assertEqual((b['unobserved_decisions'], b['unobserved_pas']), (3, 2))
+
+
+def decision_inputs(**contrast_overrides):
+    base = {'subset': 'all', 'evaluable': True, 'not_evaluable_reasons': [], 'delta': .002,
+            'se': {'game': .0007, 'pitcher': .0008}, 'ci95': {'game': [.0006, .0034], 'pitcher': [.0004, .0036]},
+            'p_plus': {'game': .001, 'pitcher': .002}, 'p_minus': {'game': .999, 'pitcher': .998},
+            'perm_paired_ci': {'game': [.0001, .003], 'pitcher': [.0002, .003]},
+            's_pos': {'delta': .0019, 'ci': {'game': [.0003, .0035], 'pitcher': [.0002, .0036]}}}
+    contrasts = {'P': copy.deepcopy(base), 'P_D': {**copy.deepcopy(base), 'subset': 'D:1se'}}
+    for name, override in contrast_overrides.items():
+        contrasts[name].update(override)
+    return {'study': {'estimator_suspect': False, 'reasons': []}, 'contrasts': contrasts,
+            'max_t': {'E': ['0.5', '0.2', '0.1'], 'p': .5, 'significant': False},
+            'studentized': {'0.5': 1., '0.2': 2.5, '0.1': 2.5}, 'alpha': .025, 'mde_multiplier': 2.8016,
+            'primary_tau': '0.1'}
+
+
+class DecideTests(unittest.TestCase):
+    def test_every_label_branch(self):
+        out = ope.decide(decision_inputs())
+        self.assertEqual([out['contrasts'][n]['label'] for n in ('P', 'P_D')], ['GAIN', 'GAIN'])
+        self.assertEqual((out['stage2']['enter'], [c['contrast'] for c in out['stage2']['contrasts']]),
+                         (True, ['P', 'P_D']))
+        self.assertEqual(out['holm']['plus']['steps'][0]['threshold'], .0125)  # alpha / 2 first, then alpha
+        holm = ope.decide(decision_inputs(P={'p_plus': {'game': .02, 'pitcher': .02}}))
+        self.assertEqual(holm['holm']['plus']['rejected'], ['P', 'P_D'])  # .002 <= .0125, then .02 <= .025
+        stop = ope.decide(decision_inputs(P={'p_plus': {'game': .02, 'pitcher': .02}},
+                                          P_D={'p_plus': {'game': .02, 'pitcher': .03}}))
+        self.assertEqual(stop['holm']['plus']['rejected'], [])  # the smallest .02 > .0125: Holm stops
+        self.assertEqual(stop['contrasts']['P']['label'], 'NO_DIFFERENCE_ESTABLISHED')
+        self.assertAlmostEqual(stop['contrasts']['P']['mde'], 2.8016 * .0008)
+        sensitive = ope.decide(decision_inputs(P={'perm_paired_ci': {'game': [-.001, .003], 'pitcher': [.0002, .003]}}))
+        self.assertEqual(sensitive['contrasts']['P']['label'], 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE')
+        spos = ope.decide(decision_inputs(P_D={'s_pos': {'delta': -.001, 'ci': {'game': [-.002, .001],
+                                                                                  'pitcher': [-.002, .001]}}}))
+        self.assertEqual(spos['contrasts']['P_D']['label'], 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE')
+        harm_side = {'delta': -.002, 'p_plus': {'game': .999, 'pitcher': .998}, 'p_minus': {'game': .001, 'pitcher': .002},
+                     's_pos': {'delta': -.0019, 'ci': {'game': [-.0035, -.0003], 'pitcher': [-.0036, -.0002]}}}
+        harm = ope.decide(decision_inputs(P=harm_side))
+        self.assertEqual(harm['contrasts']['P']['label'], 'HARM')
+        self.assertEqual((harm['flags'], harm['stage2']['enter']), (['HARM_ESCALATE'], False))
+        weak_harm = ope.decide(decision_inputs(P={**harm_side, 's_pos': {'delta': .001, 'ci': {
+            'game': [-.001, .002], 'pitcher': [-.001, .002]}}}))
+        self.assertEqual(weak_harm['contrasts']['P']['label'], 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE')
+        gated = ope.decide(decision_inputs(P={'evaluable': False, 'not_evaluable_reasons': ['eligibility gate failed']}))
+        self.assertEqual(gated['contrasts']['P']['label'], 'NOT_EVALUABLE:P')
+        self.assertEqual(gated['holm']['plus']['steps'][-1]['contrast'], 'P')  # a non-evaluable contrast has p = 1
+        suspect = ope.decide({**decision_inputs(), 'study': {'estimator_suspect': True, 'reasons': ['shuffle']}})
+        self.assertEqual((suspect['study_label'], suspect['stage2']['enter']), ('ESTIMATOR_SUSPECT', False))
+        invalid = ope.decide({**decision_inputs(), 'study': {'invalid': True, 'estimator_suspect': True}})
+        self.assertEqual(invalid['study_label'], 'INVALID')
+        null = {'p_plus': {'game': .4, 'pitcher': .45}, 'p_minus': {'game': .6, 'pitcher': .55}}
+        quiet = ope.decide(decision_inputs(P=null, P_D=null))
+        self.assertEqual((quiet['stage2']['enter'], quiet['stage2']['reason']), (False, 'no GAIN, max-t not significant'))
+        maxt = decision_inputs(P=null, P_D=null)
+        maxt['max_t'] = {'E': ['0.5', '0.2', '0.1'], 'p': .01, 'significant': True}
+        chosen = ope.decide(maxt)
+        self.assertTrue(chosen['stage2']['enter'])
+        self.assertEqual(chosen['stage2']['contrasts'][0]['tau'], '0.2')  # tie 2.5 = 2.5 -> the larger tau
 
 
 class RunnerTests(StageCase):
@@ -454,26 +642,38 @@ class RunnerTests(StageCase):
         frame = self.stage.frame
         blocks = rpv.game_blocks(frame, GAMES, 'dev')
         we = WE()
-        facts = ope.frame_facts(frame, blocks, preq.game_table(frame, set(GAMES)),
-                                lambda s, h: float(we.predict_defense(s, h)))
+        defense = lambda s, h: float(we.predict_defense(s, h))
+        facts = ope.frame_facts(frame, blocks, preq.game_table(frame, set(GAMES)), defense)
         self.assertEqual(list(facts), list(self.stage.facts))
+        from pitchmdp.game import GameState
         for pa_id, info in self.stage.facts.items():
             for key in ('game', 'reward', 'kind', 'reason', 'end', 'end_kind', 'flags', 'start_pitcher', 'date'):
                 self.assertEqual(facts[pa_id][key], info[key], (pa_id, key))
-        sealed = ope.sealed_rows(pd.read_parquet(self.stage.dir / 'pa_values.parquet').to_dict('records'))
-        check = ope.FactsCheck('l1r', 1e-12)
+            first = frame.iloc[info['positions'][0]]
+            self.assertEqual(facts[pa_id]['we_start'], defense(GameState.from_row(first), first.inning_topbot == 'Top'))
+        sealed = ope.sealed_rows(pd.read_parquet(self.stage.dir / 'pa_values.parquet',
+                                                 columns=list(ope.PA_VALUE_COLUMNS)).to_dict('records'))
+        check = ope.FactsCheck('l1r')
         pas = {p: {**facts[p], 'in_population': sealed[p]['in_population']} for p in sealed}
         by = {p: rows for p, _, rows in est.by_pa(self.stage.ledger.iter_decisions(), pas)}
         for p in sealed:
-            check.check(p, by[p], ope.estimator_info(sealed[p], pas[p]), sealed[p], pas[p])
-        self.assertEqual(check.record()['pas'], len(sealed))
-        self.assertGreater(check.record()['reward_verified_pas'], 0)
-        verified = next(iter(check.reward_verified))
-        g = pas[verified]['reward']
-        wrong = {**pas[verified], 'reward': g - 1e-6 if g > .5 else g + 1e-6}  # stays inside [0, 1]
+            check.check(p, by[p], ope.estimator_info(sealed[p], pas[p], len(by[p])), sealed[p], pas[p])
+        dr = json.loads((self.stage.dir / 'dr.json').read_text())
+        record = check.record(dr)
+        self.assertEqual(record['pas'], len(sealed))
+        self.assertEqual(record['aggregate_check']['abs_diff'], 0.)  # the frame rewards reproduce the sealed L2 mean
+        wrong = {p: {**f, 'reward': None if f['reward'] is None else f['reward'] * .5} for p, f in pas.items()}
+        shifted = ope.FactsCheck('l1r')
+        for p in sealed:
+            shifted.check(p, by[p], ope.estimator_info(sealed[p], wrong[p], len(by[p])), sealed[p], wrong[p])
+        with self.assertRaisesRegex(pa.IntegrityError, 'mean frame reward over the L2 PAs'):
+            shifted.record(dr)
+        missing = dict(pas)
+        p0 = next(p for p in sealed if sealed[p]['status'] == est.COMPLETE)
+        missing[p0] = {**pas[p0], 'reward': None, 'kind': preq.NO_TERMINAL, 'reason': 'no_terminal_event'}
         with self.assertRaisesRegex(pa.IntegrityError, 'pa_values cross-check'):
-            ope.FactsCheck('l1r', 1e-12).check(verified, by[verified], ope.estimator_info(sealed[verified], wrong),
-                                              sealed[verified], wrong)
+            ope.FactsCheck('l1r').check(p0, by[p0], ope.estimator_info(sealed[p0], missing[p0], len(by[p0])), sealed[p0],
+                                        missing[p0])
 
     def test_runner_refuses_bad_pins_and_existing_output_before_reading(self):
         path, out = self.write_config('pins', pins={**make_config(self.stage.dir, '/x')['pins'], 'dr.json': '0' * 64})
@@ -501,8 +701,8 @@ class RunnerTests(StageCase):
         for name, override in (('inside', {'output_dir': str(self.stage.dir / 'x')}), ('unknown', {'surprise': 1}),
                                ('grid', {'tau_grid': [.5, 'inf', .1]}), ('primary', {'primary': {
                                    'family': 'temperature', 'tau': .05, 'subset': 'all', 'variant': 'dr'}}),
-                               ('margins', {'disagreement': {'q': 'q_reference', 'ties': 'not_in_D', 'margins': MARGINS,
-                                                             'confident': '1se'}})):
+                               ('confirm', {'confirmatory': {'P': 'all', 'P_D': 'D:0'}}),
+                               ('guards', {'guards': {'max_seconds': 600}})):
             path, _ = self.write_config(name, **override)
             self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2, name)
         manifest = json.loads((self.stage.dir / 'manifest.json').read_text())
@@ -517,7 +717,9 @@ class RunnerTests(StageCase):
         self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2)
         path, out = self.write_config('drq', expected_dr_q_source='planning_reuse')
         self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2)
-        self.assertIn('DR q-hat source', json.loads((out / 'check' / 'failed.json').read_text())['error'])
+        failed = json.loads((out / 'check' / 'failed.json').read_text())
+        self.assertIn('DR q-hat source', failed['error'])
+        self.assertEqual(failed['study_label'], 'INVALID')
 
     def test_check_on_the_synthetic_stage_writes_the_expected_counts_and_prediag(self):
         path, out = self.write_config('check')
@@ -529,7 +731,8 @@ class RunnerTests(StageCase):
                                                       pr.LOGGING_POSITIVITY: 1, pr.NO_LOGGED_ACTION: 2,
                                                       pr.UNKNOWN_PITCHER: 1, pr.MISSING_LABEL: 2, pr.MID_PA: 16})
         counts = doc['counts']
-        self.assertEqual(counts['eligible_decisions'], 43)
+        self.assertEqual((counts['prediag_decisions'], counts['estimation_decisions'],
+                          counts['prediag_minus_estimation']), (47, 43, 4))
         self.assertEqual(counts['eligible_by_status'], {pr.SUPPORTED: 38, pr.OUTSIDE_POLICY_SUPPORT: 4,
                                                         pr.LOGGING_POSITIVITY: 1})
         self.assertEqual(counts['excluded_decisions'], {
@@ -538,48 +741,44 @@ class RunnerTests(StageCase):
         self.assertEqual(counts['e0_pas_without_reward'], {'TERMINAL_VALUE_MISSING:end_state_gap': 1})
         self.assertEqual((counts['pas']['pas'], counts['pas']['e0'], counts['pas']['eligible_pas']), (16, 13, 12))
         self.assertEqual(counts['p_pos']['decision'], 1 / 43)
-        self.assertEqual(counts['p_out']['pa'], 4 / 12)
         identity = doc['provenance']['identity_check']
         self.assertEqual((identity['rows_checked'], identity['max_abs_diff_candidate']), (47, 0.))
-        self.assertEqual(doc['provenance']['ledger']['header']['dr_q']['source'], 'evaluation_seed')
-        self.assertEqual(doc['provenance']['ledger']['header']['candidate_sha256'], self.stage.identity['sha256'])
-        self.assertEqual(doc['provenance']['pa_facts']['crosscheck']['pas'], 16)
-        expected = [0, 0, 0]
-        e0 = {r['pa_id'] for r in self.stage.rows if r['in_population']}
-        rewards = {p: f['reward'] for p, f in self.stage.facts.items()}
-        for row in self.stage.decisions:
-            if row['status'] in ope.RESULT_STATUSES and row['pa_id'] in e0 and rewards[row['pa_id']] is not None:
-                d = ope.decision_arrays(row, 3)
-                flags = ope.disagreement(d['q_pi'], d['reference'], d['mask'], d['se'], MARGINS)[0]
-                expected = [e + f for e, f in zip(expected, flags)]
-        self.assertEqual(list(counts['disagreement']['eligible'].values()), expected)
-        self.assertGreaterEqual(expected[0], max(expected[1], expected[2]))  # D_0.005, D_1se are slices of D_0
+        header = doc['provenance']['ledger']['header']
+        self.assertEqual((header['dr_q']['source'], header['candidate_sha256']), ('evaluation_seed',
+                                                                                  self.stage.identity['sha256']))
+        crosscheck = doc['provenance']['pa_facts']['crosscheck']
+        self.assertEqual((crosscheck['pas'], crosscheck['aggregate_check']['abs_diff']), (16, 0.))
         self.assertNotIn('dose_response', doc)  # --check computes no G-dependent number
-        prediag = json.loads((out / 'check' / 'prediag.json').read_text())
-        row = prediag['prediag']['families']['temperature']['0.1']
-        for key in ('decision_ess', 'pa_ess', 'pa_ess_ratio_candidate_reference', 'game_ess', 'noise_ratio_q90',
-                    'mean_kl', 'mean_M', 'max_rho_share', 'evaluable'):
-            self.assertIn(key, row)
-        self.assertAlmostEqual(prediag['prediag']['families']['temperature']['inf']['pa_ess_ratio_candidate_reference'], 1.)
-        text = json.dumps(prediag['prediag'])
+        prediag = json.loads((out / 'check' / 'prediag.json').read_text())['prediag']
+        self.assertEqual(prediag['common']['prediag_minus_estimation'], 4)
+        self.assertLess(prediag['common']['p_D']['D:1se'], prediag['common']['p_D']['D:0'])
+        gate = prediag['gates']['temperature']['0.1']['all']
+        for key in ('ess_ratio', 'max_weight_share', 'games', 'pitchers', 'noise_ratio_q90', 'checks', 'pass'):
+            self.assertIn(key, gate)
+        self.assertTrue(gate['noise_exempt'])
+        self.assertFalse(prediag['gates']['temperature']['0.05']['all']['noise_exempt'])
+        row = prediag['families']['temperature']['0.1']
+        self.assertGreater(row['mean_M_pi'], 0.)
+        self.assertIn('pa_product_ess_descriptive', row)
+        text = json.dumps(prediag)
         for forbidden in ('"delta"', '"C"', '"R"', 'reward', 'ci95'):  # no G-dependent quantity in prediag
             self.assertNotIn(forbidden, text)
         names = sorted(line.split('  ')[1] for line in (out / 'check' / 'SHA256SUMS').read_text().splitlines())
         self.assertEqual(names, ['check.json', 'prediag.json', 'started.json'])
         self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2)  # never overwritten
 
-    def test_run_writes_every_section_and_matches_an_independent_recomputation(self):
+    def test_run_writes_every_section_the_decision_and_matches_an_independent_recomputation(self):
         path, out = self.write_config('run', outputs={'decisions_parquet': True})
         self.assertEqual(runner.main(['--config', str(path), '--run'], env=self.env()), 0)
         doc = json.loads((out / 'run' / 'results.json').read_text())
-        for section in ('provenance', 'counts', 'prediag', 'primary', 'dose_response', 'subsets', 'placebos',
-                        'sensitivities', 'bounds', 'trend', 'max_t', 'pa_level'):
+        for section in ('provenance', 'counts', 'prediag', 'dose_response', 'subsets', 'placebos', 'sensitivities',
+                        'bounds', 'trend', 'max_t', 'pa_level', 'decision'):
             self.assertIn(section, doc)
-        self.assertEqual(doc['tau_inf_identity'], {'max_abs_model': 0., 'max_abs_rho_minus_rho_ref': 0.})
+        self.assertTrue(doc['tau_inf_identity']['zero'])
         e0 = {r['pa_id'] for r in self.stage.rows if r['in_population']}
         rewards = {p: f['reward'] for p, f in self.stage.facts.items()}
         for tau in (.05, .02):
-            values, models, ips = [], [], []
+            values, models, models_pi, ips = [], [], [], []
             for row in self.stage.decisions:
                 if row['status'] not in ope.RESULT_STATUSES or row['pa_id'] not in e0 or rewards[row['pa_id']] is None:
                     continue
@@ -593,60 +792,79 @@ class RunnerTests(StageCase):
                 weight = (pi[a] - ref[a]) / logging[a] if mask[a] else 0.
                 values.append(model + weight * (g - qh[a]))
                 models.append(model)
+                models_pi.append(float(((pi - ref) * np.where(mask, qp, 0.))[mask].sum()))
                 ips.append(weight * g)
             cell = doc['dose_response']['temperature']['dr'][repr(tau)]
             self.assertEqual(cell['n'], 43)
             self.assertAlmostEqual(cell['delta']['mean'], float(np.mean(values)), places=13)
-            self.assertAlmostEqual(cell['M']['mean'], float(np.mean(models)), places=13)
+            self.assertAlmostEqual(cell['M_dr']['mean'], float(np.mean(models)), places=13)
+            self.assertAlmostEqual(cell['M_pi']['mean'], float(np.mean(models_pi)), places=13)
             self.assertAlmostEqual(doc['dose_response']['temperature']['ips'][repr(tau)]['delta']['mean'],
                                    float(np.mean(ips)), places=13)
-            self.assertIsNotNone(cell['delta']['game']['ci95'])
-        self.assertEqual(doc['primary']['tau'], '0.1')
-        self.assertEqual(doc['primary']['cell'], doc['dose_response']['temperature']['dr']['0.1'])
-        self.assertEqual(set(doc['dose_response']['temperature']), {'dr', 'ips', 'sndr', 'switch:5', 'switch:10'})
-        self.assertEqual(set(doc['subsets']['by_subset']), {'all', 'D:0', 'D:0.005', 'D:1se', 'not_D:0', 'two_strike'})
+        decision = doc['decision']
+        self.assertIn(decision['contrasts']['P']['label'], ('GAIN', 'HARM', 'NO_DIFFERENCE_ESTABLISHED',
+                                                            'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'))
+        self.assertEqual(set(decision['inputs']['contrasts']), {'P', 'P_D'})
+        self.assertEqual(decision['inputs']['contrasts']['P_D']['subset'], 'D:1se')
         placebos = doc['placebos']
-        self.assertEqual(placebos['perm']['draws'], 3)
-        for key, entry in placebos['perm']['tau_p'].items():
-            if key != 'inf':
-                self.assertLessEqual(entry['max_relative_kl_mismatch'], .01 + 1e-12)
-        self.assertLessEqual(placebos['batch_mirror_max_abs_diff'], 1e-12)
-        self.assertEqual(set(placebos['outcome_shuffle']) >= {'dr', 'ips'}, True)
-        self.assertEqual(placebos['donor']['status'], 'NOT_IMPLEMENTED')
-        self.assertIn('paired_real_minus_mean', placebos['estimator_stress'])
-        self.assertIsNotNone(doc['trend']['temperature']['slope'])
-        self.assertIn('p_value', doc['max_t']['temperature']['game'])
+        self.assertEqual(placebos['perm']['tau_p']['0.1']['status'], 'MATCHED')
+        self.assertIn('band', placebos['perm']['by_contrast']['P'])
+        self.assertNotIn('band', placebos['neg']['P'])  # neg / inf: paired CI only
+        shuffle = placebos['outcome_shuffle_null']
+        self.assertEqual((shuffle['seed'], set(shuffle['by_contrast']['P'])), (3477356613, {'dr', 'ips'}))
+        self.assertEqual(doc['bounds']['H_P']['tau'], '0.1')
         self.assertEqual(doc['bounds']['temperature']['unobserved_pas'], 1)
-        self.assertIn('cross_replicate', doc['sensitivities'])
+        self.assertIn('s_pos', doc['sensitivities'])
         rows = pd.read_csv(out / 'run' / 'per_tau.csv')
         self.assertEqual(len(rows) % len(GRID), 0)
-        self.assertIn('placebos', set(rows['section']))
         decisions = pd.read_parquet(out / 'run' / 'decisions.parquet')
         self.assertEqual(len(decisions), 43)
         self.assertTrue((decisions['delta_inf'] == 0).all())
         names = sorted(line.split('  ')[1] for line in (out / 'run' / 'SHA256SUMS').read_text().splitlines())
         self.assertEqual(names, ['decisions.parquet', 'per_tau.csv', 'prediag.json', 'results.json', 'started.json'])
         self.assertEqual(json.loads((out / 'run' / 'prediag.json').read_text())['prediag'], doc['prediag'])
-        self.assertIsNotNone(doc['provenance']['run']['peak_rss_bytes'])
 
-    def test_registered_thresholds_mark_small_samples_descriptive(self):
-        path, out = self.write_config('strict', evaluability={'ess_ratio_min': .5, 'noise_q90_max': .5,
-                                                              'game_ess_min': 30, 'pa_ess_min': 100})
+    def test_registered_gate_marks_the_small_stage_not_evaluable(self):
+        path, out = self.write_config('strict', gate=copy.deepcopy(STRICT),
+                                      sample_minima={'games': 30, 'pas': 50, 'pitchers': 30})
         self.assertEqual(runner.main(['--config', str(path), '--run'], env=self.env()), 0)
         doc = json.loads((out / 'run' / 'results.json').read_text())
-        self.assertFalse(any(row['evaluable'] for row in doc['prediag']['families']['temperature'].values()))
+        self.assertFalse(doc['prediag']['gates']['temperature']['0.1']['all']['pass'])
+        self.assertEqual([doc['decision']['contrasts'][n]['label'] for n in ('P', 'P_D')],
+                         ['NOT_EVALUABLE:P', 'NOT_EVALUABLE:P_D'])
+        self.assertFalse(doc['decision']['stage2']['enter'])
         self.assertTrue(doc['dose_response']['temperature']['dr']['0.1']['descriptive'])
         self.assertIsNone(doc['trend']['temperature']['slope'])
-        self.assertIn('reason', doc['max_t']['temperature'])
 
-    def test_hang_guard_aborts_with_a_failure_record(self):
+    def test_the_registration_template_matches_the_schema(self):
+        template = json.loads((HERE.parent / 'scripts' / 'run_ope_onestep.config-template.json').read_text())
+        with self.assertRaises(pa.IntegrityError):  # the FILL placeholders are refused as they are
+            runner.validate_config(template)
+        filled = json.loads(json.dumps(template).replace('"FILL_FROM_S6_MANIFEST"', '"' + 'e' * 64 + '"'))
+        filled.update(output_dir=str(self.root / 'template-out'), source_commit=None)
+        spec = runner.validate_config(filled)
+        self.assertEqual(len(spec['pa_facts']['policy_registration']['addenda']), 8)
+        self.assertEqual(spec['guards'], {'max_seconds': 7200, 'max_rss_gb': 8})
+        self.assertEqual(spec['placebos']['outcome_shuffle_null_seed'], 3477356613)
+        self.assertEqual([ope.tau_key(t) for t in spec['taus']], ['inf', '0.5', '0.2', '0.1', '0.09', '0.07', '0.05',
+                                                                   '0.02'])
+        for link in [filled['pa_facts']['policy_registration']['config'],
+                     *filled['pa_facts']['policy_registration']['addenda']]:  # the committed chain bytes
+            self.assertEqual(sha(runner._resolve(link['path'])), link['sha256'], link['path'])
+
+    def test_guards_abort_with_a_failure_record(self):
         path, out = self.write_config('guard')
         self.assertEqual(runner.main(['--config', str(path), '--run', '--max-seconds', '1e-9'], env=self.env()), 3)
         failed = json.loads((out / 'run' / 'failed.json').read_text())
-        self.assertEqual(failed['error_type'], 'HangGuardExceeded')
+        self.assertEqual((failed['error_type'], failed['study_label']), ('HangGuardExceeded', None))
         self.assertFalse((out / 'run' / 'results.json').exists())
+        path, out = self.write_config('loose', guards={'max_seconds': 1e-9, 'max_rss_gb': 8})
+        self.assertEqual(runner.main(['--config', str(path), '--run', '--max-seconds', '600'], env=self.env()), 3)
+        self.assertEqual(json.loads((out / 'run' / 'started.json').read_text())['guards']['max_seconds'], 1e-9)
         path, out = self.write_config('tolerance', sealed_tau=.05, primary={'family': 'temperature', 'tau': .05,
-                                                                              'subset': 'all', 'variant': 'dr'})
+                                                                              'subset': 'all', 'variant': 'dr'},
+                                      gate={**copy.deepcopy(OPEN), 'noise_exempt': [{'family': 'temperature',
+                                                                                     'tau': .05}]})
         self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2)
         self.assertIn('sealed tau', json.loads((out / 'check' / 'failed.json').read_text())['error'])
 
