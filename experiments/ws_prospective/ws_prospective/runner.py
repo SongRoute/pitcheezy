@@ -38,10 +38,51 @@ class Abstain(Exception):
 ABSTAIN_CODES = frozenset((
     "NO_SOURCE_BODY", "SOURCE_BODY_ABSENT", "SOURCE_BODY_SHA_INVALID", "SOURCE_BODY_OTHER_GAME",
     "SOURCE_SHA_MISMATCH", "BODY_CONTAINS_TARGET", "CONTEXT_DISAGREES", "CONTEXT_STATE_MISMATCH",
-    "NO_REGISTERED_CANDIDATE_SCORED", "NO_CANDIDATE_TYPE", "MODEL_ABSTAIN"))
+    "NO_REGISTERED_CANDIDATE_SCORED", "NO_CANDIDATE_TYPE", "MODEL_ABSTAIN",
+    "STRICT_IDENTITY_REASSIGNED"))
 ABSTAIN_FAMILIES = ("bridge_", "native_", "bad_schema_or_hash:", "missing_input:",
                     "missing_profile:", "unsupported_player:", "no_supported_action:",
                     "predictor_error:", "seq_predictor_error:")
+
+
+# ERROR reasons keep only the exception type, except for these constant messages
+# (no game data) raised by the adapters / pinned strict ledger, kept for diagnosis.
+ERROR_MESSAGE_WHITELIST = frozenset((
+    # pinned captured_native_state.py / fullseason_stream.py (strict ledger)
+    "physical/provider identity reassignment",
+    "stale or conflicting native receipt revision",
+    # adapter_t.py
+    "no registered candidate type is in the bridge TYPES",
+    "native state SQLite must use single-file rollback journal mode",
+    "normalizer_sha256 != sha(native source pins)",
+    "adapter identity changed",
+    "adapter config changed",
+    "native source row custody or acceptance changed",
+    "duplicate native physical key in one body",
+    "context game_pk != adapter game",
+    "stored snapshot does not match the context's source sha/game",
+    "captured body game/officialDate mismatch",
+    "candidate receipt proof or query identity changed",
+    "experimental result claimed readiness or prospectivity",
+    "invalid experimental seven-leaf output",
+    "leaf order changed",
+    # store_source.read_snapshot_raw and this runner
+    "stored snapshot body does not match its sha",
+    "invalid probability vector",
+))
+
+
+def error_reason(e: BaseException) -> str:
+    """``Type`` or, for a whitelisted constant message only, ``Type:message`` (sanitized)."""
+    import re
+    name = type(e).__name__
+    try:
+        msg = str(e)
+    except Exception:  # noqa: BLE001 - an unprintable exception keeps its type only
+        return name
+    if msg not in ERROR_MESSAGE_WHITELIST:
+        return name
+    return re.sub(r"[^A-Za-z0-9_:./ -]", "_", f"{name}:{msg}")[:120]
 
 
 def sanitize_reason(reason: str) -> str:
@@ -163,7 +204,7 @@ class GameRunner:
         except Abstain as e:
             probs, status, reason = None, "ABSTAIN", sanitize_reason(str(e))
         except Exception as e:  # noqa: BLE001 - recorded, never fatal for the game
-            probs, status, reason = None, "ERROR", type(e).__name__  # no message text (may carry data)
+            probs, status, reason = None, "ERROR", error_reason(e)  # whitelisted constant text only
         t1 = clk.mono_ns()
         gen_wall = clk.wall_ns()
         timing = "POST_HOC_REPLAY" if post_hoc else "PRE_RECEIPT"

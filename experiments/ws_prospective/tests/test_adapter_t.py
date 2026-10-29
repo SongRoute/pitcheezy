@@ -462,3 +462,194 @@ def test_timing_and_rss(run_once):
               "peak_rss_mb_after_run": rss1 / div / 1048576}
     print("\nTIMING " + json.dumps(report))
     assert max(all_ms) < 2000
+
+
+# ------------------------------------- strict identity reassignment (light, fakes only)
+REASSIGN = "physical/provider identity reassignment"
+
+
+class _FakeBridge:
+    """captured_bridge.step stand-in: one event per pitch (event_id = playId)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def step(self, feed, *, game_pk, game_date, receipt_seq, source_sha256, candidate_pitch_type):
+        self.calls += 1
+        events = []
+        for play in feed["liveData"]["plays"]["allPlays"]:
+            ab = play["about"]["atBatIndex"] + 1
+            for ev in play["playEvents"]:
+                if ev.get("isPitch"):
+                    events.append({"event_id": ev["playId"], "key": [game_pk, ab, ev["pitchNumber"]],
+                                   "revision": receipt_seq, "row": {}})
+        cur = feed["liveData"]["plays"]["currentPlay"]
+        cand = None
+        if not cur["about"]["isComplete"]:
+            ab, pn = cur["about"]["atBatIndex"] + 1, len(cur["playEvents"]) + 1
+            cand = {"decision_id": f"d{receipt_seq}-{ab}-{pn}", "pitch_type_basis": "hypothetical_candidate",
+                    "coverage": {"source_sha256": source_sha256},
+                    "query": {"at_bat_number": ab, "pitch_number": pn, "pitch_type": candidate_pitch_type}}
+        return {"events": events, "candidate": cand, "abstain_reason": None if cand else "pa_complete"}
+
+
+class _FakeNative:
+    CONTRACT = "fake"
+
+    @staticmethod
+    def inspect_tokens(feed, **kw):
+        return []
+
+
+class _FakeStrictState:
+    """NativeShadow stand-in: receipt recorded on the first event (non-atomic, like the
+    pinned one), then a strict (ab, pitch) -> event_id map that refuses reassignment."""
+
+    def __init__(self, message=REASSIGN):
+        self.db = sqlite3.connect(":memory:")
+        self.db.execute("CREATE TABLE native_receipts (receipt_seq INTEGER PRIMARY KEY, "
+                        "source_sha256 TEXT, received_ns INTEGER)")
+        self.ids, self.message, self.ingest_calls = {}, message, 0
+
+    def observe_receipt(self, seq, sha, received_ns):
+        self.db.execute("INSERT OR IGNORE INTO native_receipts VALUES (?,?,?)", (seq, sha, received_ns))
+
+    def ingest(self, event, native_row, *, received_ns, source_sha256):
+        self.ingest_calls += 1
+        self.observe_receipt(event["revision"], source_sha256, received_ns)
+        key = tuple(event["key"][1:])
+        if self.ids.setdefault(key, event["event_id"]) != event["event_id"]:
+            raise ValueError(self.message)
+
+    def decide(self, cand, *, received_ns):
+        return dict(cand)
+
+    def close(self):
+        self.db.close()
+
+
+class _FakeScorer:
+    @staticmethod
+    def predict(decision):
+        return {"prediction_ready": False, "prospective_claim": False,
+                "status": "experimental_conditional_score", "leaf_order": list(LEAVES),
+                "probabilities": [1 / 7] * 7}
+
+
+def _fake_t_adapter(tmp_path, store, message=REASSIGN):
+    a = object.__new__(adapter_t.TFinalAdapter)
+    a.root, a.pins, a.co_pins = tmp_path / "no-pinned-root", {}, {}
+    a.game_pk, a.game_date = GAME, DATE
+    a.store_path, a.state_path = store.path, tmp_path / "unused-native.sqlite3"
+    a.types, a.skipped_types = ["FF", "SL"], []
+    a._bridge, a._native, a.state, a.scorer = _FakeBridge(), _FakeNative(), _FakeStrictState(message), _FakeScorer()
+    a._n_modules = -1
+    a._strict_identity_broken = None
+    return a
+
+
+def _ctx_for(store, feed, fetched):
+    seq = store.publish(feed, fetched)
+    con = sqlite3.connect(store.path)
+    sha = con.execute("SELECT sha FROM snapshots WHERE seq=?", (seq,)).fetchone()[0]
+    con.close()
+    pitches, state, _ = parse_feed(feed, {})
+    accepted = sorted(pitches, key=lambda p: p.ordinal)
+    return build_context(GAME, accepted, len(accepted) + 1, state, "p" * 64, source_seq=seq, source_sha=sha)
+
+
+def _reissued_bodies():
+    """Body 1: (1,1) playId syn-0001.  Body 2: one more pitch and (1,1) re-issued as a
+    new playId.  Body 3: one more pitch (the re-issued id stays)."""
+    g = SyntheticGame()
+    g.start_pa(21)
+    g.pitch("FF", "B")
+    b1 = g.feed()
+    g.pitch("SL", "C")
+    g.plays[0]["playEvents"][0]["playId"] = "syn-reissued"
+    b2 = g.feed()
+    g.pitch("FF", "B")
+    return [b1, b2, g.feed()]
+
+
+def test_strict_identity_reassignment_abstains_sticky(tmp_path):
+    store = ShaStore(tmp_path / "store.sqlite3")
+    a = _fake_t_adapter(tmp_path, store)
+    ctxs = [_ctx_for(store, f, T0 + 7.0 * i) for i, f in enumerate(_reissued_bodies())]
+    out = a.predict(ctxs[0])
+    assert set(out) == {"FF", "SL"} and a.state.ingest_calls == 1
+    with pytest.raises(Abstain) as ei:
+        a.predict(ctxs[1])
+    assert str(ei.value) == "STRICT_IDENTITY_REASSIGNED"
+    assert a._strict_identity_broken == REASSIGN
+    assert a.state.ingest_calls == 2  # failed at the first (re-issued) event
+    # non-atomic: the failing body's receipt is already recorded
+    assert [r[0] for r in a.state.db.execute("SELECT receipt_seq FROM native_receipts")] == [1, 2]
+    calls, bridge_calls = a.state.ingest_calls, a._bridge.calls
+    orig = store_source.read_snapshot_raw
+    store_source.read_snapshot_raw = lambda *_: pytest.fail("sticky abstain must not read the store")
+    try:
+        with pytest.raises(Abstain, match="^STRICT_IDENTITY_REASSIGNED$"):
+            a.predict(ctxs[2])
+    finally:
+        store_source.read_snapshot_raw = orig
+    assert a.state.ingest_calls == calls and a._bridge.calls == bridge_calls
+
+
+def test_other_strict_value_error_is_not_converted(tmp_path):
+    store = ShaStore(tmp_path / "store.sqlite3")
+    a = _fake_t_adapter(tmp_path, store, message="native evidence changed at same strict event revision")
+    ctxs = [_ctx_for(store, f, T0 + 7.0 * i) for i, f in enumerate(_reissued_bodies())]
+    a.predict(ctxs[0])
+    for ctx in ctxs[1:]:  # not sticky: every body re-ingests and raises the original error
+        with pytest.raises(ValueError, match="^native evidence changed at same strict event revision$"):
+            a.predict(ctx)
+    assert a._strict_identity_broken is None and a.state.ingest_calls == 1 + 1 + 1
+
+
+def test_near_miss_strict_messages_are_not_converted(tmp_path):
+    """Only the exact pinned strings abstain: a suffix or a case change still propagates."""
+    for i, msg in enumerate((REASSIGN + " 123", "Physical/provider identity reassignment")):
+        d = tmp_path / f"case{i}"
+        d.mkdir()
+        store = ShaStore(d / "store.sqlite3")
+        a = _fake_t_adapter(d, store, message=msg)
+        ctxs = [_ctx_for(store, f, T0 + 7.0 * j) for j, f in enumerate(_reissued_bodies())]
+        a.predict(ctxs[0])
+        for n, ctx in enumerate(ctxs[1:], 2):
+            with pytest.raises(ValueError) as ei:
+                a.predict(ctx)
+            assert not isinstance(ei.value, Abstain) and str(ei.value) == msg
+            assert a._strict_identity_broken is None and a.state.ingest_calls == n
+
+
+class _Raiser:
+    leaf_order = LEAVES
+
+    def __init__(self, model_id, exc):
+        self.model_id, self.exc = model_id, exc
+
+    def predict(self, ctx):
+        raise self.exc
+
+
+def test_runner_records_strict_abstain_and_whitelisted_error_text(tmp_path):
+    from fakes import ScriptedSource, make_pitch
+    from ws_prospective.runner import sanitize_reason
+    assert sanitize_reason("STRICT_IDENTITY_REASSIGNED") == "STRICT_IDENTITY_REASSIGNED"
+    clock = FakeClock()
+    src = ScriptedSource(clock, [make_pitch(1, 1, 1, "FF", clock.wall_ns() + 10**9)])
+    led = Ledger(tmp_path / f"game_{GAME}" / "ledger-A.sqlite", game_pk=GAME,
+                 registration_sha256="r" * 64, code_commit="test", clock=clock)
+    cases = [("abst", Abstain("STRICT_IDENTITY_REASSIGNED"), "ABSTAIN", "STRICT_IDENTITY_REASSIGNED"),
+             ("wl", ValueError(REASSIGN), "ERROR", "ValueError:physical/provider identity reassignment"),
+             ("apos", ValueError("stored snapshot does not match the context's source sha/game"), "ERROR",
+              "ValueError:stored snapshot does not match the context_s source sha/game"),
+             ("secret", ValueError("secret 123"), "ERROR", "ValueError"),
+             ("prefix", ValueError(REASSIGN + " 123"), "ERROR", "ValueError")]
+    GameRunner(GAME, src, [_Raiser(m, e) for m, e, _, _ in cases], led, "p" * 64).step()
+    led.close()
+    path = tmp_path / f"game_{GAME}" / "ledger-A.sqlite"
+    model_of = {r["intent_id"]: r["model_id"] for r in read_rows(path, "intents")}
+    got = {model_of[r["intent_id"]]: (r["status"], r["abstain_reason"]) for r in read_rows(path, "forecasts")}
+    assert got == {m: (st, rs) for m, _, st, rs in cases}

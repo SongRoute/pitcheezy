@@ -130,6 +130,15 @@ PINNED_SOURCE_PINS_7A64583 = {
         "f804d4ecb8f8dbffc10d6736fb8a49d6223dc7dc6094b20ad8c620f2d6725631",
 }
 INGEST_TYPE = "FF"  # events do not depend on the candidate type; accepted chain used FF
+# Exact messages of the pinned strict ledger (captured_native_state.NativeShadow.ingest /
+# fullseason_stream.StreamState.ingest) when the provider re-issues a pitch's identity
+# (e.g. a new playId for the same (ab, pitch)).  The append-only ledger refuses it by
+# design and every later body of the game fails at the same event.
+STRICT_IDENTITY_MESSAGES = frozenset((
+    "physical/provider identity reassignment",
+    "stale or conflicting native receipt revision",
+))
+STRICT_IDENTITY_ABSTAIN = "STRICT_IDENTITY_REASSIGNED"
 
 REGISTRATION_KEYS = {
     "source_root": "absolute path of the pinned source checkout (codex-ws-postseason-six-1017 @7a64583)",
@@ -244,6 +253,7 @@ class TFinalAdapter(AdapterBase):
             self.state.close()
             raise ValueError("native state SQLite must use single-file rollback journal mode")
         self._n_modules = -1
+        self._strict_identity_broken: Optional[str] = None  # sticky for this game
         self._check_closure()
 
     # -- registration ------------------------------------------------------
@@ -301,9 +311,20 @@ class TFinalAdapter(AdapterBase):
             if key in natives:
                 raise ValueError("duplicate native physical key in one body")
             natives[key] = row
-        for event in step["events"]:
-            self.state.ingest(event, natives.get(tuple(event["key"])), received_ns=received_ns,
-                              source_sha256=sha)
+        try:
+            for event in step["events"]:
+                self.state.ingest(event, natives.get(tuple(event["key"])), received_ns=received_ns,
+                                  source_sha256=sha)
+        except ValueError as e:
+            if str(e) not in STRICT_IDENTITY_MESSAGES:
+                raise
+            # The strict ledger cannot recover within a game (append-only, identity never
+            # reassigned), and this ingest is not atomic: NativeShadow.ingest has already
+            # recorded this body's receipt on its first event.  Abstain for the rest of the
+            # game instead of re-ingesting (and failing) every later body.
+            self._check_closure()  # the failed ingest ran pinned code; a pin breach still wins
+            self._strict_identity_broken = str(e)
+            raise Abstain(STRICT_IDENTITY_ABSTAIN) from None
         self.state.observe_receipt(seq, sha, received_ns)
         return seq
 
@@ -312,6 +333,8 @@ class TFinalAdapter(AdapterBase):
             raise Abstain("NO_SOURCE_BODY")
         if int(ctx.game_pk) != self.game_pk:
             raise ValueError("context game_pk != adapter game")
+        if self._strict_identity_broken is not None:  # no read, no bridge step, no ingest
+            raise Abstain(STRICT_IDENTITY_ABSTAIN)
         snap = store_source.read_snapshot_raw(self.store_path, ctx.source_seq)
         body = snap["body_bytes"]
         sha = hashlib.sha256(body).hexdigest()
