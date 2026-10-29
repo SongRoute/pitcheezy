@@ -1,0 +1,2488 @@
+{
+  "id": "RS-03",
+  "schema": "rs03-prospective-multi-arm-registration-draft-v1",
+  "title": "2027 regular-season sealed prospective multi-arm confirmation frame: ARM-B policy OPE (sealed service policy vs pitcher habit, plus conditionally included arms) and RS-02-style predictor scoring, including the B1 candidate EXP-P48-001",
+  "status": "DRAFT_UNREGISTERED",
+  "execute": false,
+  "registered": false,
+  "created_kst": "2026-10-27",
+  "revision": "v10 (2026-10-27 23:4x KST): records EXP-OPE-RES-01 (A2) NO_PRECISION_GAIN and D191: switches.SW_EST status OFF by its registered mapping (mapping_exhaustive NO_PRECISION_GAIN -> default_tuple: current DR R2-0, realized WE R1-0, denominator B0; mapping unchanged) with an a2_result block; switches.SW_A3 OFF for 2027 under the current A2 registration (B2 stays a frozen documented artifact); decision_quantity.reward.if_SW_EST_on and sealing.pi_b_hat_candidate.status keep their conditional form and note that the condition is not met; execution.reason, P2 (A2 done) and P3 refreshed; sealing.pins notes on the SW_EST tuple and the A2 result file to pin (pins stay null); A2R alias, numbers_provenance a2_* entries and sources_read_sha256_at_v10 added; the A2 follow-up is Song's D191 decision (b) (docs/decisions.md:338: design of EXP-OPE-RES-02 starts this week; not a registration or run approval; SW_EST and SW_A3 stay OFF until the follow-up issues a certification label); written by the PM session (Claude Fable 5.1; edit executed by its Opus 5.5 worker), not yet independently reviewed (the next confirmation review follows when Codex quota or another-model review is available); v9 recorded EXP-BC-CAL-01 (A3) ADOPT_FOR_2027_REGISTRATION:B2 and D190: switches.SW_A3 status (OFF until A2 certifies a tuple with it; its rule stays in SW_EST), sealing.pi_b_hat_candidate with the three frozen B2 artifact shas (pins.pi_b_hat_sha256 stays null), P2 updated (A3 done); v8 recorded EXP-STAB-02 (A1) NOT_STABLE and D189: switches.SW_A1 OFF, A_RB NOT_INCLUDED:A1 for now (a new registration could change it only before the seal), D155 stays closed so arm B and the arm C policy layer are not buildable now; P2, P3 and P5 status refreshed; v7 recorded EXP-P48-001 Stage B confirmed and Song decision D188 (a): arm C candidate recorded with its frozen predictor bundle (arms[C].inclusion_status, predictor.frozen_bundle, pins.B1_bundle_sha256, P1 done); the arm C policy identity stays null under D187 decision 3; inclusion rule text unchanged; v6 closed the two review-round-5 items (proof of recording before first receipt attributed to ledger rows only, input-availability evidence to ledger and immutable-snapshot replay rows, and the reconstruction rule named as the as-of guarantee of the replay population; recommendation terminology outside options_history renamed); v5 applied Song decision D187 (docs/decisions.md:327: decisions 1-9 all option 1): every open question became a decided value (song_decisions; former options kept as history), prerequisite P6 got its owner and status, and FINAL_UNSEALED is named as the step-1 status; status stays DRAFT_UNREGISTERED and execute false until the prerequisites and the confirmation review; v4 applied independent review rounds 1-4 and the PM decisions on them; v4 changes only the completion-record time fields, their clocks and the eligibility cutoff (round-4 minor 1) and the L2 population wording, synchronized with the current A2 correction with copied numbers unchanged (round-4 minor 2); v3 changed the SW_A1 confirmation label, the sealing chronology, K2/K4 routing inside the ordered labels, the after-scientific-read attempt wording and the provenance snapshot reference; the source snapshot stays sources_read_sha256_at_v2 except the L2-population references marked @v4 (sources_read_sha256_at_v4)",
+  "review_history": [
+    {
+      "round": "1",
+      "reviewer": "Codex gpt-6-astra (independent model)",
+      "verdict": "FAIL",
+      "counts": "1 BLOCKER, 11 MAJOR, 1 MINOR, 2 NOTES",
+      "record": "docs/pm/research/prospective-2027/reviews/REVIEW-RS03-ASTRA-001.md",
+      "pm_decisions": "PM message of 2026-10-27 (BLOCKER 1 and MAJOR 2-13 directions); applied in v1"
+    },
+    {
+      "round": "2",
+      "reviewer": "Codex gpt-6-astra (independent model)",
+      "verdict": "FAIL",
+      "counts": "round-1 items 1, 3, 4, 6-10, 14, 15 resolved; 2, 5, 11, 12 major partially resolved; 13 minor; new 16 minor",
+      "record": "docs/pm/research/prospective-2027/reviews/REVIEW-RS03-ASTRA-002.md",
+      "pm_decisions": "PM message of 2026-10-27 (items 2, 5, 11, 12, 13, 16); applied in v2"
+    },
+    {
+      "round": "3",
+      "reviewer": "Codex gpt-6-astra (independent model)",
+      "verdict": "FAIL",
+      "counts": "round-2 items resolved except 11 (partially resolved); no regressions; new major 1 (SW_A1 confirmation label), major 2 (round-2 item 11, sealing chronology), new minor 3 (K2/K4 label routing), editorial 8",
+      "record": "docs/pm/research/prospective-2027/reviews/REVIEW-RS03-ASTRA-003.md",
+      "pm_decisions": "PM message of 2026-10-27 (items 1, 2, 3, 8; note 6 clarification); applied in v3"
+    },
+    {
+      "round": "4",
+      "reviewer": "Codex gpt-6-astra (independent model)",
+      "verdict": "PASS_WITH_NOTES",
+      "counts": "all round-3 items resolved, no regressions; minor 1 (completion-record time not recorded as a named field), minor 2 (L2 population wording behind the current A2 correction)",
+      "record": "docs/pm/research/prospective-2027/reviews/REVIEW-RS03-ASTRA-004.md",
+      "pm_decisions": "PM message of 2026-10-27 (close minors 1 and 2); applied in v4"
+    },
+    {
+      "round": "5",
+      "reviewer": "Codex gpt-6-astra (independent model)",
+      "verdict": "PASS_WITH_NOTES",
+      "counts": "confirmation review of v5: decisions settled, A1 reading and Q9 correct, round-4 items resolved, arithmetic reproduces; minor 1 (Q4 wording overstated what snapshot replay proves), note 2 (recommendation terminology left on decided items)",
+      "record": "/private/tmp/claude-501/-Users-song-Projects-pitcheezy/3ce806ea-24a8-40e7-a753-1cab7646c30e/scratchpad/review-RS03-astra-005.md",
+      "pm_decisions": "PM message of 2026-10-27 (close items 1-2; the design stage closes afterwards); applied in v6"
+    }
+  ],
+  "author": "Opus 5.5 research-lane worker (Claude PM delegation; D186 7-1)",
+  "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+  "documents": {
+    "design": "docs/pm/research/prospective-2027/RS-03-2027-prospective-multi-arm-design.md",
+    "registration_draft": "docs/pm/research/prospective-2027/RS-03-2027-prospective-multi-arm-registration-draft.json"
+  },
+  "id_collision_check": {
+    "pattern": "RS-03 | RS03 | rs03",
+    "scopes": [
+      "docs/",
+      "configs/",
+      "/Users/song/Projects/pitcheezy-pm-jobs",
+      "git log --all (commit subjects)"
+    ],
+    "hits": 0,
+    "checked_kst": "2026-10-27"
+  },
+  "execution": {
+    "enabled": false,
+    "reason": "Draft only. No real-data read, fit, replay, ledger, bootstrap or scoring is authorized by this file. Song decided every open question in D187 (docs/decisions.md:327; song_decisions). Registration still needs: P3 A4 audit before the FINAL_UNSEALED revision (D187; P1 met by D188, P2 met by D189, D190 and D191); P6 bias-budget certification and P7 predictor scoring contract before the seal, or their stated consequences (no CONFIRMED label; predictor layer dropped); the other prerequisites; an independent review by a model other than the author (D182 gates 1-3); the PM seal and Song's sign-off."
+  },
+  "decision_basis": {
+    "D186_7_1": "write an RS-02-style multi-arm registration draft for the 2027 prospective confirmation frame by 2026-11-02, including B1 (EXP-P48-001)",
+    "D186_3_1": "2027 decision quantity = point-estimate verdict + censored share reported separately; current lower-endpoint rule as a secondary row; reward unit WE",
+    "D186_4_1": "approved thresholds: A1 agreement 0.95 / TV 0.02 / cost 4x; A2 half-width -30% and synthetic bias <= 1.26e-5; A3 NLL margin 0.005",
+    "D186_6_1": "A4 2026 coordinate/zone audit owned by the PM/ops lane",
+    "D184_D185": "EXP-P48-001 in progress (independent review round 2 PASS_WITH_NOTES at 011c257f; Stage A GPU run 2026-10-27)",
+    "D187": "Song: RS-03 decisions 1-9 all option 1 (song_decisions); then confirmation review, prerequisites (EXP-P48-001, A1-A3 outcomes, A4 audit), FINAL_UNSEALED and the seven sealing steps",
+    "D188": "EXP-P48-001 result recorded, Stage B confirmed (docs/decisions.md:329), and Song decision (a) (docs/decisions.md:331): B1 recorded as the RS-03 arm C candidate with a freeze list; G15, G0, c13cc989 and the service unchanged",
+    "D189": "EXP-STAB-02 (A1) result recorded: NOT_STABLE (docs/decisions.md:333); SW-A1 stays off, D155 stays closed, the A1 confirmation slice is not run; open Song decision: a follow-up registration re-discussing the 4x cost threshold, or closing the planner-noise axis",
+    "D190": "EXP-BC-CAL-01 (A3) result recorded: ADOPT_FOR_2027_REGISTRATION:B2 (docs/decisions.md:335); the RS-03 A3 candidate is the frozen B2, usable only inside an A2-certified estimator tuple; the first A2 registration runs R3 = NOT_RUN:R3 and B2 as an R3 diagnostic arm needs an A2 follow-up addendum; S6 OPE results, D131, c13cc989 and the service unchanged; no Song decision needed",
+    "D191": "EXP-OPE-RES-01 (A2) result recorded: NO_PRECISION_GAIN (docs/decisions.md:337); by its registered meaning (A2 design section 5 label 5) the 2027 default stays the current DR with realized WE, so RS-03 SW_EST is OFF and SW_A3 is OFF (no A2-certified tuple uses the A3 B2; adding an R3 arm is a new registration); c13cc989, the service and D131 unchanged; the A2-S3 attempt-1 harness abort and its bug-fix retry are not a re-registration; follow-up options put to Song: (a) close for now, RS-03 proceeds with current DR + realized WE, and an A2 follow-up (R3 = B2 denominator arm + R1-b re-certification with a larger synthetic R, thresholds fixed in advance) is reconsidered after the World Series in November (recommended), (b) start the follow-up design this week (new ID), (c) close the A2 axis (no follow-up; B2 excluded from the 2027 analysis); Song chose (b) (docs/decisions.md:338, 23:4x KST): design the A2 follow-up EXP-OPE-RES-02 this week (design-start approval only, not a real-data run or registration approval); RS-03 keeps SW_EST and SW_A3 OFF until the follow-up issues a certification label",
+    "source": "docs/decisions.md:321-338"
+  },
+  "governing_rules": {
+    "season_2026_role": "EXPOSED_DEVELOPMENT; never used for fit, tuning, selection, calibration, cross-fitting or arm inclusion in RS-03",
+    "season_2026_use_in_this_draft": "structure-only arithmetic on recorded summaries (results/MLB-2026-OPE-v1.json via the A2 draft); no 2026 row, ledger, array or result directory opened",
+    "season_2027_use": "scoring only (SEALED_PROSPECTIVE_EVAL); no fit, tuning, selection, calibration, cross-fitting or arm-inclusion decision on 2027 data",
+    "D131_label": "NO_EVIDENCE_OF_IMPROVEMENT stands unchanged",
+    "D155_reopened": false,
+    "D155_note": "D187 decision 3 (docs/decisions.md:327): D155 is reopened narrowly for building 2027 prospective arms only if A1 (EXP-STAB-02) passes, read here as SW_A1 on (switches.SW_A1); 2026, the service and c13cc989 stay unchanged; A1 ran and was NOT_STABLE (EXP-STAB-02, D189 docs/decisions.md:333), so SW_A1 is OFF and D155 stays closed at this revision",
+    "sealed_identifiers_modified": false,
+    "policy_identity_or_service_change": false,
+    "G15_change": false,
+    "existing_files_modified": false,
+    "rs01_rs02_results_used_for_arm_selection": false,
+    "fitting_calibration_or_selection_on_2026_or_2027": false,
+    "access_disclosure": "while drafting v0 the author displayed the first 40 lines (summary fields) of results/MLB-2026-OPE-v1.json once; no row, ledger, array or result directory was opened; result files were otherwise only hashed; v1 provenance cites document-level records (A2 registration draft, docs/decisions.md, registration configs), with original outputs named only as the origin stated by those documents"
+  },
+  "arms": {
+    "policy_layer": [
+      {
+        "arm_id": "R",
+        "role": "reference inside every paired Delta (pitcher habit); not a candidate",
+        "definition": "SupportedBC (BC-P restricted/renormalised on the TRAIN repertoire support M once, before freezing)",
+        "pins": {
+          "bc_p_file_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
+          "support_file_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4",
+          "source": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json:7,11"
+        },
+        "inclusion": "always"
+      },
+      {
+        "arm_id": "A",
+        "role": "baseline arm = current sealed service policy (G0 predictor + current planner); always included; untouched",
+        "policy_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+        "identity_sources": [
+          "configs/ML-POLICY-MATERIALIZATION-v1.json:807 (mlb2026_ope.candidate_identity_sha256)",
+          "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:303 (arms.ARM_B.candidate.final_identity_sha256)",
+          "docs/decisions.md:196 (D125)"
+        ],
+        "predictor": {
+          "bundle": "configs/G0-RESEARCH-FROZEN-v1.json",
+          "sha256_at_drafting": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+        },
+        "planner": {
+          "kind": "MC rollout improvement (RolloutImprovement)",
+          "samples": 6,
+          "pitch_cap": 12,
+          "tau": 0.1,
+          "planning_seed": 0,
+          "policy": "P3 kl_policy: pi proportional to pi_ref * exp(Q_ref / tau) on support M",
+          "sources": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:298-301; docs/pm/research/track-a/A1-planner-variance-design.md:47"
+        },
+        "registration_chain": "configs/ML-POLICY-MATERIALIZATION-v1.json mlb2026_ope + addendum-1..8-d127 (code a09ed7d)",
+        "inclusion": "always",
+        "note": "the live service code path may carry an earlier identifier with the same computation (D122); arm A is defined by this identifier only"
+      },
+      {
+        "arm_id": "A_RB",
+        "role": "G0 + Rao-Blackwell first-step planner (track A1)",
+        "policy_identity_sha256": null,
+        "predictor": "same as A",
+        "planner": "the RB arm named in the A1 verdict STABLE_WITHIN_COST:<arm> whose confirmation slice is labelled CONFIRMED",
+        "tau": 0.1,
+        "inclusion_rule": {
+          "all_of": [
+            "SW_A1 on (see switches.SW_A1: original verdict STABLE_WITHIN_COST:<arm> and confirmation label CONFIRMED for that arm; the slice is the one registered at docs/pm/research/track-a/A1-planner-variance-registration-draft.json:111-117, confirmation_slice)",
+            "new identity certified through the c13cc989 chain on <=2025 DEV only: S2 bind-probe -> S3b table at fixed tau (S3b gates as pass/fail checks, no tau re-selection) -> S5 V2 accept -> S6 rehearsal (S6 checks integrity and gates only; its Delta value never enters any inclusion decision)",
+            "independent review PASS of the RB planner code"
+          ],
+          "else": "NOT_INCLUDED:A1"
+        },
+        "inclusion_status": {
+          "status": "NOT_INCLUDED:A1 (for now)",
+          "reason": "OFF — EXP-STAB-02 NOT_STABLE (2026-10-27); A_RB not constructible under D187 decision 3; D155 stays closed (switches.SW_A1.status; A1R:9; D189 docs/decisions.md:333)",
+          "future": "D189 leaves open a Song decision on a follow-up registration (RB with more samples, re-discussing the 4x cost threshold); only such a new registration, run and passed before the RS-03 seal, could change this status; no threshold is lowered after seeing results (D189)"
+        }
+      },
+      {
+        "arm_id": "B",
+        "role": "G15-mix predictor policy",
+        "policy_identity_sha256": null,
+        "predictor": {
+          "bundle": "configs/G15-MIX-RESEARCH-FROZEN-v1.json",
+          "sha256_at_drafting": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d",
+          "decision": "D145 (docs/decisions.md:238)"
+        },
+        "planner": "P_star (RB if SW_A1 on, else the arm-A MC planner)",
+        "tau": 0.1,
+        "policy_path_precedent": {
+          "code": "EXP-P17-001 integrated-mix wiring, branch claude/exp-p17-policy-predictor-diagnostic 792b058",
+          "s2_probe_max_abs_diff": 1.3e-08,
+          "source": "docs/decisions.md:252 (D152)"
+        },
+        "inclusion_rule": {
+          "all_of": [
+            "SW_A1 on: the condition under which D187 decision 3 (docs/decisions.md:327) narrowly reopens D155 for building 2027 prospective arms",
+            "new identity certified through the same chain as A_RB (<=2025 DEV only)",
+            "independent review PASS of the integration code"
+          ],
+          "else": "NOT_INCLUDED:<reason>"
+        },
+        "inclusion_status": {
+          "status": "NOT_INCLUDED:SW_A1_OFF (for now)",
+          "reason": "SW_A1 is OFF after EXP-STAB-02 NOT_STABLE (D189, docs/decisions.md:333), so the D187 decision 3 condition for narrowly reopening D155 is not met and D155 stays closed; N_G15 in the predictor layer is unaffected",
+          "future": "as for A_RB: only a new A1-type registration passed before the seal could change it"
+        },
+        "cost_reference": {
+          "certification_chain_seconds_G15_precedent": 8900,
+          "other_costs": "미측정"
+        }
+      },
+      {
+        "arm_id": "C",
+        "role": "B1 candidate policy (EXP-P48-001 primary: tabm_residual_counts head mixed with G0 at MIX_FIT)",
+        "policy_identity_sha256": null,
+        "predictor": {
+          "definition": "the EXP-P48-001 pre-registered primary (tabm_residual_counts, MIX_FIT) through its registered pipeline, unchanged",
+          "pipeline_roles": {
+            "head_weights": "fitted on the export's TRAIN split (export block PREREG:75-76; matrix TRAIN 2023-05-15..2025-04-30, docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:166 data_roles.TRAIN); budget PREREG:73-74",
+            "temperature": "per-seed temperature on the May 16-31 Cpanel rows, bounds .5-2.5 (PREREG:74)",
+            "mix_weight": "MIX_FIT: per seed, w chosen on the calibrated June blend rows only over the registered grid (ties to the smaller w); the ensemble weight chosen the same way, separately, on the seed-mean head and seed-mean G0 (PREREG:147-149; grid configs/EXP-P48-001.json:475)",
+            "frequency_blend": "the June frequency blend as for G15 (PREREG:98-101, 143-144)",
+            "exposed_dev": "Cpanel DEV and whole-MLB DEV rows never enter fitting, calibration or a mixing-weight choice (PREREG:149-150, the weight-choice restriction)",
+            "no_fitting_calibration_or_mixing_weight_selection_on": [
+              "DEV",
+              "2026",
+              "2027"
+            ],
+            "stage_b_inclusion_is_exposed_development_selection": "the registered Stage-B inclusion decision is itself a selection made on the exposed <=2025 DEV rows (PREREG:154-162); it is disclosed as exposed-development selection (data_roles.exposed_development_selections), not an independent test",
+            "no_2026_or_2027_fitting": true,
+            "prereg_no_2026_rows": "PREREG:181"
+          },
+          "adoption_seeds": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "prereg": "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md",
+          "prereg_sha256_at_drafting": "4ca5ba3c79a0daf8468192c04a64afeb1b5d0f3cb4b53ef7a86d71181673ff74",
+          "config": "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/configs/EXP-P48-001.json",
+          "config_sha256_at_drafting": "d8cb1a7f70815f9721903718b5d34785110de8e8a6f9252c2a0bd77acd7a9179",
+          "config_status_at_drafting": "DRAFT (replaced by the registered sha at EXP-P48-001 registration)",
+          "commit": "011c257f (branch research/direct-head-confirm-1026)",
+          "frozen_bundle": {
+            "freeze_list": "docs/pm/research/prospective-2027/arm-C-B1-freeze-list.json (with arm-C-B1-freeze-list.md)",
+            "bundle_sha256": "6271b70e834215aff96141b8319e84ba041fb980600cc91791248a1b95f5e4ec",
+            "bundle_rule": "sha256 over the sorted sha256-path lines of the bundle files (CFRZMD:10; CFRZ:243)",
+            "files": "tabm_residual_counts seeds 0-4: model.pt, state.json, predictions.npz, mlb_predictions.npz, fit.json, identity.json, calibration.json (CFRZ:244 bundle_files)",
+            "registered_commit": "c5f61d47618546867fec9ebfdb9ea68062effc10",
+            "reviewed_commit": "011c257fc29f021626d90b1c128c653183baab51",
+            "config_sha256_registered": "2a417d8f6721d0ff158af662512bbce24a5e446cb4be9ddf66127b3e5f7feb5b",
+            "registration_source": "CFRZ:16-26 (registration)",
+            "t7_copy": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P48-001/stageA-family and .../stageB (CFRZ:238-239; CFRZ:241-242 copy identical, mismatches [])",
+            "decision": "D188 decision (a), docs/decisions.md:331"
+          }
+        },
+        "planner": "P_star",
+        "tau": 0.1,
+        "inclusion_rule": {
+          "authoritative_rule": {
+            "file": "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md",
+            "sha256": "4ca5ba3c79a0daf8468192c04a64afeb1b5d0f3cb4b53ef7a86d71181673ff74",
+            "lines": "157-166 (N rule and multiplicity), 211-213 (meaning of a pass)",
+            "plus": "the registered EXP-P48-001 config (comparison.stage_b.rules, configs/EXP-P48-001.json:495-522 in the DRAFT pinned above; the registered sha replaces it at EXP-P48-001 registration)",
+            "precedence": "if anything below differs from the pinned PREREG or the registered config, the pinned files decide"
+          },
+          "verbatim_rule_text": "N rule (matrix_metrics.prediction_decision, stage final): ensemble ΔNLL <= -0.003, paired 95% CI upper < 0, one-sided p <= .05, Brier CI upper <= 0.001, at least 4/5 seeds improving. The p used is the row's own unadjusted p for the primary and the Holm-adjusted p across the three secondary rows for the secondary rows (below). Multiplicity — exactly one confirmatory test. The pre-specified primary tabm_residual_counts MIX_FIT is confirmed only by intersection-union: it must be a predictive_improvement on both splits, each split judged with its own unadjusted one-sided test at alpha .05 (no Holm: a single prespecified test).",
+          "verbatim_rule_text_source": "PREREG:157-162, markdown emphasis and code marks removed, no other change",
+          "operators_copied": {
+            "primary": {
+              "arm": "tabm_residual_counts",
+              "mix_rule": "MIX_FIT"
+            },
+            "splits": [
+              "cpanel_dev_after_blend",
+              "whole_mlb_dev_blended"
+            ],
+            "per_split_conditions_all_required": [
+              {
+                "quantity": "ensemble delta NLL (candidate - G15)",
+                "operator": "<=",
+                "value": -0.003
+              },
+              {
+                "quantity": "paired 95% CI upper of delta NLL",
+                "operator": "<",
+                "value": 0
+              },
+              {
+                "quantity": "unadjusted one-sided p",
+                "operator": "<=",
+                "value": 0.05
+              },
+              {
+                "quantity": "paired 95% CI upper of delta Brier",
+                "operator": "<=",
+                "value": 0.001
+              },
+              {
+                "quantity": "seeds with negative per-seed delta NLL",
+                "operator": ">=",
+                "value": 4,
+                "of_seeds": 5
+              }
+            ],
+            "combination": "intersection-union: both splits must satisfy every condition; no multiplicity adjustment",
+            "bootstrap": {
+              "draws": 10000,
+              "seed": 20260924,
+              "unit": "whole_game"
+            },
+            "confirmation_label_required": "primary_only_predictive_improvement_on_both_splits",
+            "sources": "PREREG:154-162; configs/EXP-P48-001.json:495-497 (primary), :499 (splits), :504-507 (N), :510 (alpha), :512-513 (bootstrap), :522 (confirmation)"
+          },
+          "all_of": [
+            "EXP-P48-001 Stage B confirmation label equals operators_copied.confirmation_label_required under the authoritative rule, unchanged",
+            "Song decision line in docs/decisions.md on that result (PREREG:211-213)",
+            "research-only frozen bundle of the five heads, temperatures, MIX_FIT weights (per seed and ensemble) and June blend built and verify PASS",
+            "policy layer only: the same conditions as arm B"
+          ],
+          "else": "NOT_INCLUDED:EXP-P48-001_NOT_CONFIRMED (both layers) or NOT_INCLUDED:<policy-layer reason>"
+        },
+        "inclusion_status": {
+          "status": "candidate recorded (D188 a); Stage-B rule satisfied; predictor bundle frozen",
+          "condition_1_stage_b": "satisfied: P48R:12 confirmation.primary_status = confirmed under P48R:13 rule primary_only_predictive_improvement_on_both_splits (= operators_copied.confirmation_label_required); both splits predictive_improvement (P48R:14-17); result record docs/decisions.md:329 (D188)",
+          "condition_2_song_decision": "satisfied: D188 decision (a), docs/decisions.md:331",
+          "condition_3_frozen_bundle": "frozen: predictor.frozen_bundle (CFRZ:243 bundle_sha256 over CFRZ:244 bundle_files; MIX_FIT weights CFRZ:36-44; registration CFRZ:16-26); the T7 copy check reports identical with no mismatches (CFRZ:241-242); the bundle is re-verified at sealing with every pin (sealing.transition step 7)",
+          "condition_4_policy_layer": "not met: the arm C POLICY identity (policy_identity_sha256, pins.arm_C_identity) is built only under D187 decision 3 when A1 passes (SW_A1 on) and through the arm B chain; A1 was NOT_STABLE (D189), so SW_A1 is OFF and the arm C policy layer is NOT_INCLUDED for now (the predictor-layer arm N_B1 is unaffected); only a new A1-type registration passed before the seal could change it",
+          "stage_b_values": {
+            "cpanel_dev_after_blend_dnll": -0.0037484395146830515,
+            "cpanel_dev_after_blend_dnll_ci95": [
+              -0.004993674036596522,
+              -0.002515541161161217
+            ],
+            "whole_mlb_dev_blended_dnll": -0.0036469614786121805,
+            "whole_mlb_dev_blended_dnll_ci95": [
+              -0.003915720543680152,
+              -0.003371907495592418
+            ],
+            "seeds_improving": 5,
+            "of_seeds": 5,
+            "sources": "numbers_provenance p48_stageb_*"
+          },
+          "mix_fit_weights": {
+            "seeds": [
+              0.65,
+              0.7,
+              0.7,
+              0.75,
+              0.7
+            ],
+            "ensemble": 0.7,
+            "sources": "numbers_provenance b1_mix_fit_*"
+          },
+          "exposure_note": "a selection on repeatedly exposed DEV rows, not an independent confirmation (D188, docs/decisions.md:329; data_roles.exposed_development_selections); G15, G0, c13cc989, D131/D155 and the service are unchanged"
+        },
+        "outcome_prediction": "none: the EXP-P48-001 result was not predicted in this draft and is now recorded in inclusion_status; no 2027 result is predicted"
+      }
+    ],
+    "planner_symbols": {
+      "P_star": "the RB arm named in STABLE_WITHIN_COST:<arm> with a CONFIRMED confirmation slice, if SW_A1 on; else the arm-A MC planner",
+      "same_planner_g0_partner": "for B and C: A_RB if their planner is RB, A if it is the MC planner; a contrast against it exists only if that partner is included (see multiplicity.contrast_definition)"
+    },
+    "common_to_policy_arms": {
+      "action_space": "ARM-B pitch type only; ARM-A (target location) stays BLOCKED_NOT_IDENTIFIED (configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:254)",
+      "reference": "R",
+      "support": "the same TRAIN repertoire support M and the same refusal rules for every arm (else the arm is NOT_EVALUABLE)",
+      "tau_rule": "every arm uses tau = 0.1 without re-selection (judgment of this draft: no new selection step)"
+    },
+    "predictor_layer_specification": {
+      "status": "INCOMPLETE: to be completed and independently reviewed before sealing; if not, the predictor layer (N arms, C7, C8) is excluded (D187 decision 8, docs/decisions.md:327; prerequisite P7)",
+      "conditioning": "predictions are scored conditional on the realized current pitch type (RS-02 precedent /Users/song/Projects/pitcheezy-pm-jobs/20261020-rs02/REGISTRATION-RS02-SEALED.json:904); no other current-pitch column (physics, outcome) is an input",
+      "required_elements_modeled_on_RS02": [
+        "label space and mapping rule with the revision used (primary and sensitivity), REGISTRATION-RS02-SEALED.json:856-862",
+        "eligibility predicate, :863",
+        "declared deviations from the DEV scoring, :864-869",
+        "metric function, bootstrap and seed, :900",
+        "probability clipping, :901",
+        "pairing rule, :902",
+        "coverage and abstention reporting (universe, eligible, abstentions by code)"
+      ],
+      "metrics": [
+        "nll",
+        "brier",
+        "top_label_ece10"
+      ]
+    },
+    "predictor_layer": [
+      {
+        "arm_id": "N_G0",
+        "bundle": "configs/G0-RESEARCH-FROZEN-v1.json (primary June blend, as in RS-02)",
+        "sha256_at_drafting": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+        "inclusion": "included (D187 decision 8) provided predictor_layer_specification is completed and independently reviewed before sealing; otherwise the predictor layer is excluded"
+      },
+      {
+        "arm_id": "N_G15",
+        "bundle": "configs/G15-MIX-RESEARCH-FROZEN-v1.json",
+        "sha256_at_drafting": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d",
+        "inclusion": "included (D187 decision 8) provided predictor_layer_specification is completed and independently reviewed before sealing; otherwise the predictor layer is excluded"
+      },
+      {
+        "arm_id": "N_B1",
+        "bundle": "the arm C frozen bundle (arms[C].predictor.frozen_bundle; bundle_sha256 6271b70e834215aff96141b8319e84ba041fb980600cc91791248a1b95f5e4ec, D188 decision (a))",
+        "inclusion_rule": {
+          "all_of": [
+            "arm C conditions 1-3",
+            "CPU inference equivalence: the frozen DEV predictions reproduced within tolerance",
+            "predictor_layer_specification completed and reviewed before sealing"
+          ],
+          "equivalence_tolerance": 1e-06,
+          "tolerance_precedent": "/Users/song/Projects/pitcheezy-pm-jobs/20261020-free-time/rs02-draft/RS02-PLAN.md:21",
+          "else": "NOT_INCLUDED:EXP-P48-001_NOT_CONFIRMED or NOT_INCLUDED:EQUIVALENCE or NOT_INCLUDED:SPECIFICATION"
+        }
+      }
+    ]
+  },
+  "switches": {
+    "SW_A1": {
+      "status": "OFF — EXP-STAB-02 NOT_STABLE (2026-10-27); A_RB not constructible under D187 decision 3; D155 stays closed",
+      "a1_result": {
+        "verdict": "NOT_STABLE (final; A1R:9 verdict.verdict.label; D189 docs/decisions.md:333)",
+        "rb6": {
+          "top1_agreement": 0.9408929950211667,
+          "top1_agreement_ci95": [
+            0.9358691687746272,
+            0.9456657946818088
+          ],
+          "mean_tv": 0.026378400008667622,
+          "mean_tv_ci95": [
+            0.024802878210514998,
+            0.027985826757238312
+          ],
+          "r_rows": 2.63429552246794
+        },
+        "a0_mc6": {
+          "top1_agreement": 0.8869511967837269,
+          "mean_tv": 0.05036804917414062
+        },
+        "descriptive_bf48": {
+          "top1_agreement": 0.9630943931866572,
+          "mean_tv": 0.01740982627106577,
+          "r_rows": 8.009820270192678,
+          "use": "descriptive pass only, never a verdict"
+        },
+        "reading": "RB6 meets the cost gate (r_rows within cost_ratio_max) but its agreement lower bound is below top1_agreement_lower_min and its mean-TV upper bound is above tv_upper_max, so the registered verdict is NOT_STABLE; the confirmation slice is not run (D189)",
+        "sources": "A1R:9 (verdict.verdict.label), A1R:16 (verdict.rb6_status.r_rows), A1R:293 (mandatory.comparison: A0-MC6 :300 and :305, RB6 :322-330, r_rows :342), A1R:1962 (descriptive.BF48.comparison: :1966, :1971, r_rows :1984); docs/experiments.md:273 (EXP-STAB-02 row); docs/decisions.md:333 (D189)"
+      },
+      "on_if": "A1 (EXP-STAB-02) original verdict STABLE_WITHIN_COST:<arm> on its registered decision set AND the A1 confirmation-slice label CONFIRMED for that same arm (A1 never changes the original verdict because of the slice)",
+      "thresholds": {
+        "top1_agreement_lower_min": 0.95,
+        "tv_upper_max": 0.02,
+        "cost_ratio_max": 4.0
+      },
+      "confirmation_slice": {
+        "games": 50,
+        "salt": 20261028,
+        "rule": "the A1 slice rule: the passing arm is re-checked against the same three thresholds; A1 emits CONFIRMED (all three met), NOT_CONFIRMED (otherwise) or CONFIRMATION_ABORTED (the slice run failed or was aborted; distinct from NOT_CONFIRMED) and leaves the original verdict unchanged"
+      },
+      "on_label": "original verdict STABLE_WITHIN_COST:<arm> AND confirmation label CONFIRMED for that <arm>",
+      "effect": "P_star = that RB arm; A_RB becomes an arm if its own conditions hold; arm A unchanged",
+      "default": "every other case gives P_star = arm-A MC planner and no A_RB: original verdict STABLE_OVER_COST, NOT_STABLE or COST_EXCEEDED_AT_SMOKE; A1 not run or not completed before the seal; or, after STABLE_WITHIN_COST:<arm>, confirmation label NOT_CONFIRMED or CONFIRMATION_ABORTED, or no confirmation label (slice missing, not run or not completed before the seal)",
+      "sources": "docs/pm/research/track-a/A1-planner-variance-design.md:134 (STABLE_X), :137 (COST_OK_X), :138 (verdict precedence and labels), :161-162 (confirmation slice profile), :165 (CONFIRMED / NOT_CONFIRMED; 150-game verdict unchanged), :212 (confirmation-slice run profile: CONFIRMATION_ABORTED, distinct from NOT_CONFIRMED); docs/pm/research/track-a/A1-planner-variance-registration-draft.json:111-113 (data.confirmation_slice), :117 (data.confirmation_slice.thresholds: CONFIRMED / NOT_CONFIRMED, 150-game verdict unchanged), :341 (compute.passes.confirmation: CONFIRMATION_ABORTED), :269 (decision_rules.stable), :270 (decision_rules.cost); docs/decisions.md:325 (D186 4-1)"
+    },
+    "SW_EST": {
+      "status": "OFF — EXP-OPE-RES-01 (A2) NO_PRECISION_GAIN (2026-10-27, finished 23:28 KST); by mapping_exhaustive (NO_PRECISION_GAIN -> default_tuple) the 2027 sealed estimator tuple is the default tuple: current DR (R2-0) with realized WE (R1-0) and the current denominator B0; no surrogate reward, DR variant, lambda or M enters the 2027 primary analysis",
+      "a2_result": {
+        "label": "NO_PRECISION_GAIN (final; A2R:4 label, A2R:2848 S4_decision_record.label; D191 docs/decisions.md:337)",
+        "meaning": "registered label 5 (A2 design section 5): no valid pair passed condition (ii), point half-width ratio <= 0.70 against the current baseline R1-0 x R2-0; the 2027 default stays the current DR estimator with realized WE reward (A2R:5 label_meaning; A2 registration draft:465 labels_in_precedence)",
+        "half_width_ratio_vs_baseline": {
+          "R1_bxR2_1": {
+            "game": 0.7458269948068607,
+            "pitcher": 0.7581998033854426
+          },
+          "R1_axR2_1": {
+            "game": 0.838479954481401,
+            "pitcher": 0.8432572377720836
+          },
+          "R1_bxR2_0": {
+            "game": 0.8282064209223654,
+            "pitcher": 0.8358684687248822
+          },
+          "R1_0xR2_1": {
+            "game": 0.8781665003115672,
+            "pitcher": 0.8889141491260103
+          },
+          "R1_0xR2_3": {
+            "game": 1.023560162548824,
+            "pitcher": 1.0288674624691831
+          },
+          "R1_0xR2_2": {
+            "game": 1.0,
+            "pitcher": 1.0
+          }
+        },
+        "condition_ii_rule": "point half-width ratio <= 0.70 against the current R1-0 x R2-0 baseline (A2R:5)",
+        "condition_ii_passing_pairs": [],
+        "best_pair_descriptive": "R1_bxR2_1: largest half-width reduction, about 25%, below the registered 30% target; condition (i) INCONCLUSIVE in the S2 2*kappa_p cell because the precision requirement SE <= B/2 = 6.3e-6 was not met (SE 2.33e-5) and in the S2 2*zeta_p cell with the precision met (SE 3.17e-6) but U 1.35e-5 above B (not a FAIL: L 1.05e-6 below B) (corrected 2026-10-28, A2R S2_s5x_summary.s2); not a certified or adopted pair",
+        "switch_pairs": "R2-2 (Switch) selected M = inf, so each R2-2 pair equals its R2-0 counterpart with the same reward (A2R:683-690, :707-714) and R1_0xR2_2 is identical to the baseline (ratio 1.0, A2R:703-706)",
+        "condition_i_all_cells_pass": [
+          "R1_0xR2_1",
+          "R1_0xR2_3"
+        ],
+        "condition_i_inconclusive": "R1_b pairs in the S2 2*kappa_p cell (precision requirement not met, SE 2.33e-5) and in the S2 2*zeta_p cell (precision met, SE 3.17e-6; U 1.35e-5 above B, L 1.05e-6 below B); R1_a pairs in the S2 2*zeta_p cell (same values as R1_b there); none is a FAIL (corrected 2026-10-28, A2R S2_s5x_summary.s2); R1_0xR2_2 (Switch) in the S3:T-A1, S3:T-A4, S5:game and S5:pitcher cells (A2R:2671-2676)",
+        "integrity": "G-INT PASS: the baseline reproduces the S6-v3 record within 1e-12 on 9 values with 0 mismatches; integrity all PASS (G_INT, inf_variants_reproduce_baseline and variant_identity PASS, sn_normalizer_full_sample_valid true)",
+        "r3_status": "NOT_RUN:R3",
+        "flags": [],
+        "selected_lambda_M": {
+          "lambda_shrinkage_pairs": 100.0,
+          "M_switch_pairs": "inf",
+          "disclosure": "unblinded after the decision-record commit"
+        },
+        "registration": {
+          "registration_digest_sha256": "4fb4fa65ade1a52536e20305919686d88a2b3b2d7223326ee0ffd2cce9af3771",
+          "registration_commit": "934b5e5c",
+          "bugfix_addendum_1_commit": "32049d3c",
+          "decision_record_commit": "59904129 (worktree research/track-a-a2-1027)",
+          "external_digest_manifest": "/Users/song/Projects/pitcheezy-pm-jobs/track-a/EXP-OPE-RES-01/digest-manifest.jsonl (seq 0-78)"
+        },
+        "attempts": "A2-S3 attempt 1 aborted on a harness defect (deterministic integrity: the S6 record check required byte equality of the S6-dr-a5 registration chain, while the candidate identity c13cc989 is the same in both chains); fixed to identity + lineage verification (bug-fix addendum 1, 32049d3c), different-model review CODE-REVIEW-A2-SONNET-012-FIX PASS_WITH_NOTES, manifest bugfix_addendum seq 71 and G-CODE receipt seq 72; attempt 2 succeeded; not a re-registration (D191)",
+        "limits": "rehearsal on the exposed <=2025 S6 DEV 150 games (development, not independent confirmation); condition (i) covers only the declared synthetic worlds (real-ledger censoring and 2027 drift outside it); the 30% target, B = 1.26e-5 and SE <= B/2 are registered judgment values (D186 4-1); R3 not run",
+        "consequence": "SW_EST OFF: the 2027 primary tuple is default_tuple (current DR R2-0, realized WE R1-0, denominator B0, the 2026 registration point-set classifier); no surrogate reward, DR variant (R2-1, R2-2, R2-3), lambda, M or A3 denominator enters the 2027 primary analysis; replication_flag has no adopted tuple to check; mapping_exhaustive unchanged",
+        "follow_up": "D191 options (docs/decisions.md:337): (a) close for now, RS-03 proceeds with current DR + realized WE, and an A2 follow-up (R3 = B2 denominator arm + R1-b re-certification with a larger synthetic R, thresholds fixed in advance) is reconsidered after the World Series in November (recommended); (b) start the follow-up design this week (new ID); (c) close the A2 axis (no follow-up; B2 excluded from the 2027 analysis). Song chose (b) (docs/decisions.md:338, 23:4x KST): new ID EXP-OPE-RES-02, design-start approval only (rehearsal population, the R3 = B2 denominator arm and its certification path, the R1-b re-certification cost and the half-width threshold are decision items of that design), not a real-data run or registration approval; RS-03 keeps SW_EST and SW_A3 OFF until the follow-up issues a certification label; mapping_exhaustive unchanged",
+        "sources": "A2R:4-7 (label, label_meaning, r3_status, flags), A2R:9-24 (registration: config_digest :9, config_path :10, registration_commit :11, bugfix_addendum_1_commit :13, decision_record_commit :14, worktree_head_subject :15, digest_manifest_path :16, reviews :21, r3 :24), A2R:26-41 (attempts), A2R:49-50 (timing_kst A2-S4-a1, A2-UB-a1), A2R:469 and :605 (digest_manifest.entries seq 0 and 78), A2R:560-570 (seq 71 bugfix_addendum, seq 72 G-CODE review_reference), A2R:682-726 (summary.half_width_ratios_vs_baseline), A2R:728-753 (summary.condition_i_synthetic_pass, condition_ii_pass), A2R:754-760 (summary.best_pair_descriptive), A2R:843-848 (summary.integrity), A2R:1024-1031 (summary.selected_lambda_M), A2R:2466-2480 (S3_gint.s6_dr_a5_record), A2R:2488-2848 (S4_decision_record: R1_b S2 cells e.g. :2834-2835, R1_a S2 2*zeta_p e.g. :2802), A2R:6252-6258 (limits); docs/experiments.md:275 (EXP-OPE-RES-01 row; G-INT reproduction within 1e-12 on 9 values); docs/decisions.md:337 (D191), :338 (D191 decision (b))"
+      },
+      "replaces": "the v0 SW_A2 and SW_A3 switches (review round 1 MAJOR 2: they could combine into an uncertified estimator)",
+      "basis_current_a2": "under the current A2 registration only original-denominator (B0) pairs are adoption candidates; R3 (A3 denominator) pairs are diagnostic only and never eligible (docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:258 and :273 arms.R3_behavior_policy, :304 arms.pairs.set, :473 decision_rules.selection.r3_pairs; A2 design:162)",
+      "a2_outcome_set": "docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:460-467 (decision_rules.labels_in_precedence): FAILED_INTEGRITY, NOT_EVALUABLE, ADOPT_FOR_2027_PROTOCOL:<pair>, BIAS_NOT_CERTIFIED:<pairs>, NO_PRECISION_GAIN",
+      "mapping_exhaustive": [
+        {
+          "a2_outcome": "ADOPT_FOR_2027_PROTOCOL:<pair> (an original-denominator pair)",
+          "primary_tuple": "the adopted tuple (sealed_tuple_fields)"
+        },
+        {
+          "a2_outcome": "FAILED_INTEGRITY",
+          "primary_tuple": "default_tuple"
+        },
+        {
+          "a2_outcome": "NOT_EVALUABLE",
+          "primary_tuple": "default_tuple"
+        },
+        {
+          "a2_outcome": "BIAS_NOT_CERTIFIED:<pairs>",
+          "primary_tuple": "default_tuple"
+        },
+        {
+          "a2_outcome": "NO_PRECISION_GAIN",
+          "primary_tuple": "default_tuple"
+        },
+        {
+          "a2_outcome": "A2 not registered, not run, or no label recorded before the RS-03 seal",
+          "primary_tuple": "default_tuple"
+        }
+      ],
+      "on_if": "A2 (EXP-OPE-RES-01) label ADOPT_FOR_2027_PROTOCOL:<pair>",
+      "effect": "import and seal the ONE original-denominator tuple that A2 certified, as a whole",
+      "sealed_tuple_fields": [
+        "reward (realized WE or the adopted surrogate in WE units)",
+        "estimator (the adopted R2 variant)",
+        "parameters (lambda / M selected on the rehearsal and frozen; docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:503 decision_rules.fixed_statements.lambda_M_transfer; A2 design:345)",
+        "denominator: B0 only (the original full-vocabulary BC-P)",
+        "point-set classifier (the baseline classification that defines P; A2 registration draft:323 estimands_metrics.primary_metric.point_set_P)",
+        "certification evidence (A2 decision record and stage-output seals with the S1-S5 cell outcomes; A2 registration draft:667 stage_output_seals, :434-450 synthetic_bias_check.acceptance)"
+      ],
+      "a3_rule": "any A3-denominator combination (R3 or otherwise) is a sensitivity analysis only; it can become primary only through its own separately registered certification completed before the RS-03 seal; none exists under the current A2 registration",
+      "r3_status_reference": "A2's r3_status (ENABLED_DIAGNOSTIC_ONLY or NOT_RUN:R3, A2 registration draft:659-660 registration_input_pins.r3_status) is recorded with the import as information only",
+      "replication_flag": {
+        "rule": "on 2027 compute the current DR on the same data; H_point(adopted) / H_point(current) > ratio -> flag PRECISION_GAIN_NOT_REPLICATED (verdict unchanged)",
+        "ratio": 0.85,
+        "source": "docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:502 (decision_rules.fixed_statements.replication_check_2027); A2 design:344"
+      },
+      "default_tuple": {
+        "when": "every A2 outcome other than ADOPT_FOR_2027_PROTOCOL (see mapping_exhaustive)",
+        "reward": "realized WE (R1-0)",
+        "estimator": "runtime ML-POLICY-RUNTIME-v3, censoring l1r, natural-course refusals as registered (configs/ML-POLICY-MATERIALIZATION-v1.json:808-817)",
+        "gr_cap": 0.005,
+        "v3_tempered_alpha": 0.5,
+        "denominator": "B0 = full-vocabulary BC-P (bc_p_file_sha256 b4f274eb..., configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json:7)",
+        "point_set_classifier": "the 2026 registration L1-R baseline classification",
+        "sources": "configs/ML-POLICY-MATERIALIZATION-v1.json:818 (gr_cap), :824 (v3_law); docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:465 (labels_in_precedence NO_PRECISION_GAIN: the 2027 default stays current DR and realized WE)"
+      },
+      "a3_thresholds_for_reference": {
+        "nll_margin": 0.005,
+        "ece_noninferiority_margin": 0.002,
+        "ess_min_pa": 100,
+        "ess_min_games": 30,
+        "sources": "docs/pm/research/track-a/A3-behavior-policy-design.md:206 (E1), :207 (E2), :191 (E5)"
+      },
+      "answers_left_to_this_registration_by_A3": {
+        "as_of_refit": "none (TRAIN only)",
+        "cross_fitting_on_2027": "none",
+        "source": "docs/pm/research/track-a/A3-behavior-policy-design.md:216"
+      },
+      "unchanged": "reference R and every target policy"
+    },
+    "bias_scope": {
+      "approved_B": "exactly 1.26e-5 WE per PA as the approved threshold (D186 4-1); 1.2612e-5 is only its unrounded explanatory derivation (docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:425-428 synthetic_bias_check.acceptance.bias_bound_B; A2 design:265-266)",
+      "what_a2_certifies": "combined-arm bias (surrogate reward + estimator + in-run lambda/M selection, against realized-WE truth) in the declared synthetic cells, after a precision requirement SE <= B/2: V2 cells U <= B, V3 (misspecified denominator) cells by the relative rule U <= |beta_0| + B with beta_0 the baseline's exact bias (A2 registration draft:434 certified_quantity, :440 estimation.cell_outcome; A2 design:274, :278)",
+      "outside_a2_certification": "the real ledger's P-selection (censoring) mechanism, violation forms outside the declared worlds and 2027 era drift (A2 registration draft:448 certification_scope; A2 design:282)",
+      "surrogate_assumptions": "a surrogate reward equals the realized-WE Delta only under (E1) exclusion and (E2) table validity; the real-data difference stays uncertified (A2 registration draft:221 estimand_note; A2 design:144)",
+      "consequence": "an A2 pass alone does not create a total bias allowance for RS-03; see labels_primary.bias_budget"
+    },
+    "SW_A3": {
+      "status": "OFF for 2027 under the current A2 registration: EXP-OPE-RES-01 (A2) ended NO_PRECISION_GAIN with r3_status NOT_RUN:R3 and certified no tuple (switches.SW_EST.a2_result; D191 docs/decisions.md:337), so the A3-adopted B2 remains a frozen documented artifact (sealing.pi_b_hat_candidate) and enters only if a future A2 follow-up registration certifies a tuple that uses it (D190 docs/decisions.md:335, D191); conditional rule unchanged: A3 ADOPTED B2 (2026-10-27); switch may be ON only inside A2's certified estimator tuple (SW-EST); until A2 certifies, SW_A3 = OFF",
+      "rule": "no separate rule text: the A3-denominator rule stays in switches.SW_EST unchanged (an A3 denominator, R3, enters the primary analysis only inside an A2-certified tuple; otherwise it is a sensitivity analysis); the v0 SW_A3 switch was folded into SW_EST in v1 (review round 1 MAJOR 2)",
+      "a3_result": {
+        "label": "ADOPT_FOR_2027_REGISTRATION:B2 (A3R:11 final.label; D190 docs/decisions.md:335)",
+        "b2_vs_b0_dev": {
+          "nll_delta": -0.09489672585524786,
+          "nll_delta_ci95": [
+            -0.09883525759187398,
+            -0.09075592170375131
+          ],
+          "ece_b0": 0.0349374703689086,
+          "ece_b2": 0.008791666064920222,
+          "p1_b0": 0.0035974190993250713,
+          "p1_b2": 0.00035314114094291984
+        },
+        "p1_definition": "share of in-support pitches whose behavior-policy probability of the actual pitch is below 1e-3 (A3 design:172); D190 calls it the positivity violation",
+        "s6_weight_diagnostic_e5_b2": {
+          "e5_pass": true,
+          "ess_ratio_game": 1.002635384429555,
+          "ess_ratio_pa": 0.9617418406643645,
+          "kl_vs_b0": 0.048863351237125756
+        },
+        "b1": "ineligible: S6 weight diagnostic E5 failed (A3R:27279 stages[09-s6-weights][weights.json].arms.B1.E5.pass false)",
+        "sources": "A3R:6658-6695 (stages[08-score-dev][score.json].paired_vs_b0.B2), A3R:27467-27490 (stages[09-s6-weights][weights.json].arms.B2: E5.pass :27475, candidate_over_reference_ess :27482-27483, kl_new_vs_b0.mean :27490), A3R:3356 (stages[04-freeze-primary]); docs/experiments.md:274 (EXP-BC-CAL-01 row); docs/decisions.md:335 (D190)"
+      },
+      "a2_link": "D190: the first A2 registration runs R3 = NOT_RUN:R3; adding B2 as an R3 diagnostic arm needs an A2 follow-up addendum (a new registration); until A2 certifies a tuple that uses it, SW_A3 stays OFF; D191 (docs/decisions.md:337): that first registration ran with R3 = NOT_RUN:R3 and ended NO_PRECISION_GAIN; Song chose to design the follow-up (D191 decision (b), docs/decisions.md:338: EXP-OPE-RES-02, design start only), and SW_A3 stays OFF until it issues a certification label",
+      "candidate": "sealing.pi_b_hat_candidate"
+    },
+    "A4_prerequisite": {
+      "what": "2026+ plate_x/z and zone definitions changed (docs/pm/research/experiment-proposals-2026-10-26.md:27); every arm reads the physics of earlier pitches in the PA (docs/pm/research/track-a/A1-planner-variance-design.md:53)",
+      "required_by_freeze": [
+        "A4 alignment rule (PM/ops lane, D186 6-1) fixed, reviewed and pinned",
+        "2027 column-definition audit at freeze and after the season"
+      ],
+      "brief_path": "docs/pm/service/a4-2026-coordinate-zone-audit-brief.md (named by docs/pm/research/experiment-proposals-2026-10-26.md:63; absent when this revision was written)",
+      "if_missing": "no seal"
+    },
+    "selection_rule": "switches only import labels that passed their own registered thresholds; never chosen after seeing 2027, 2026 or RS-01/RS-02 results"
+  },
+  "decision_quantity": {
+    "name": "Delta_point",
+    "definition": "paired mean Delta (arm minus R, or arm minus arm) over the registered common point set P = the E0 PAs whose L1-R value is a point (lower bound == upper bound) under the sealed tuple's point-set classifier (docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:323 estimands_metrics.primary_metric.point_set_P; the mean over P is a conditional mean, :324 conditional_interpretation); the same P for every arm",
+    "unit": "defense win expectancy per plate appearance (dimensionless WE difference)",
+    "estimand": "PA-horizon defense WE difference on P when the arms differ in pitch-type probabilities only (ARM-B); identification assumed, not evidenced (BLK-04)",
+    "claim_scope": "every claim is about the registered common P only, reported together with: unknown-pitcher exclusions (count), censoring (count and share by resolution), and coverage of the reconstructed-input, ledger and snapshot-replay populations (games and decisions)",
+    "reward": {
+      "default": "R1-0: frozen C0 defense WE of the next PA's pre-pitch state, or the final 0/1 for the game's last PA (experiments/pitchmdp/pitchmdp/policy_requests.py:221-272; A2 registration draft:186 arms.R1_reward.R1_0_current)",
+      "if_SW_EST_on": "the reward of the sealed A2 tuple (a surrogate is the same WE currency and conditional on E1/E2); realized WE as a secondary row; not met under the current A2 result: EXP-OPE-RES-01 NO_PRECISION_GAIN sets SW_EST OFF (switches.SW_EST.a2_result; D191 docs/decisions.md:337), so the 2027 reward is the default R1-0 (realized WE) and no surrogate enters the primary analysis"
+    },
+    "interval": {
+      "level": 0.95,
+      "type": "percentile (2.5% and 97.5% quantiles of the bootstrap distribution of Delta_point), computed with the same percentile function as the 2026 registration's game bootstrap (rule cited at docs/pm/research/track-a/A2-ope-redesign-design.md:168)",
+      "bootstrap": {
+        "kinds": [
+          "whole_game",
+          "pitcher_of_PA_first_row"
+        ],
+        "draws_each": 10000,
+        "selection": "compute both intervals; report and decide with the one whose width (upper - lower) is larger; exact tie (equal float64 widths) -> whole_game",
+        "seed": null,
+        "seed_rule": "fixed at seal, never changed",
+        "basis": "pitcher bootstrap next to the game bootstrap as in A2 (A2 design:168; A2 registration draft:277-279 arms.R4_bootstrap)",
+        "own_choice_disclosure": "deciding with the single wider interval is RS-03's own judgment; A2 instead requires its condition to hold under each bootstrap separately and uses the wider half-width only for ranking and reporting (A2 design:169; A2 registration draft:279 arms.R4_bootstrap.decision_uses)"
+      },
+      "p_value_reported": "two-sided, from the selected bootstrap kind: p = (1 + #{b : |Delta*_b - Delta_hat| >= |Delta_hat|}) / (1 + draws_each); reported for C1, used for the policy contrasts in the Holm family"
+    },
+    "censoring_report_separately": [
+      "E0 censored count and share, by resolution (rho0, natural course, worst case, shared end)",
+      "worst-case residual share s",
+      "per-game distribution of worst-case PAs (clustering)",
+      "SE split into point and censored components (A2 R5-d, R5-f)"
+    ],
+    "censoring_reference_2026": {
+      "e0_pas": 149525,
+      "censored_pas": 17506,
+      "censored_share_of_e0": 0.1171,
+      "rho_zero": 16654,
+      "natural_course": 665,
+      "worst_case": 158,
+      "shared_end": 29
+    },
+    "secondary_row_current_rule": {
+      "rule": "L1-R lower-endpoint 95% CI lower > MEI (statistical) and > MEI + b_v (bias-adjusted), D108/D109/D120 (docs/decisions.md:162-164, :186)",
+      "mei": 0.001,
+      "b_v": 0.002734729542731599,
+      "use": "reported; never a confirmation claim"
+    }
+  },
+  "primary_contrast": {
+    "id": "C1",
+    "contrast": "Delta_point(A - R)",
+    "question": "does the sealed service policy beat pitcher habit on the registered common P (the prospective version of D177 G5b)?",
+    "why_this_one": "the only arm whose sealed identifier exists today; conditional arms may not exist. The recorded SEs used for planning come from the same two policies (c13cc989 vs SupportedBC, 2026 OPE and S6) but from the L2 population (complete PAs plus the rho_zero and rho_zero_before_node resolutions, per the current A2 correction; power_plan.proxy_reason), which is not the decision set P, so they are a planning proxy, not this estimand's SE",
+    "alpha_two_sided": 0.05,
+    "decision_by": "the selected 95% interval of decision_quantity.interval (equivalent to a two-sided test at alpha)",
+    "adjustment": "none",
+    "status": "decided: D187 decision 1 (docs/decisions.md:327)"
+  },
+  "labels_primary": {
+    "theta": 0,
+    "theta_decision": "decided: theta = 0 (D187 decision 2, docs/decisions.md:327); *_CONFIRMED only with a bias budget covering P certified before the seal (prerequisite P6), otherwise POINT_*_STATISTICAL with the bias-sensitivity row; the former option theta = MEI is history only (song_decisions Q2)",
+    "label_rule": "with the selected 95% interval [L, U], the label is the first entry of labels_in_order whose condition holds; every analysis receives exactly one label",
+    "labels_in_order": [
+      {
+        "order": "1",
+        "label": "INVALID",
+        "condition": "any seal or look-rule breach (stop rules K1, K6); and, for every analysis that uses the shadow ledger, a broken ledger hash chain (stop rule K4)"
+      },
+      {
+        "order": "2",
+        "label": "NOT_EVALUABLE",
+        "condition": "any validity gate fails (stop rule K3); or, for every contrast that involves the affected arm, an input-column definition change not covered by the sealed alignment rule (stop rule K2); or the look ended without a complete result"
+      },
+      {
+        "order": "3a",
+        "label": "POINT_IMPROVEMENT_CONFIRMED",
+        "condition": "only if bias_budget.b_total is certified and pinned at sealing: L > theta + b_total"
+      },
+      {
+        "order": "3b",
+        "label": "POINT_HARM_CONFIRMED",
+        "condition": "only if bias_budget.b_total is certified and pinned at sealing: U < -(theta + b_total)"
+      },
+      {
+        "order": "4",
+        "label": "POINT_IMPROVEMENT_STATISTICAL",
+        "condition": "L > theta"
+      },
+      {
+        "order": "5",
+        "label": "POINT_HARM_STATISTICAL",
+        "condition": "U < -theta"
+      },
+      {
+        "order": "6a",
+        "label": "IMPROVEMENT_BELOW_THRESHOLD",
+        "condition": "only if theta > 0: 0 < L <= theta (the interval excludes 0 but not theta); inactive because theta = 0 is decided (D187 decision 2)"
+      },
+      {
+        "order": "6b",
+        "label": "HARM_BELOW_THRESHOLD",
+        "condition": "only if theta > 0: -theta <= U < 0; inactive because theta = 0 is decided (D187 decision 2)"
+      },
+      {
+        "order": "7",
+        "label": "NO_DIFFERENCE_ESTABLISHED",
+        "condition": "L <= 0 <= U"
+      }
+    ],
+    "exhaustiveness": "for a valid interval: L > 0 is covered by 4 (L > theta) or 6a (0 < L <= theta); U < 0 by 5 or 6b; otherwise L <= 0 <= U is 7; with theta = 0, 6a and 6b are empty",
+    "available_now": [
+      "INVALID",
+      "NOT_EVALUABLE",
+      "POINT_IMPROVEMENT_STATISTICAL",
+      "POINT_HARM_STATISTICAL",
+      "NO_DIFFERENCE_ESTABLISHED"
+    ],
+    "POINT_IMPROVEMENT_STATISTICAL": "selected CI lower > theta",
+    "POINT_HARM_STATISTICAL": "selected CI upper < -theta",
+    "NO_DIFFERENCE_ESTABLISHED": "the selected CI contains 0: 'the registered analysis did not establish a difference (this does not mean there is no difference)'; report the point estimate, the interval and the blinded MDE; excluding an effect would need a separately specified equivalence criterion, which this registration does not have (wording after /Users/song/Projects/pitcheezy-pm-jobs/20261020-rs02/REGISTRATION-RS02-SEALED.json:1063)",
+    "NOT_EVALUABLE": "any validity gate fails, or the look ended without a complete result",
+    "INVALID": "any seal or look-rule breach",
+    "bias_sensitivity_row": {
+      "label": false,
+      "report": "whether the selected CI lower exceeds b_v, and the value of (CI lower - b_v), as the conservative scenario",
+      "b_v": 0.002734729542731599,
+      "b_v_source": "configs/ML-POLICY-MATERIALIZATION-v1.json:804; docs/decisions.md:186 (D120)"
+    },
+    "bias_budget": {
+      "b_total": "미측정 — filled at sealing from the certified bias budget; absent that, no CONFIRMED label is reachable",
+      "required_content": "baseline bias of the sealed tuple's estimator + certified additional bias of the adopted variant (A2's B is certified only in the declared synthetic cells, with the V3 cells relative to the baseline bias; A2 design:274, :278) + the surrogate assumptions E1/E2 stated if the reward is a surrogate (A2 design:144)",
+      "must_cover": "the registered P estimand of RS-03; the current A2 certification expressly excludes the real ledger's P-selection mechanism and 2027 era drift (docs/pm/research/track-a/A2-ope-redesign-registration-draft.json:448 synthetic_bias_check.acceptance.certification_scope)",
+      "status": "no certified budget exists at this revision; its certification is assigned to the research lane as an A2 follow-up stage (D187 decision 9, docs/decisions.md:327; prerequisite P6, 미착수)"
+    },
+    "POINT_IMPROVEMENT_CONFIRMED": "defined only if bias_budget.b_total is certified and pinned at sealing: selected CI lower > theta + b_total",
+    "POINT_HARM_CONFIRMED": "defined only if bias_budget.b_total is certified and pinned at sealing: selected CI upper < -(theta + b_total)",
+    "confirmed_wording": "only the *_CONFIRMED labels of C1 may be called a confirmation; without a certified budget they cannot occur"
+  },
+  "validity_gates": {
+    "ess_min_pa": 100,
+    "ess_min_games": 30,
+    "bootstrap_invalid_share_max": 0.05,
+    "paired_identity_run_difference_max": 0,
+    "gr_cap": 0.005,
+    "vocab_unmapped_share_max": 0.01,
+    "common_point_set_P": true,
+    "sources": [
+      "docs/decisions.md:162 (D108: ESS PA 100 / games 30, bootstrap invalid <= 0.05, paired identity run difference 0)",
+      "configs/ML-POLICY-MATERIALIZATION-v1.json:818 (gr_cap; D119 docs/decisions.md:184)",
+      "configs/ML-POLICY-MATERIALIZATION-v1.json:826 (vocab_unmapped_share_max)"
+    ]
+  },
+  "secondary_contrasts": [
+    {
+      "id": "C2",
+      "contrast": "Delta_point(A_RB - R)",
+      "operands_required": [
+        "A_RB",
+        "R"
+      ]
+    },
+    {
+      "id": "C3",
+      "contrast": "Delta_point(B - R)",
+      "operands_required": [
+        "B",
+        "R"
+      ]
+    },
+    {
+      "id": "C4",
+      "contrast": "Delta_point(C - R)",
+      "operands_required": [
+        "C",
+        "R"
+      ]
+    },
+    {
+      "id": "C5",
+      "contrast": "Delta_point(B - same_planner_g0_partner of B)",
+      "meaning": "G15 vs G0 with the same planner (partner = A_RB if B uses RB, A if B uses the MC planner)",
+      "operands_required": [
+        "B",
+        "the partner arm"
+      ]
+    },
+    {
+      "id": "C6",
+      "contrast": "Delta_point(C - B)",
+      "meaning": "B1 vs G15 with the same planner",
+      "operands_required": [
+        "C",
+        "B"
+      ]
+    },
+    {
+      "id": "C7",
+      "contrast": "Delta_NLL(N_G15 - N_G0)",
+      "layer": "predictor",
+      "operands_required": [
+        "N_G15",
+        "N_G0",
+        "completed predictor_layer_specification"
+      ]
+    },
+    {
+      "id": "C8",
+      "contrast": "Delta_NLL(N_B1 - N_G15)",
+      "layer": "predictor",
+      "operands_required": [
+        "N_B1",
+        "N_G15",
+        "completed predictor_layer_specification"
+      ]
+    }
+  ],
+  "multiplicity": {
+    "contrast_definition": "a contrast exists only if every required operand is included at sealing; the Holm family and its size m are frozen after inclusion is settled at sealing and never change afterwards",
+    "primary": "C1 alone, two-sided alpha via the selected 95% interval, no adjustment",
+    "secondary_family": "Holm step-down over the secondary contrasts that exist at sealing, each hypothesis with its registered p",
+    "secondary_family_max_size": 7,
+    "holm_alpha": 0.05,
+    "policy_secondary_rule": {
+      "p": "two-sided null-centred bootstrap p of decision_quantity.interval.p_value_reported (selected bootstrap kind of that contrast)",
+      "decision": "Holm-adjusted p <= holm_alpha; reported as secondary evidence, never 'confirmed'"
+    },
+    "predictor_secondary_rule": {
+      "N": {
+        "delta_nll_max": -0.003,
+        "nll_ci95_upper_max": 0,
+        "brier_ci95_upper_max": 0.001,
+        "required_negative_seeds": 4,
+        "seeds": 5
+      },
+      "operators": "ensemble delta NLL <= delta_nll_max, paired 95% CI upper < nll_ci95_upper_max, paired Brier CI upper <= brier_ci95_upper_max, negative per-seed deltas >= required_negative_seeds",
+      "p": "one-sided p_less of matrix_metrics.paired_game_comparison (whole-game bootstrap), as in EXP-P48-001 (PREREG:154-158); then Holm-adjusted in the family",
+      "population": "whole-MLB 2027 regular-season pitches under the completed predictor_layer_specification",
+      "bootstrap": {
+        "draws": 10000,
+        "unit": "whole_game",
+        "seed": null
+      }
+    },
+    "descriptive_outside_family": [
+      "Delta_point(A_RB - A)",
+      "secondary rows (current rule, current DR, sensitivity denominators)",
+      "starter/reliever strata",
+      "ledger-vs-replay agreement (per-decision TV distribution)"
+    ]
+  },
+  "data_roles": {
+    "fit_roles_le_2025": {
+      "TRAIN_2023_05_15_to_2025_04_30": "exposed_fit (configs/ML-POLICY-MATERIALIZATION-v1.json:433): model weights of every predictor head/member, the primary denominator B0, support M, frozen C0 WE and advancement, delivery pools (window: A2 registration draft:166 data_roles.TRAIN)",
+      "may_2025_rows": "temperature calibration only: G0 per-member May temperature (docs/pm/research/track-a/A1-planner-variance-design.md:51); B1 per-seed temperature on the May 16-31 Cpanel rows (PREREG:74); an A3 artifact used in a sensitivity row may also carry May early-stop/temperature rows under A2's R3 provenance rule (rows <= 2025-05-31, A2 registration draft:263 arms.R3_behavior_policy.eligibility.complete_provenance_rule)",
+      "june_2025_blend_rows": "exposed_policy_tuning (configs/ML-POLICY-MATERIALIZATION-v1.json:436): June frequency-blend weights of every predictor; B1 MIX_FIT weights per seed and, separately, for the ensemble (PREREG:147-149); policy tau selection (docs/decisions.md:158-160); new arms: S3b gates as pass/fail checks only, no re-selection",
+      "dev_2025_07_to_09": "exposed_development (configs/ML-POLICY-MATERIALIZATION-v1.json:437): predicted, scored and rehearsed (track A, S5/S6 certification); never used for fitting, calibration or mixing-weight selection; never confirmation",
+      "correction_of_v0": "v0 said every fitted component came from TRAIN; temperatures (May rows) and blend/mix weights and tau (June rows) are fitted on <=2025 exposed rows outside TRAIN, as registered"
+    },
+    "exposed_development_selections": {
+      "disclosure": "the following selections are made on already-exposed <=2025 DEV rows; they are disclosed as exposed-development selection and are not independent tests; the 2027 season is the only independent test",
+      "items": [
+        "EXP-P48-001 Stage-B inclusion decision for arm C and N_B1 (Cpanel DEV after blend and whole-MLB DEV blended; PREREG:154-162)",
+        "A1 verdict and confirmation slice for SW_A1 (DEV July-September 2025 150 games and 50 new DEV games; A1 registration draft:111-113)",
+        "A2 pair selection and lambda/M selection on the S6 150-game rehearsal for SW_EST (A2 registration draft:231-234 and :242 R2 selection rules, :469-473 decision_rules.selection, :503 lambda_M_transfer)",
+        "A3 candidate selection by DEV NLL, entering RS-03 only as a sensitivity denominator (A2 registration draft:270 arms.R3_behavior_policy.exposure_note; A3 design:206)"
+      ],
+      "ban_2026_2027": "no fitting, calibration, mixing-weight choice, selection or inclusion decision uses any 2026 or 2027 row"
+    },
+    "season_2026": "EXPOSED_DEVELOPMENT (2026 OPE once D131, WS adaptation research, public service); not used for fit, tuning, selection, calibration, cross-fitting or arm inclusion; structure-only arithmetic on summaries recorded in the A2 registration draft",
+    "ws_2026_rs01_rs02_results": "not used for arm selection; operational lessons only (look 2026-11-06T00Z, D179 docs/decisions.md:311)",
+    "spring_training_2027": "not used (an ops connectivity test, if any, reads metadata only and is logged)",
+    "season_2027_regular_after_seal": "SEALED_PROSPECTIVE_EVAL; scoring only; no fit, tuning, selection, calibration, cross-fitting or inclusion decision",
+    "season_2027_postseason": "outside this registration (judgment: regular season only, as the 2026 OPE)"
+  },
+  "populations": {
+    "PROSPECTIVE_SHADOW_LEDGER": {
+      "rows": "each arm's recommendation distribution, input fingerprint and time written before the first local receipt of the target pitch's outcome",
+      "ledger_rules": "RS-01 ledger (UPDATE/DELETE blocked by triggers, intent before the model call, first write wins): /Users/song/Projects/pitcheezy-pm-jobs/20261018-rs01-prospective-shadow/REGISTRATION-EXEC-G3.json:676",
+      "claim": "recorded before the first receipt; NOT a physical before-the-pitch claim (claim limit as /Users/song/Projects/pitcheezy-pm-jobs/20261020-rs02/REGISTRATION-RS02-SEALED.json:837)",
+      "rule": "only rows logged before the outcome are prospective evaluation targets (docs/pm/research/ws-adaptation/data-roles.md:13)"
+    },
+    "ASOF_SNAPSHOT_REPLAY": {
+      "rows": "optional: replay from immutable preserved store snapshots, selecting for each target pitch the snapshot that precedes its first receipt and rejecting snapshots that already contain it (REGISTRATION-RS02-SEALED.json:833-836)",
+      "claim": "historical input availability may be claimed only for ledger rows and these rows"
+    },
+    "FROZEN_MODEL_ON_RECONSTRUCTED_INPUTS": {
+      "rows": "the sealed runtime run on inputs reconstructed from a final Statcast snapshot fixed after the season",
+      "name": "prospective evaluation of a frozen model on retrospectively reconstructed inputs",
+      "claim": "prospective with respect to the seal; no claim of historical input availability, because final corrected rows differ from the snapshots observed at the time (docs/pm/contracts.md:9)"
+    },
+    "primary_population": {
+      "decided": "FROZEN_MODEL_ON_RECONSTRUCTED_INPUTS over every eligible 2027 regular-season game, replayed after the season (RS-02 style; D187 decision 4)",
+      "alternatives_history": [
+        "PROSPECTIVE_SHADOW_LEDGER rows only",
+        "both populations must pass"
+      ],
+      "ledger_and_snapshot_role": "the replay on retrospectively reconstructed inputs evaluates the frozen arms on every eligible regular-season game; its as-of guarantee is the registered reconstruction rule (as_of_rules), not a proof of historical input availability. Proof that a recommendation was recorded before the first receipt of the outcome comes only from ledger rows (PROSPECTIVE_SHADOW_LEDGER; the D187 wording pre-pitch record proof is implemented as this, and physical pre-pitch timing is not claimed). Evidence that the inputs were available before first receipt comes only from ledger rows and immutable-snapshot replay rows (ASOF_SNAPSHOT_REPLAY, RS-02 style); snapshot replay does not prove that a prediction was generated before receipt (REGISTRATION-RS02-SEALED.json:837). Both row types also serve the agreement check against the reconstructed-input decisions and secondary analysis",
+      "status": "decided: D187 decision 4 (docs/decisions.md:327); former alternatives are history only"
+    },
+    "eligibility": "2027 regular-season games whose scheduled first pitch (UTC) is later than sealing.external_manifest.eligibility_cutoff_utc = max(seal_created_at_utc, completion_appended_at_utc, completion_evidence_created_at_utc) (sealing.transition steps 5-6); games whose first pitch is after seal_created_at_utc but not after the cutoff are excluded and counted",
+    "unknown_pitchers": {
+      "rule": "pitchers absent from TRAIN are excluded before start and counted (as 2026)",
+      "reference_2026_excluded_pas": 34763,
+      "share_2027": "미측정"
+    }
+  },
+  "as_of_rules": {
+    "policy_decision_inputs": "pre-pitch game state (count, outs, runners, score, inning) and earlier pitches of the same PA (type, physics, result) only; the candidate pitch type is the action, not an input; the current pitch's realized type, physics and outcome never enter a recommendation",
+    "predictor_scoring_inputs": "the policy-decision inputs plus the realized current pitch type only (conditional scoring, REGISTRATION-RS02-SEALED.json:904); current-pitch physics and outcome are not inputs",
+    "post_action_columns": "forbidden for decisions (contract test experiments/pitchmdp/tests/test_contract.py:50-58, cited at docs/pm/research/track-a/A2-ope-redesign-design.md:377)",
+    "profiles": {
+      "frozen_at": "seal",
+      "source_window": "decided: <= 2025-12-31, the 2026 registration source guard (D187 decision 5, docs/decisions.md:327; configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:320-321); fitted components keep TRAIN <= 2025-04-30 (data_roles)",
+      "2026_as_input": "excluded (D187 decision 5)"
+    },
+    "fitted_components": "as data_roles.fit_roles_le_2025; no refit with <=2025 DEV, 2026 or 2027",
+    "mid_pa_substitution": "the 2026 registration rule unchanged (configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:326)",
+    "column_definitions": "the A4 alignment rule; any uncovered definition change -> stop rule K2"
+  },
+  "power_plan": {
+    "status": "L2-based planning proxy: arithmetic on recorded values; not a new measurement and not validated 2027 power",
+    "proxy_reason": "the recorded SEs are those of the L2 population, the conditional mean over the L1-R point-resolved E0 PAs that are complete or resolved by rho_zero or rho_zero_before_node (A2 registration draft@v4:134 mde_from_records.decomposition.rule and @v4:733 revisions[4], the current A2 correction; the L2 flag at experiments/pitchmdp/pitchmdp/policy_estimator.py:250-251 as cited there); the copied values are unchanged (@v4:120 mde_from_records.season_2026_structure_only.l2_ci95). The decision set P is fixed by bound equality under the sealed classifier (@v4:326 estimands_metrics.primary_metric.point_set_P) and also holds natural-course-resolved PAs where their L1-R value is a point: A2 lists natural-course resolution among the trajectories that select P (@v4:327 conditional_interpretation) and describes the S6 P as approximately E0 minus the worst-case and shared-end PAs (A2 design@v4:305), while the L2 flag excludes them. The P-specific SE is 미측정; the registered estimand and the planning arithmetic do not change",
+    "p_specific_se": "미측정",
+    "recorded_inputs": {
+      "mde_multiplier": 2.801585,
+      "power": 0.8,
+      "games_2026": 2429,
+      "e0_pas_2026": 149525,
+      "se_point_2026": 8.235e-05,
+      "mde_point_2026": 0.00023071,
+      "mde_point_2026_30pct_cut": 0.0001615,
+      "a2_point_se_cut_X": 0.3,
+      "mde_current_rule_2026": 0.0027411,
+      "mde_current_rule_bias_adjusted_2026": 0.0054758,
+      "mde_current_rule_2026_30pct_cut": 0.0027209,
+      "se_lo_2026": 0.00024429,
+      "se_censored_2026": 0.00022999,
+      "censored_share_of_se_lo_sq_2026": 0.886,
+      "se_censored_S6": 0.00021065,
+      "censored_share_of_se_lo_sq_S6": 0.345,
+      "s_worst_share_2026": 0.0010566794850359472,
+      "mei": 0.001,
+      "b_v": 0.002734729542731599,
+      "games_S6": 150,
+      "pas_S6": 11350,
+      "e0_pas_S6": 10131,
+      "pas_2026": 184288,
+      "se_point_S6": 0.00029008,
+      "mde_point_S6": 0.00081269,
+      "se_point_S6_projected_2429": 7.208e-05,
+      "full_season_games_reference": 2430
+    },
+    "scenario_status_v10": {
+      "point_se_30pct_cut_scenario": "NOT_ACHIEVED under EXP-OPE-RES-01 (A2) NO_PRECISION_GAIN (results/EXP-OPE-RES-01.json summary.half_width_ratios_vs_baseline: best R1_bxR2_1 0.7458/0.7582; D191 docs/decisions.md:337); the planning value is the current-SE row; the scenario row is kept for reference and is re-evaluated only if the follow-up EXP-OPE-RES-02 (D191 (b), design started 2026-10-27, not registered) issues a certification label",
+      "kind": "status_note_v10"
+    },
+    "censoring_share_wording": "censored_share_of_se_lo_sq_2026 is an approximate inferred variance share under the assumption that the point and censored components are independent, not a measured decomposition; moreover the two components come from different populations and denominators (SE_point from L2, the conditional mean over the L1-R point-resolved E0 PAs that are complete or resolved by rho_zero or rho_zero_before_node; SE_lo from the L1-R lower endpoint over all E0), so independence alone does not identify a decomposition (A2 registration draft@v4:134 mde_from_records.decomposition.rule; A2 design@v4:84); the measured version is A2's R5 f",
+    "assumptions": [
+      "point SE proportional to 1/sqrt(games)",
+      "E0 density as in 2026 (e0_per_game_2026)",
+      "the 30% scenario cuts the point SE by exactly a2_point_se_cut_X (A2's pass threshold); 2027 replication unmeasured",
+      "2027 E0 density, unknown-pitcher share, s and the pitcher-bootstrap SE are 미측정; a wider SE or more unknown pitchers raise every n"
+    ],
+    "e0_per_game_2026": 61.558,
+    "formula": "n(delta) = games_2026 * (MDE / (delta - b))^2 at 80% power, two-sided 5%; b = 0 for the statistical label, b = b_v for the bias-sensitivity scenario",
+    "reference_effect_grid": [
+      0.001,
+      0.0003,
+      0.0002,
+      0.0001
+    ],
+    "table_games_80pct": [
+      {
+        "delta_we_per_pa": 0.001,
+        "statistical_label_current_se_games": 129.3,
+        "statistical_label_30pct_se_cut_scenario_games": 63.4,
+        "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+      },
+      {
+        "delta_we_per_pa": 0.0003,
+        "statistical_label_current_se_games": 1436.5,
+        "statistical_label_30pct_se_cut_scenario_games": 703.9,
+        "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+      },
+      {
+        "delta_we_per_pa": 0.0002,
+        "statistical_label_current_se_games": 3232.2,
+        "statistical_label_30pct_se_cut_scenario_games": 1583.8,
+        "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+      },
+      {
+        "delta_we_per_pa": 0.0001,
+        "statistical_label_current_se_games": 12928.9,
+        "statistical_label_30pct_se_cut_scenario_games": 6335.4,
+        "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+      }
+    ],
+    "table_note": "the v0 column for a confirmed label with b = A2's B was removed (review round 1 BLOCKER 1): B is not a total bias bound, and no certified total budget exists",
+    "seasons_equivalent_current_se": [
+      0.053,
+      0.591,
+      1.331,
+      5.323
+    ],
+    "current_rule_scenarios": {
+      "scenario_constant_censored_se": {
+        "assumption": "the censored SE stays at se_censored_2026 for any number of games",
+        "mde_n_infinite": 0.002701,
+        "mde_n_infinite_bias_adjusted": 0.005436
+      },
+      "scenario_censoring_width_floor": {
+        "assumption": "every SE component goes to 0; only MEI and the 2026 worst-case share s remain",
+        "mde": 0.0020567
+      },
+      "reading": "scenario values only: two recorded scales (150 and 2,429 games) do not establish the asymptotic behaviour, so neither is a general sample-size limit; the 2027 s is 미측정"
+    },
+    "theta_mei_history": {
+      "note": "former option theta = MEI, not chosen in D187 decision 2; scenario values kept as history only",
+      "mde_one_season": 0.00123071,
+      "mde_one_season_30pct_se_cut_scenario": 0.0011615
+    },
+    "bias_sensitivity_scenario": {
+      "b": "b_v",
+      "mde_one_season": 0.0029654,
+      "confirmed_label_power": "not computed: the certified total bias budget b_total is 미측정"
+    },
+    "s6_basis_factor": 1.305,
+    "s6_basis_reading": "the S6 basis needs about this factor fewer games; the conservative 2026 basis is the planning value",
+    "not_used_for_planning": {
+      "exposed_point_estimate_S6": -1.9012038906171694e-05,
+      "exposed_point_estimate_2026": -0.00014858997929797347
+    },
+    "secondary_power": "미측정",
+    "secondary_power_note": {
+      "p17_mean_tv_predictor_swap": 0.0323,
+      "p17_top1_agreement": 0.928,
+      "p18_mean_tv_seed_swap": 0.0497,
+      "p18_top1_agreement": 0.887,
+      "kl_mean_candidate_vs_reference": 0.0074,
+      "reading": "predictor swaps moved recommendations less than planner-seed noise (D155); between-arm Delta may be very small"
+    },
+    "predictor_layer_reference": {
+      "p16_whole_mlb_delta_nll": -0.004062,
+      "p16_whole_mlb_delta_nll_ci": [
+        -0.004383,
+        -0.003752
+      ],
+      "reading": "exposed DEV reference only; 2027 power unmeasured"
+    },
+    "ledger_coverage": {
+      "live_full_season_capacity": "미측정",
+      "abstention_rate": "미측정",
+      "planner_ms_per_decision_derived": 33,
+      "rule": "if the ledger is the primary population and covers fewer games than the table needs, the MDE grows by sqrt(needed / covered)"
+    },
+    "unmeasured": [
+      "P-specific SE",
+      "2027 E0 density, unknown-pitcher share and s",
+      "pitcher-bootstrap SE",
+      "SE of between-arm Delta",
+      "predictor-layer power",
+      "live ledger capacity and abstention",
+      "certified total bias budget b_total"
+    ]
+  },
+  "interim_looks": {
+    "count": 0,
+    "rule": "none (D187 decision 7, docs/decisions.md:327); in-season checks read ledger metadata only (counts, latency, errors, abstention codes), never rewards, labels, Delta, NLL, Brier, ECE or any outcome-derived value (RS-01 /Users/song/Projects/pitcheezy-pm-jobs/20261018-rs01-prospective-shadow/REGISTRATION-EXEC-G3.json:817)",
+    "alpha_spending": null
+  },
+  "look": {
+    "count": 1,
+    "scope": "one look shared by both layers (policy and predictor)",
+    "snapshot_rule": "first Statcast snapshot fixed at least snapshot_lag_days after the last 2027 regular-season game; sha recorded",
+    "snapshot_lag_days": 7,
+    "precedent": {
+      "snapshot": "d20260930-h2026f",
+      "season_end": "2026-09-27",
+      "lag_days": 3,
+      "source": "configs/ML-POLICY-MATERIALIZATION-v1.json:794, :800"
+    },
+    "atomic_marker": "before any label, reward or outcome-bearing artifact of either layer is read, the analyst writes UNSEAL.json (analyst, registration sha, addenda shas) and creates LOOK.done with O_EXCL (precedent /Users/song/Projects/pitcheezy-pm-jobs/20261020-rs02/REGISTRATION-RS02-SEALED.json:917)",
+    "consumption": "creating LOOK.done consumes the single look: no other look will ever exist; scientific values (Delta, interval, label, NLL, Brier, ECE, or any outcome-derived diagnostic) are only read inside this consumed look",
+    "order": [
+      "integrity and seal checks",
+      "blinded diagnostics committed (agreement, ESS, weights, censoring, blinded MDE)",
+      "Delta centers unsealed (A2 blinding rule)",
+      "labels and result record"
+    ],
+    "attempt_rules": {
+      "identical_in_design_doc": "design section 8 states the same three rules",
+      "before_marker": "failures before LOOK.done exists (no outcome-bearing artifact read) may be retried freely; each attempt is still logged",
+      "after_marker": "within the same consumed look, at most post_marker_reattempts_max further attempts after the first, for infrastructure failures only and only while no scientific value has been read; each attempt is appended to the access log; outputs of a failed attempt are sealed unread (sha256 recorded); these logged re-attempts are expressly exempt from K6",
+      "post_marker_reattempts_max": 2,
+      "after_scientific_read": "the first attempt that reads any scientific value is the last attempt: it may run the registered analysis to completion, but no later attempt of any kind is allowed; labels not completed when that attempt ends are NOT_EVALUABLE (look ended without a complete result)"
+    },
+    "exposure_records": "every access to an outcome-bearing artifact and every attempt (who, when, what, sha256) is appended to an append-only access and exposure log in pitcheezy-pm-jobs"
+  },
+  "stop_rules": [
+    {
+      "id": "K1",
+      "if": "any sealed fingerprint mismatch",
+      "then": "INVALID (no amendment)"
+    },
+    {
+      "id": "K2",
+      "if": "an input-column definition change not covered by the sealed alignment rule (audits before and after the season)",
+      "then": "every contrast involving the affected arm NOT_EVALUABLE (labels_in_order order 2)"
+    },
+    {
+      "id": "K3",
+      "if": "a validity gate fails",
+      "then": "that contrast NOT_EVALUABLE (labels_in_order order 2)"
+    },
+    {
+      "id": "K4",
+      "if": "ledger hash chain broken",
+      "then": "ledger-based analyses INVALID (labels_in_order order 1)"
+    },
+    {
+      "id": "K5",
+      "if": "the shadow runner threatens the recorder/publisher",
+      "then": "the runner stops itself; recorded as coverage loss, not a scientific stop"
+    },
+    {
+      "id": "K6",
+      "if": "look-rule breach: outcome access without LOOK.done; any attempt after a scientific value was read; more than post_marker_reattempts_max re-attempts after the marker; an attempt missing from the access log",
+      "exempt": "the logged infrastructure re-attempts of look.attempt_rules.after_marker",
+      "then": "INVALID"
+    },
+    {
+      "id": "no_efficacy_or_futility_stop",
+      "rule": "none"
+    }
+  ],
+  "blinding": {
+    "centers": "Delta centers written only to a sealed file (sha recorded) until the diagnostics and decision record are committed",
+    "code_author": "does not open 2027 results before the look",
+    "analyst": "a session other than the code author"
+  },
+  "freeze": {
+    "rule": "seal deadline = scheduled first pitch of the first 2027 regular-season game minus freeze_offset_days (D187 decision 6)",
+    "freeze_offset_days": 14,
+    "freeze_date": null,
+    "opening_day_2027": "미확인 (recorded by the PM once MLB publishes the 2027 schedule)",
+    "late_seal": {
+      "status": "decided: allowed under the rules below (D187 decision 6, docs/decisions.md:327); a late seal only delays the start of SEALED_PROSPECTIVE_EVAL and leaves the analysis rules unchanged",
+      "eligibility": "only games eligible under populations.eligibility (scheduled first pitch later than sealing.external_manifest.eligibility_cutoff_utc)",
+      "final_cutoff": "the date on which, by the official schedule, the remaining regular-season games fall to late_seal_final_cutoff_remaining_share of all scheduled games; after it there is no 2027 RS-03",
+      "late_seal_final_cutoff_remaining_share": 0.5,
+      "pre_seal_exposure_attestation": "in the sealing record every role (author, code author, analyst, reviewer, PM) attests, append-only, that before the seal they neither computed nor viewed any outcome-derived value of an RS-03 arm or estimator on 2027 data; watching games or the live service display does not count; any positive attestation -> no seal",
+      "partial_season_claims": "results are stated only for 'the N eligible 2027 regular-season games after <seal time>', with the MDE and coverage of that N; no full-season claim",
+      "not_ready": "conditional arms not ready are NOT_INCLUDED; no seal if the core (A, R, the SW_EST tuple, ledger, analyzer) is not ready"
+    },
+    "deadline_of_this_draft": "2026-11-02 (D186)"
+  },
+  "sealing": {
+    "what_is_hashed": [
+      "this registration, by its registration digest (digest_payload_rule) and by the raw file sha256 of the reviewed and the sealed copies, plus the design doc",
+      "policy identifiers and predictor bundles of every included arm",
+      "the whole SW_EST tuple (reward, estimator, lambda/M, denominator B0, point-set classifier, certification evidence)",
+      "the certified bias budget, if any",
+      "the completed predictor_layer_specification, if any",
+      "R and M",
+      "track-A and EXP-P48-001 result files",
+      "A4 alignment rule",
+      "runtime, ledger, analyzer, seal-checker and seal-tool commits",
+      "golden tests",
+      "bootstrap seeds"
+    ],
+    "registration_digest_sha256": null,
+    "digest_payload_rule": {
+      "nulled_paths": [
+        "status",
+        "execute",
+        "registered",
+        "execution.enabled",
+        "independent_review",
+        "song_signoff",
+        "sealing.registration_digest_sha256"
+      ],
+      "serialization": "set every nulled path to null, then serialize the whole JSON object as UTF-8 with sorted keys, separators (',', ':') and ensure_ascii false; the registration digest is the sha256 of those bytes",
+      "property": "the reviewed revision and the sealed file have the same registration digest because they differ only in nulled paths; no field ever has to contain its own hash"
+    },
+    "external_manifest": {
+      "path": "/Users/song/Projects/pitcheezy-pm-jobs/RS-03-2027-seal/SEAL-MANIFEST.jsonl",
+      "location_rule": "outside the repository and outside any results/ directory; append-only; created by the PM at step 2",
+      "lines": [
+        "preliminary record (step 2, before anything is published; not a seal): record_type = preliminary, registration_digest_sha256, reviewed_file_sha256, review_receipt {verdict, path, sha256}, preliminary_appended_at_utc",
+        "completion record (step 6, only after the #37 SEALED comment and the docs/decisions.md seal line exist): record_type = completion, seal_comment_url (the actual #37 SEALED comment URL as read back from GitHub), seal_created_at_utc (its creation timestamp as read back from GitHub; the canonical seal time), decisions_md_seal_line, sealed_file_sha256 (raw sha256 of the verified sealed file), registration_digest_sha256 (must equal the preliminary-record digest), song_signoff_ref, completion_appended_at_utc",
+        "completion evidence record (step 6, right after the #37 SEAL-COMPLETE comment): record_type = completion_evidence, completion_record_sha256 (sha256 of the completion-record line), evidence_comment_url, completion_evidence_created_at_utc"
+      ],
+      "clocks": {
+        "seal_created_at_utc": "GitHub server clock: created_at of the #37 SEALED comment as returned by the GitHub API after posting (ISO 8601, UTC)",
+        "completion_appended_at_utc": "Mac mini system clock read in UTC (ISO 8601, seconds) immediately before the completion record is appended",
+        "completion_evidence_created_at_utc": "GitHub server clock: created_at of the #37 SEAL-COMPLETE comment, which quotes completion_record_sha256 and completion_appended_at_utc; this public time-stamped comment is the durable timing evidence that the completion record existed",
+        "preliminary_appended_at_utc": "Mac mini system clock read in UTC, as for completion_appended_at_utc"
+      },
+      "eligibility_cutoff_utc": "max(seal_created_at_utc, completion_appended_at_utc, completion_evidence_created_at_utc), computed from the two step-6 records; with the maximum, an error of the local clock can only move the cutoff later; the three times and their differences are reported"
+    },
+    "permitted_transition_paths": {
+      "status": "SEALED",
+      "execute": true,
+      "registered": true,
+      "execution.enabled": true,
+      "independent_review": {
+        "verdict": "PASS",
+        "path": "the review file of step 2",
+        "sha256": "that file's sha256"
+      },
+      "song_signoff": {
+        "decision_ref": "the step-3 docs/decisions.md line (or #37 comment) recording Song's sign-off"
+      },
+      "sealing.registration_digest_sha256": "the registration digest"
+    },
+    "transition": [
+      {
+        "step": "1",
+        "name": "finalized unsealed revision (FINAL_UNSEALED, D187)",
+        "what": "the D187 decisions already applied; prerequisites P1-P3 met and their results entered; every inclusion settled (INCLUDED with pins, or NOT_INCLUDED:<reason>), every input pin and seed filled; the permitted transition paths keep non-terminal values (status FINAL_UNSEALED; execute, registered and execution.enabled false; independent_review, song_signoff and sealing.registration_digest_sha256 null)"
+      },
+      {
+        "step": "2",
+        "name": "independent review of that exact revision; preliminary record",
+        "what": "a model other than the author reviews the revision identified by its raw sha256 and its registration digest (D182 gates 1-3, docs/decisions.md:317); PASS with blocker 0; the PM then appends the preliminary record to the external manifest; nothing is published at this step and the preliminary record is not a seal"
+      },
+      {
+        "step": "3",
+        "name": "Song sign-off",
+        "what": "Song signs off on that registration digest in a docs/decisions.md line or a #37 comment that names the digest; that reference becomes the terminal value of song_signoff.decision_ref"
+      },
+      {
+        "step": "4",
+        "name": "restricted sealing transition and verification of the sealed copy",
+        "what": "the seal tool copies the reviewed revision, sets exactly the permitted_transition_paths to their terminal values, refuses if any other path differs, recomputes the registration digest and refuses if it differs from the preliminary-record digest, writes the sealed file, then re-reads the written file, repeats both checks and outputs its raw sha256; if any check fails nothing is published and the step is repeated after the fix"
+      },
+      {
+        "step": "5",
+        "name": "canonical seal event and decision record",
+        "what": "the PM posts the #37 SEALED comment naming the registration digest and the raw sha256 of the verified sealed copy; the GitHub creation timestamp of that comment is the canonical seal time; the PM then adds a docs/decisions.md seal line that cites the comment URL"
+      },
+      {
+        "step": "6",
+        "name": "completion record and its timing evidence",
+        "what": "the PM appends the completion record with the named fields of external_manifest.lines (seal_comment_url and seal_created_at_utc as read back from GitHub after posting; completion_appended_at_utc from the clock in external_manifest.clocks), then posts the #37 SEAL-COMPLETE comment quoting completion_record_sha256 and completion_appended_at_utc, then appends the completion evidence record with that comment URL and its GitHub creation time; the seal is complete only when both records exist, and eligibility_cutoff_utc is computed from them"
+      },
+      {
+        "step": "7",
+        "name": "post-seal checks",
+        "what": "PM recomputes every pinned sha; repository git status --porcelain empty; file made read-only (RS-02 precedent)"
+      }
+    ],
+    "execution_gate": "execution.enabled true in the sealed copy is necessary but not sufficient: no execution of any kind (shadow logging, snapshot replay, look preparation) starts before the step-6 completion and completion evidence records exist and the step-7 checks pass; the first entry of the execution log cites both records",
+    "change_rule": "a change to any path outside permitted_transition_paths after the step-2 review returns to step 1 (new review, new preliminary record)",
+    "pi_b_hat_candidate": {
+      "status": "candidate only, not a pin: pins.pi_b_hat_sha256 stays null until A2 certifies an estimator tuple that uses it (switches.SW_A3, switches.SW_EST); not met under the current A2 registration (EXP-OPE-RES-01 NO_PRECISION_GAIN, r3_status NOT_RUN:R3; D191 docs/decisions.md:337), so for 2027 B2 stays a frozen documented artifact",
+      "source": "EXP-BC-CAL-01 attempt-2, label ADOPT_FOR_2027_REGISTRATION:B2 (A3R:11 final.label; D190 docs/decisions.md:335)",
+      "artifacts_sha256": {
+        "02-fit/b2/model.txt": "e4e2e138a22d4723f86eae7da939f59859b5a69e756b1a36d857bbb2780e5a93",
+        "02-fit/b2/b2.json": "eb238f9d4c4b3a5b23876a8c0453f79aa4c84597906887afa0e4be4ca6f1c6eb",
+        "03-calibrate/calibrators/B2.json": "ce8f1079f0ca8ae7ce174d9a3277b7cabc98f6c69c627f0054011c3589e9cda5"
+      },
+      "artifacts_source": "A3R:3356 stages[04-freeze-primary][manifest.json].artifacts (:3453 b2.json, :3457 model.txt, :3621 calibrators/B2.json)",
+      "attempt_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/attempt-2 (A3R attempt)",
+      "run_commit": "b05225681af8a59a278bf8aafb2bd02a8f6b3dd0 (A3R:10 final.git_commit)",
+      "config_sha256": "2059ac71444fcc9e7fc0fb71402592f2623f25706032c41a491c46298dfaf067 (A3R:7 final.config_sha256)"
+    },
+    "pins": {
+      "arm_A_identity": null,
+      "arm_A_RB_identity": null,
+      "arm_B_identity": null,
+      "arm_C_identity": null,
+      "B1_bundle_sha256": "6271b70e834215aff96141b8319e84ba041fb980600cc91791248a1b95f5e4ec",
+      "B1_bundle_source": "CFRZ:243 (D188 decision (a), docs/decisions.md:331); arm_C_identity stays null until the arm C policy is built under D187 decision 3",
+      "sw_est_tuple_sha256": null,
+      "sw_est_tuple_source": "filled at sealing; under the current A2 result (EXP-OPE-RES-01 NO_PRECISION_GAIN, D191) the tuple to pin is switches.SW_EST.default_tuple (current DR R2-0, realized WE R1-0, denominator B0); it contains no surrogate table, lambda, M or A3 denominator",
+      "surrogate_tables_sha256": null,
+      "pi_b_hat_sha256": null,
+      "bias_budget_sha256": null,
+      "predictor_layer_specification_sha256": null,
+      "seal_tool_commit": null,
+      "a4_alignment_rule_sha256": null,
+      "runtime_commit": null,
+      "ledger_runner_commit": null,
+      "analyzer_commit": null,
+      "seal_checker_commit": null,
+      "golden_tests_sha256": null,
+      "bootstrap_seeds": null,
+      "track_a_results_sha256": null,
+      "track_a_results_source": "filled at sealing; for A2 the file to pin is results/EXP-OPE-RES-01.json as committed (its sha256 when v10 was written: 7c437ac41fae6172c7ac7f2518e61f13cd93e58de0164e165bf4da172127e001, sources_read_sha256_at_v10; recompute from the committed copy at sealing)",
+      "exp_p48_001_results_sha256": null
+    },
+    "after_seal_addenda": "only declarations of skipped games or coverage loss (RS-01 skipped_games precedent, /Users/song/Projects/pitcheezy-pm-jobs/20261018-rs01-prospective-shadow/REGISTRATION-EXEC-G3.json:1340); never analysis changes"
+  },
+  "roles": {
+    "author": "registration only",
+    "code_author": "runtime, ledger, analyzer; no 2027 results before the look",
+    "ops": "shadow runner, automated store backups, A4 (PM/ops lane)",
+    "analyst": "the single look; not the code author",
+    "reviewer": "a model other than the author",
+    "pm": "seal, #37, exposure ledger, decisions.md"
+  },
+  "independent_review": null,
+  "song_signoff": null,
+  "prerequisites_by_freeze": [
+    {
+      "id": "P1",
+      "what": "EXP-P48-001 Stage B result + Song decision line; if confirmed, the B1 frozen bundle",
+      "status": "done: Stage B confirmed (P48R:12-13), result recorded in D188 (docs/decisions.md:329) and Song decision D188 (a) (docs/decisions.md:331); B1 frozen bundle recorded (docs/pm/research/prospective-2027/arm-C-B1-freeze-list.json, bundle_sha256 6271b70e834215aff96141b8319e84ba041fb980600cc91791248a1b95f5e4ec)"
+    },
+    {
+      "id": "P2",
+      "what": "A1 (EXP-STAB-02), A2 (EXP-OPE-RES-01), A3 (EXP-BC-CAL-01): review -> registration -> run -> label; A1 confirmation slice if passing; if A2 adopts, the whole original-denominator SW_EST tuple frozen in a sealable form; an A3-denominator primary would need its own separately registered certification before the RS-03 seal (otherwise sensitivity only)",
+      "status": "A1 done: EXP-STAB-02 NOT_STABLE (A1R:9; D189 docs/decisions.md:333), confirmation slice not run, SW_A1 OFF. A3 done: EXP-BC-CAL-01 ADOPT_FOR_2027_REGISTRATION:B2 (A3R:11; D190 docs/decisions.md:335), SW_A3 OFF until A2 certifies a tuple with it (sealing.pi_b_hat_candidate). A2 done: EXP-OPE-RES-01 NO_PRECISION_GAIN (A2R:4; D191 docs/decisions.md:337), r3_status NOT_RUN:R3 (A2R:6); SW_EST OFF (the 'if A2 adopts' clause in P2.what is not met; the sealable tuple is switches.SW_EST.default_tuple) and SW_A3 OFF for 2027; A2 follow-up: D191 decision (b) (docs/decisions.md:338) starts the EXP-OPE-RES-02 design this week (not a registration or run approval), and SW_EST and SW_A3 stay OFF until it issues a certification label"
+    },
+    {
+      "id": "P3",
+      "what": "A4 alignment audit (PM/ops lane) + 2027 column-definition audit",
+      "status": "brief present: docs/pm/service/a4-2026-coordinate-zone-audit-brief.md (sha256 5d9ad71cd645e9ad9f019f821a8e9868da7391601146dc68857e1d44733e3ae1; it did not exist when v0 was drafted); no audit result is recorded in docs/decisions.md up to D191 (PM/ops lane, D186 6-1)"
+    },
+    {
+      "id": "P4",
+      "what": "RS-01/RS-02 operational lessons after the 2026-11-06T00Z look: automate person-dependent steps (games 1-2 omission, D181-D183), mapping validation + golden tests + seal checker before the seal (D179), measure abstention in a dry run (RS-01 dry-run T abstentions, /Users/song/Projects/pitcheezy-pm-jobs/20261018-rs01-prospective-shadow/DIAG-T-ABSTAIN.md:9)",
+      "rs01_dryrun_T_abstain": 283,
+      "rs01_dryrun_T_intents": 290,
+      "selection_use": "none"
+    },
+    {
+      "id": "P5",
+      "what": "certification chain and code review of every new policy arm (per D187 decision 3 and SW_A1)",
+      "status": "nothing to certify while SW_A1 is OFF (D189): A_RB, B and the arm C policy are not buildable now"
+    },
+    {
+      "id": "P6",
+      "what": "certified total bias budget covering the registered P estimand (baseline bias of the sealed tuple + certified additional bias + stated surrogate assumptions, with the real P-selection mechanism and 2027 era drift inside its scope); without it no CONFIRMED label exists and the analysis proceeds with POINT_*_STATISTICAL labels and the bias-sensitivity row (D187 decision 2)",
+      "owner": "연구 차선 / A2 후속 (D187 decision 9, docs/decisions.md:327)",
+      "status": "미착수"
+    },
+    {
+      "id": "P7",
+      "what": "predictor_layer_specification (the scoring contract) completed and independently reviewed before the seal (D187 decision 8); without it the predictor layer is excluded"
+    },
+    {
+      "id": "P8",
+      "what": "multi-arm shadow runner, snapshot-replay dry run on exposed stores (capacity and abstention measured then), golden tests, seal checker, and a seal tool that enforces the restricted transition"
+    },
+    {
+      "id": "P9",
+      "what": "independent review PASS of the finalized unsealed revision and Song's sign-off"
+    }
+  ],
+  "timeline": "this draft <= 2026-11-02 (D186) -> Song decisions (D187, done) -> confirmation review -> P1-P3 results -> P5-P8 -> FINAL_UNSEALED revision (sealing.transition step 1, D187) -> P9 (steps 2-3) -> sealing steps 4-7 (opening minus freeze_offset_days, late-seal rules otherwise) -> season (metadata only) -> snapshot -> one look; stage costs unmeasured",
+  "pass_fail_meaning": {
+    "POINT_IMPROVEMENT_STATISTICAL": "on the registered common P (with unknown-pitcher exclusions, censoring and coverage disclosed) the sealed policy's paired Delta interval lay above 0, under the stated identification assumptions (pitch-type exchangeability given H_t, <=2025 -> 2027 transport; stated, not evidenced, BLK-04); no bias allowance is included, so it is read together with the bias-sensitivity row: a pre-registered prospective evidence candidate for G5b",
+    "POINT_IMPROVEMENT_CONFIRMED": "only if a certified total bias budget was pinned at sealing and the interval lies above it; otherwise this label does not occur",
+    "IMPROVEMENT_BELOW_THRESHOLD and HARM_BELOW_THRESHOLD": "only under theta > 0, so not reachable under the decided theta = 0 (D187 decision 2); kept as history: the interval excludes 0 but not theta; evidence of direction, not of an effect of the registered threshold size",
+    "NO_DIFFERENCE_ESTABLISHED": "the registered analysis did not establish a difference; never 'no effect' and never 'no effect at or above the MDE' (no equivalence criterion is registered)",
+    "never_means": [
+      "automatic service adoption or display change (adoption stays an e2e policy decision by Song through the service gates; the 'pre-validation experimental' label stays until then)",
+      "retroactive change of D131, D155, D180, G15 or c13cc989 records",
+      "a causal claim beyond the stated assumptions",
+      "'beat prior research' (D177)",
+      "any location (ARM-A) effect",
+      "any claim about arms not included",
+      "a 'confirmation' from a secondary contrast"
+    ]
+  },
+  "not_claimed": [
+    "no result is predicted",
+    "no number in this draft is a new measurement",
+    "no change to 2026 labels or sealed results",
+    "no policy, service, demo, G0 or G15 change"
+  ],
+  "song_decisions_note": "all nine decided by Song in D187 (docs/decisions.md:327), each as option 1; former options are kept as history only",
+  "song_decisions": [
+    {
+      "id": "Q1",
+      "q": "primary contrast",
+      "options_history": [
+        "1) Delta_point(A - R) fixed now",
+        "2) the first included arm in the order C > B > A_RB > A, minus R"
+      ],
+      "decided_option": "1",
+      "decided_value": "Delta_point(A - R): paired point-estimate Delta of the sealed service policy minus pitcher habit, WE per PA (primary_contrast C1)",
+      "decision_ref": "D187 decision 1 (docs/decisions.md:327)",
+      "decision_rationale": "A is the only sealed arm today, and the planning proxy (L2 SE) is a recorded value of the same two policies"
+    },
+    {
+      "id": "Q2",
+      "q": "threshold theta of the point-estimate rule and the bias budget",
+      "label_rule": "labels_primary.labels_in_order with the decided theta = 0 (1 INVALID, 2 NOT_EVALUABLE, 3 *_CONFIRMED only with a certified budget, 4-5 POINT_*_STATISTICAL, 6 inactive, 7 NO_DIFFERENCE_ESTABLISHED); every analysis receives exactly one label",
+      "options_history": [
+        "1) theta = 0 statistical label + bias budget certified before sealing (no certified budget -> no CONFIRMED label; labels 6a/6b cannot occur; the bias-sensitivity row uses b_v)",
+        "2) theta = MEI 0.001 (an interval excluding 0 but not theta gets IMPROVEMENT_BELOW_THRESHOLD or HARM_BELOW_THRESHOLD)"
+      ],
+      "decided_option": "1",
+      "decided_value": "theta = 0 statistical label; *_CONFIRMED only with a bias budget covering P certified before the seal (P6), otherwise POINT_*_STATISTICAL with the bias-sensitivity row (b_v); the premise that an A2 pass yields 1.26e-5 as the budget was discarded in review (D187)",
+      "decision_ref": "D187 decision 2 (docs/decisions.md:327)",
+      "decision_rationale": "MEI is a judgment value without measurement (D108); keeping it coarsens the one-season MDE from about 0.00023 to 0.00123; bias is handled only by a certified budget, never by an invented number"
+    },
+    {
+      "id": "Q3",
+      "q": "D155 and policy arms B/C",
+      "options_history": [
+        "1) reopen narrowly for building 2027 arms only when A1 passes (2026, service, c13cc989 unchanged)",
+        "2) keep closed (B/C only in the predictor layer)",
+        "3) reopen now without conditions"
+      ],
+      "decided_option": "1",
+      "decided_value": "D155 reopened narrowly for building 2027 arms only if A1 (EXP-STAB-02) passes, read here as SW_A1 on; 2026, the service and c13cc989 unchanged; nothing is reopened before A1 passes",
+      "decision_ref": "D187 decision 3 (docs/decisions.md:327)",
+      "decision_rationale": "the reason D155 closed (WITHIN_SEARCH_NOISE) is exactly what A1 targets"
+    },
+    {
+      "id": "Q4",
+      "q": "primary population",
+      "options_history": [
+        "1) prospective evaluation of the frozen model on retrospectively reconstructed inputs over every eligible game, with ledger rows as evidence of recording before first receipt and ledger plus immutable-snapshot replay rows as evidence of input availability, agreement check and secondary analysis (wording synchronized in v6 after review round 5; the option itself is unchanged)",
+        "2) ledger rows only (RS-01 form)",
+        "3) both must pass"
+      ],
+      "decided_option": "1",
+      "decided_value": "primary population = FROZEN_MODEL_ON_RECONSTRUCTED_INPUTS: the frozen arms evaluated on every eligible 2027 regular-season game, replayed after the season on retrospectively reconstructed inputs (the replay D187 calls RS-02 style); its as-of guarantee is the registered reconstruction rule, not a proof of historical input availability; proof of recording before first receipt comes only from ledger rows (the D187 wording pre-pitch record proof; no physical pre-pitch claim); input-availability evidence comes only from ledger rows and immutable-snapshot replay rows (RS-02 style), which also serve the agreement check and secondary analysis (populations.primary_population.ledger_and_snapshot_role)",
+      "decision_ref": "D187 decision 4 (docs/decisions.md:327)",
+      "decision_rationale": "the planning proxy is at full-season scale and a run at that scale is on record (2026 OPE 47,828 s, 6.7 GiB, docs/decisions.md:208), while live full-season ledger capacity is unmeasured; cost: historical input availability is claimed only for ledger and snapshot rows"
+    },
+    {
+      "id": "Q5",
+      "q": "as-of input source",
+      "options_history": [
+        "1) the 2026 registration windows (profiles <= 2025-12-31, configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:321; fit roles as data_roles.fit_roles_le_2025)",
+        "2) refresh profiles to <= 2026-12-31 (2026 as input only)"
+      ],
+      "decided_option": "1",
+      "decided_value": "as-of inputs = the 2026 registration windows: TRAIN <= 2025-04-30 (data_roles), profiles <= 2025-12-31 (configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:321)",
+      "decision_ref": "D187 decision 5 (docs/decisions.md:327)",
+      "decision_rationale": "arm A means the same as in the 2026 run and no 2026 byte enters an EVAL input (cost: profiles one more year stale, direction unmeasured)"
+    },
+    {
+      "id": "Q6",
+      "q": "seal deadline and late seal",
+      "options_history": [
+        "1) target opening minus 14 days; if late: only games after the completed seal are eligible (populations.eligibility), final cutoff when half of the regular-season games remain, pre-seal exposure attestation required, partial-season claims only",
+        "2) no seal before opening -> no 2027 RS-03"
+      ],
+      "decided_option": "1",
+      "decided_value": "seal deadline = opening minus freeze_offset_days; a late seal only delays the EVAL start (games after eligibility_cutoff_utc); late-seal final cutoff when half of the regular-season games remain (late_seal_final_cutoff_remaining_share, judgment value, decided); pre-seal exposure attestation; partial-season claims only",
+      "decision_ref": "D187 decision 6 (docs/decisions.md:327)",
+      "decision_rationale": "the analysis rule is unchanged and the loss is visible as fewer games in the power arithmetic"
+    },
+    {
+      "id": "Q7",
+      "q": "interim looks",
+      "options_history": [
+        "1) none",
+        "2) register an alpha-spending / anytime-valid rule and look mid-season"
+      ],
+      "decided_option": "1",
+      "decided_value": "no interim looks; after LOOK.done at most post_marker_reattempts_max logged infrastructure re-attempts (judgment value, decided)",
+      "decision_ref": "D187 decision 7 (docs/decisions.md:327)",
+      "decision_rationale": "simpler; A2 also left anytime-valid methods out of scope"
+    },
+    {
+      "id": "Q8",
+      "q": "predictor layer (C7, C8)",
+      "options_history": [
+        "1) include, provided an RS-02-style scoring specification (mapping/revision, eligibility, pairing, clipping, coverage) is completed and independently reviewed before sealing; otherwise excluded",
+        "2) policy layer only"
+      ],
+      "decided_option": "1",
+      "decided_value": "predictor layer (C7, C8) included; its RS-02-style scoring contract is completed and independently reviewed before the seal (P7), otherwise the layer is dropped",
+      "decision_ref": "D187 decision 8 (docs/decisions.md:327)",
+      "decision_rationale": "it checks most directly what an EXP-P48-001 pass means ('a candidate for a prospective 2027 / RS-02-style arm', PREREG:211-213); the specification work is unmeasured"
+    },
+    {
+      "id": "Q9",
+      "q": "who certifies the total bias budget covering P",
+      "options_history": "not an open question in v4 of this draft (eight were listed); D187 records it as decision 9, option 1",
+      "decided_option": "1",
+      "decided_value": "the certification of the total bias budget covering P is an A2 follow-up stage of the research lane: prerequisite P6, owner 연구 차선 / A2 후속, status 미착수; if it is not certified before the seal, decision 2 applies (no CONFIRMED label)",
+      "decision_ref": "D187 decision 9 (docs/decisions.md:327)"
+    }
+  ],
+  "unmeasured": [
+    "certified total bias budget b_total",
+    "P-specific SE",
+    "2027 E0 density, unknown-pitcher share and s",
+    "pitcher-bootstrap SE",
+    "SE of between-arm Delta",
+    "predictor-layer power",
+    "live full-season ledger capacity and abstention rate",
+    "certification and build cost of new arms beyond the G15 precedent",
+    "CPU inference cost of the B1 bundle",
+    "cost of completing the predictor-layer specification"
+  ],
+  "unverified": [
+    "2027 opening day",
+    "A4 result and brief file",
+    "2027 Statcast column definitions",
+    "whether the live service code path is byte-identical to c13cc989 (D122 docs/decisions.md:190: same computation, possibly an earlier identifier)"
+  ],
+  "line_reference_note": "file:line references (with semantic keys alongside) were read on 2026-10-27 at the sha256 values of sources_read_sha256_at_v2, except references marked @v4 (the L2-population wording only), read at sources_read_sha256_at_v4, and the D187 references (docs/decisions.md:327), read at sources_read_sha256_at_v5, and the D188 references (docs/decisions.md:329, :331) with P48R, CFRZ and CFRZMD, read at sources_read_sha256_at_v7, and the D189 reference (docs/decisions.md:333) with A1R, docs/experiments.md:273 and the A4 brief, read at sources_read_sha256_at_v8, and the D190 reference (docs/decisions.md:335) with A3R, docs/experiments.md:274 and A3 design:172, read at sources_read_sha256_at_v9, and the D191 references (docs/decisions.md:337, :338) with A2R and docs/experiments.md:275, read at sources_read_sha256_at_v10; the track-A drafts were being revised by other workers while this revision was written, so if a file's sha differs, resolve a reference by its semantic key",
+  "sources_read_sha256_at_v10": {
+    "results/EXP-OPE-RES-01.json": "7c437ac41fae6172c7ac7f2518e61f13cd93e58de0164e165bf4da172127e001",
+    "docs/decisions.md": "e69e775415bb1f3e7cd3c3eb3ef13b1f6bdf1ea421a492354cd61d25579bc983",
+    "docs/experiments.md": "1c941372eee6447ad00682efafb0e70af6955c29a47cf847b5e907783ba9b6f4",
+    "docs/pm/research/track-a/README.md": "f324e559db48d51fd3acefa8024e653f28ce27922c3bc8fded5a5c493853195d"
+  },
+  "sources_read_sha256_at_v9": {
+    "results/EXP-BC-CAL-01.json": "97013a86e4aee74ea03331c4cc33777eef59f09dd34c6c16d20fb49c5aa07ece",
+    "docs/decisions.md": "890508eb2ed68728bfb4091791c562f301dc03e9e981dc686615acf71275c732",
+    "docs/experiments.md": "add596919ec0b6faba7d3c7f893f1fd92aa7e3fb7b82cb237bd7f07d927a3636",
+    "docs/pm/research/track-a/A3-behavior-policy-design.md": "d29d1336b6a948073f2f3ec4b3f3699243b37b9e6439c4d995b6f912ed548160"
+  },
+  "sources_read_sha256_at_v8": {
+    "results/EXP-STAB-02.json": "2e2b0ecb47b430d79f12148388d277268c0172067d84a891ebd9905f0d5748fa",
+    "docs/decisions.md": "efceacc9655ed1880e61f2afbf40cc32622817da1534cd68ed2bc3b472dc2948",
+    "docs/experiments.md": "d4606ca40597bf320ec583835d587dc8aa5105d91d3e484cd5d83b05f3edde1a",
+    "docs/pm/service/a4-2026-coordinate-zone-audit-brief.md": "5d9ad71cd645e9ad9f019f821a8e9868da7391601146dc68857e1d44733e3ae1"
+  },
+  "sources_read_sha256_at_v7": {
+    "results/EXP-P48-001.json": "54e38dc6734eed202e201e15349b5dd88d55e9506f613512dea0f05b3fa34bc0",
+    "docs/pm/research/prospective-2027/arm-C-B1-freeze-list.json": "385d00e1a234a57c4ee05f0786c8a3517f5d8d2284157323a9e22599676c65e6",
+    "docs/pm/research/prospective-2027/arm-C-B1-freeze-list.md": "2abb2cd8e166b8ec12cdfcb8c54444f6b7e771de033010f1a32928beb1fd13df",
+    "docs/decisions.md": "598d51035615fef28aafba2e1159ae9f37a73cead2c16ed0f878bf7b3e49e825"
+  },
+  "sources_read_sha256_at_v5": {
+    "docs/decisions.md": "6e0868b1ac2a698a10e4bcdc39e03b5dff4859f5a2e6b7616dc0f8d4aed2b281"
+  },
+  "sources_read_sha256_at_v4": {
+    "docs/pm/research/track-a/A2-ope-redesign-registration-draft.json": "5160126f879e4182d62eeb2aa533666637c11d1d24015a00dc879f449061beee",
+    "docs/pm/research/track-a/A2-ope-redesign-design.md": "637d9f325c744f060f72528319a505b361786d5ea42f02994cc3b9ed64b0cdc9",
+    "experiments/pitchmdp/pitchmdp/policy_estimator.py": "7b32e0efb36036f4a949c6f6079b21df61b58db716ce88080d968bb15e2614be"
+  },
+  "sources_read_sha256_at_v2": {
+    "docs/decisions.md": "2b72e0c542c48093df6d2cc02f8160d6050bfa85879201cbcf91556bcdfbf59e",
+    "docs/pm/research/experiment-proposals-2026-10-26.md": "7bbe213b3234333e989f667556365f2900baa10b5d4e55f985e382674c9631e0",
+    "docs/pm/research/track-a/README.md": "74996fbcc06f18a938678b5e9ee47f3801cea8045ec5ae32e95ea22babdc269d",
+    "docs/pm/research/track-a/A1-planner-variance-design.md": "27abab858342f05b007b90c3b54cb03638df2a4b6445cf2d6f5fecc1be9e93ea",
+    "docs/pm/research/track-a/A1-planner-variance-registration-draft.json": "193af5bf338c7adaa849050c7394053fa181546e0e26f3b52fce079862274302",
+    "docs/pm/research/track-a/A2-ope-redesign-design.md": "646d24a0d5d8437d88285a4c844411ec6c24904e221d2521a385e6f11d26da4e",
+    "docs/pm/research/track-a/A2-ope-redesign-registration-draft.json": "fc105816781d95ca970267207a4485852eeb3e1ec163e8e99c7eb164a3e3baa0",
+    "docs/pm/research/track-a/A3-behavior-policy-design.md": "790c4a884c35673fb0092e29ce41e4e079faf1dcd0faa19f2a286aed9f408e18",
+    "docs/pm/research/track-a/A3-behavior-policy-registration-draft.json": "249a436c2bd283d9bfe9bc272bd34841708d082d74515a9b5c50716d18997f13",
+    "results/MLB-2026-OPE-v1.json (hash only; not a provenance source in v1)": "0bb8fcd028ff1c86528e7a49727cca90f85ecae266cede1db690998d045209e9",
+    "results/ML-POLICY-VAL-v1-S6-v3.json (hash only; never opened)": "eeb5c964ed816bd9133606ee2f48475c7f7b306d7d5e91dc10508e699616dd29",
+    "configs/ML-POLICY-MATERIALIZATION-v1.json": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469",
+    "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json": "7d9b81c67ed6d8acb914ef8466e775c1df1f6262b8f05ca38def888270fed312",
+    "configs/G0-RESEARCH-FROZEN-v1.json": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+    "configs/G15-MIX-RESEARCH-FROZEN-v1.json": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d",
+    "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md": "4ca5ba3c79a0daf8468192c04a64afeb1b5d0f3cb4b53ef7a86d71181673ff74",
+    "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/configs/EXP-P48-001.json": "d8cb1a7f70815f9721903718b5d34785110de8e8a6f9252c2a0bd77acd7a9179",
+    "/Users/song/Projects/pitcheezy-pm-jobs/20261020-rs02/REGISTRATION-RS02-SEALED.json": "38b528da2b4d7ca02d72ec86d646f70338a1cb8807c0882b1cb9459e42cc7fb9"
+  },
+  "provenance_conventions": {
+    "doc": "the document line(s) the number was copied from (file:line, read at the sha256 values of sources_read_sha256_at_v2, or of sources_read_sha256_at_v4 where marked @v4); this is the provenance",
+    "origin_per_doc": "where that document says the number originally comes from; given only as the document's own citation, not opened for this draft",
+    "kinds": {
+      "recorded": "copied from a document line",
+      "recorded_derived_by_doc": "arithmetic already done and written in the cited document",
+      "convention_copied": "a rule value copied from another registration",
+      "judgment_value_recorded_and_approved": "a judgment value recorded in the cited document and approved by Song (D186)",
+      "judgment_value_this_draft": "a value proposed by this draft (판단값), not a measurement",
+      "arithmetic_this_draft": "arithmetic in this draft on the listed inputs",
+      "observed_this_draft": "an observation made while drafting (e.g. a search)",
+      "design_choice_this_draft": "a structural choice of this draft",
+      "decided_by_song": "a value Song decided (D187), proposed earlier by this draft",
+      "judgment_value_recorded": "a judgment value (판단값) recorded in the cited track-A document; not a measurement",
+      "judgment_value_decided_by_song": "a judgment value (판단값) proposed by this draft and decided by Song (D187); still not a measurement"
+    }
+  },
+  "provenance_path_aliases": {
+    "A2J": "docs/pm/research/track-a/A2-ope-redesign-registration-draft.json",
+    "A2D": "docs/pm/research/track-a/A2-ope-redesign-design.md",
+    "A1D": "docs/pm/research/track-a/A1-planner-variance-design.md",
+    "A1J": "docs/pm/research/track-a/A1-planner-variance-registration-draft.json",
+    "A3D": "docs/pm/research/track-a/A3-behavior-policy-design.md",
+    "DEC": "docs/decisions.md",
+    "MAT": "configs/ML-POLICY-MATERIALIZATION-v1.json",
+    "PRE26": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+    "EXPS": "docs/experiments.md",
+    "RALL": "docs/results-all.md",
+    "P48P": "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md",
+    "P48C": "/Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026/configs/EXP-P48-001.json",
+    "RS01X": "/Users/song/Projects/pitcheezy-pm-jobs/20261018-rs01-prospective-shadow/REGISTRATION-EXEC-G3.json",
+    "RS01D": "/Users/song/Projects/pitcheezy-pm-jobs/20261018-rs01-prospective-shadow/DIAG-T-ABSTAIN.md",
+    "RS02P": "/Users/song/Projects/pitcheezy-pm-jobs/20261020-free-time/rs02-draft/RS02-PLAN.md",
+    "P48R": "results/EXP-P48-001.json",
+    "CFRZ": "docs/pm/research/prospective-2027/arm-C-B1-freeze-list.json",
+    "CFRZMD": "docs/pm/research/prospective-2027/arm-C-B1-freeze-list.md",
+    "A1R": "results/EXP-STAB-02.json",
+    "A3R": "results/EXP-BC-CAL-01.json",
+    "A2R": "results/EXP-OPE-RES-01.json"
+  },
+  "numbers_provenance": {
+    "mde_multiplier_80pct_two_sided_5pct": {
+      "value": 2.801585,
+      "doc": "A2J:84 (mde_from_records.method.mde_80)",
+      "kind": "recorded_derived_by_doc",
+      "note": "(z_0.975 + z_0.80) = 1.959964 + 0.841621"
+    },
+    "power_target": {
+      "value": 0.8,
+      "doc": "A2J:84 (mde_from_records.method.mde_80)",
+      "kind": "convention_copied"
+    },
+    "ci_level": {
+      "value": 0.95,
+      "doc": "DEC:162 (D108)",
+      "kind": "convention_copied"
+    },
+    "games_2026": {
+      "value": 2429,
+      "doc": "A2J:112 (mde_from_records.season_2026_structure_only.games); DEC:208",
+      "origin_per_doc": "results/MLB-2026-OPE-v1.json (A2J:111 season_2026_structure_only.source)",
+      "kind": "recorded"
+    },
+    "pas_2026": {
+      "value": 184288,
+      "doc": "A2J:113 (season_2026_structure_only.pas); DEC:208",
+      "origin_per_doc": "results/MLB-2026-OPE-v1.json (A2J:111)",
+      "kind": "recorded"
+    },
+    "e0_pas_2026": {
+      "value": 149525,
+      "doc": "A2J:114 (season_2026_structure_only.e0_pas); DEC:208",
+      "origin_per_doc": "MLB-2026-OPE-v1.json:11-15 (A2J:114)",
+      "kind": "recorded"
+    },
+    "complete_pas_2026": {
+      "value": 132019,
+      "doc": "A2J:114 (season_2026_structure_only.e0_pas.source)",
+      "origin_per_doc": "MLB-2026-OPE-v1.json:11-15 (A2J:114)",
+      "kind": "recorded"
+    },
+    "censored_pas_2026": {
+      "value": 17506,
+      "doc": "A2J:114 (season_2026_structure_only.e0_pas.source)",
+      "origin_per_doc": "MLB-2026-OPE-v1.json:11-15 (A2J:114)",
+      "kind": "recorded"
+    },
+    "excluded_unknown_pitcher_pas_2026": {
+      "value": 34763,
+      "doc": "DEC:208",
+      "kind": "recorded"
+    },
+    "resolution_rho_zero_2026": {
+      "value": 16654,
+      "doc": "DEC:208",
+      "kind": "recorded"
+    },
+    "resolution_natural_course_2026": {
+      "value": 665,
+      "doc": "DEC:208",
+      "kind": "recorded"
+    },
+    "resolution_worst_case_2026": {
+      "value": 158,
+      "doc": "DEC:208; A2J:119 (season_2026_structure_only.worst_case_residual_reasons, 83 + 75)",
+      "kind": "recorded"
+    },
+    "resolution_shared_end_2026": {
+      "value": 29,
+      "doc": "DEC:208",
+      "kind": "recorded"
+    },
+    "se_point_2026": {
+      "value": 8.235e-05,
+      "doc": "A2J:123 (season_2026_structure_only.derived.se_point_l2)",
+      "origin_per_doc": "L2 95% CI MLB-2026-OPE-v1.json:77-79 (A2J:117 l2_ci95), SE ~= width / 3.92 (A2J:85 method.se_from_percentile_ci)",
+      "kind": "recorded_derived_by_doc",
+      "note": "L2 population (complete PAs plus rho_zero and rho_zero_before_node resolutions; A2J@v4:134): planning proxy for P; value unchanged (at A2J@v4 the same keys sit at :126, :120 and :87)"
+    },
+    "se_lo_2026": {
+      "value": 0.00024429,
+      "doc": "A2J:122 (season_2026_structure_only.derived.se_lo)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "mde_point_2026": {
+      "value": 0.00023071,
+      "doc": "A2J:124 (season_2026_structure_only.derived.mde_point_delta_ne_0)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "mde_current_rule_2026": {
+      "value": 0.0027411,
+      "doc": "A2J:125 (season_2026_structure_only.derived.mde_current_rule_statistical)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "mde_current_rule_bias_adjusted_2026": {
+      "value": 0.0054758,
+      "doc": "A2J:126 (season_2026_structure_only.derived.mde_current_rule_bias_adjusted)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "se_censored_2026": {
+      "value": 0.00022999,
+      "doc": "A2J:132 (mde_from_records.decomposition.season_2026.se_cens)",
+      "kind": "recorded_derived_by_doc",
+      "note": "illustrative independence approximation across different populations and denominators (A2J:131 decomposition.rule)"
+    },
+    "censored_share_of_se_lo_sq_2026": {
+      "value": 0.886,
+      "doc": "A2J:132 (decomposition.season_2026.share_of_se_lo_squared)",
+      "kind": "recorded_derived_by_doc",
+      "note": "approximate inferred variance share under the independence assumption; the components come from different populations and denominators, so this is not an identified decomposition (A2J:131; A2D:84)"
+    },
+    "se_censored_S6": {
+      "value": 0.00021065,
+      "doc": "A2J:133 (decomposition.S6.se_cens)",
+      "kind": "recorded_derived_by_doc",
+      "note": "illustrative independence approximation (A2J:131)"
+    },
+    "censored_share_of_se_lo_sq_S6": {
+      "value": 0.345,
+      "doc": "A2J:133 (decomposition.S6.share_of_se_lo_squared)",
+      "kind": "recorded_derived_by_doc",
+      "note": "illustrative approximation (A2J:131)"
+    },
+    "s_worst_share_2026": {
+      "value": 0.0010566794850359472,
+      "doc": "A2J:118 (season_2026_structure_only.worst_case_residual_share_s)",
+      "origin_per_doc": "MLB-2026-OPE-v1.json:102 (A2J:118)",
+      "kind": "recorded"
+    },
+    "games_S6": {
+      "value": 150,
+      "doc": "A2J:92 (mde_from_records.S6_rehearsal_150_dev_games.games)",
+      "origin_per_doc": "results/ML-POLICY-VAL-v1-S6-v3.json (A2J:91)",
+      "kind": "recorded"
+    },
+    "pas_S6": {
+      "value": 11350,
+      "doc": "A2J:93 (S6_rehearsal_150_dev_games.pas)",
+      "kind": "recorded"
+    },
+    "e0_pas_S6": {
+      "value": 10131,
+      "doc": "A2J:94 (S6_rehearsal_150_dev_games.e0_pas)",
+      "origin_per_doc": "results/ML-POLICY-VAL-v1-S6.json:10-14 (A2J:94)",
+      "kind": "recorded"
+    },
+    "se_point_S6": {
+      "value": 0.00029008,
+      "doc": "A2J:103 (S6_rehearsal_150_dev_games.derived.se_point_l2)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "mde_point_S6": {
+      "value": 0.00081269,
+      "doc": "A2J:104 (S6_rehearsal_150_dev_games.derived.mde_point_delta_ne_0)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "se_point_S6_projected_2429": {
+      "value": 7.208e-05,
+      "doc": "A2J:135 (decomposition.scaling_check.S6_se_point_projected_to_2429_games)",
+      "kind": "recorded_derived_by_doc",
+      "note": "S6 DEV and the 2026 season are different populations, so the comparison is approximate (A2J:141)"
+    },
+    "mde_point_2026_30pct_cut": {
+      "value": 0.0001615,
+      "doc": "A2J:151 (with_30pct_point_se_cut.season_2026_scale.mde_point)",
+      "kind": "recorded_derived_by_doc",
+      "note": "scenario: point SE cut by 30%"
+    },
+    "mde_current_rule_2026_30pct_cut": {
+      "value": 0.0027209,
+      "doc": "A2J:151 (with_30pct_point_se_cut.season_2026_scale.mde_current_rule)",
+      "kind": "recorded_derived_by_doc"
+    },
+    "a2_point_se_cut_X": {
+      "value": 0.3,
+      "doc": "A2J:456 (decision_rules.condition_ii_half_width.X); DEC:325",
+      "kind": "judgment_value_recorded_and_approved"
+    },
+    "mei": {
+      "value": 0.001,
+      "doc": "MAT:823 (mlb2026_ope.estimator.mei); A2J:87 (mde_from_records.method.mei)",
+      "kind": "recorded",
+      "note": "itself a D108 judgment value (DEC:162)"
+    },
+    "b_v": {
+      "value": 0.002734729542731599,
+      "doc": "MAT:804 (mlb2026_ope.b_v); DEC:186",
+      "kind": "recorded",
+      "note": "used here only for the bias-sensitivity row and scenario"
+    },
+    "bias_bound_B": {
+      "value": 1.26e-05,
+      "doc": "A2J:425-427 (synthetic_bias_check.acceptance.bias_bound_B: value, applied_as exactly 1.26e-5); A2D:265; DEC:325",
+      "kind": "judgment_value_recorded_and_approved",
+      "note": "the approved threshold is exactly 1.26e-5; 1.2612e-5 is only its unrounded explanatory derivation (A2J:428 derivation_explanatory_only, A2D:266). A2 certifies combined-arm bias in its declared synthetic cells (V2: U <= B; V3: U <= |beta_0| + B; A2J:434 certified_quantity, :440 cell_outcome), excluding the real P-selection mechanism and 2027 drift (A2J:448 certification_scope); not used as an RS-03 bias allowance"
+    },
+    "a2_replication_ratio_max": {
+      "value": 0.85,
+      "doc": "A2J:502 (decision_rules.fixed_statements.replication_check_2027); A2D:344",
+      "kind": "judgment_value_recorded"
+    },
+    "full_season_games_reference": {
+      "value": 2430,
+      "doc": "A2D:267 (section 4.5, SE_point,S6 bullet)",
+      "origin_per_doc": "results/ML-POLICY-VAL-v1-S6.json:45 (A2D:267)",
+      "kind": "recorded"
+    },
+    "reference_effect_grid": {
+      "value": [
+        0.001,
+        0.0003,
+        0.0002,
+        0.0001
+      ],
+      "doc": "0.001 = MEI (MAT:823); 0.0003, 0.0002, 0.0001: A2D:97 and A2J:156 (reference_magnitudes.point_se_needed)",
+      "kind": "recorded",
+      "note": "reference magnitudes for the arithmetic only; not expected effects"
+    },
+    "exposed_point_estimate_S6": {
+      "value": -1.9012038906171694e-05,
+      "doc": "A2J:155 (reference_magnitudes.exposed_point_estimates)",
+      "kind": "recorded",
+      "note": "exposed; descriptive; NOT used for planning"
+    },
+    "exposed_point_estimate_2026": {
+      "value": -0.00014858997929797347,
+      "doc": "A2J:155 (reference_magnitudes.exposed_point_estimates)",
+      "kind": "recorded",
+      "note": "exposed; descriptive; NOT used for planning"
+    },
+    "ess_min_pa": {
+      "value": 100,
+      "doc": "DEC:162",
+      "kind": "recorded"
+    },
+    "ess_min_games": {
+      "value": 30,
+      "doc": "DEC:162",
+      "kind": "recorded"
+    },
+    "bootstrap_invalid_share_max": {
+      "value": 0.05,
+      "doc": "DEC:162",
+      "kind": "recorded"
+    },
+    "paired_identity_run_difference_max": {
+      "value": 0,
+      "doc": "DEC:162",
+      "kind": "recorded"
+    },
+    "gr_cap": {
+      "value": 0.005,
+      "doc": "MAT:818; DEC:184",
+      "kind": "recorded"
+    },
+    "vocab_unmapped_share_max": {
+      "value": 0.01,
+      "doc": "MAT:826",
+      "kind": "recorded"
+    },
+    "post_marker_reattempts_max": {
+      "value": 2,
+      "doc": "PM decision on review round 2 (2026-10-27), confirmed by Song as a judgment value in D187 decision 7 (docs/decisions.md:327): at most 2 bounded infrastructure re-attempts after LOOK.done within the same consumed look",
+      "kind": "judgment_value_decided_by_song",
+      "note": "differs from the 2026 registration's max_attempts (MAT:805), which counted all attempts"
+    },
+    "v3_tempered_alpha": {
+      "value": 0.5,
+      "doc": "MAT:824",
+      "kind": "recorded"
+    },
+    "tau": {
+      "value": 0.1,
+      "doc": "PRE26:298; DEC:160",
+      "kind": "recorded"
+    },
+    "planner_samples": {
+      "value": 6,
+      "doc": "PRE26:300; A1D:47",
+      "kind": "recorded"
+    },
+    "planner_pitch_cap": {
+      "value": 12,
+      "doc": "PRE26:301; A1D:47",
+      "kind": "recorded"
+    },
+    "planning_seed": {
+      "value": 0,
+      "doc": "A1D:47",
+      "origin_per_doc": "results/EXP-STAB-01.json:5-8 (A1D:47)",
+      "kind": "recorded"
+    },
+    "kl_mean_candidate_vs_reference": {
+      "value": 0.0074,
+      "doc": "RALL:1478; DEC:160",
+      "kind": "recorded"
+    },
+    "bootstrap_draws": {
+      "value": 10000,
+      "doc": "A2D:168; A2J:277-278 (arms.R4_bootstrap.game and .pitcher draws); P48C:512; P48P:154",
+      "kind": "recorded"
+    },
+    "n_rule_delta_nll_max": {
+      "value": -0.003,
+      "doc": "P48C:504; P48P:157",
+      "kind": "recorded",
+      "note": "operator <= (ensemble delta NLL)"
+    },
+    "n_rule_nll_ci95_upper_max": {
+      "value": 0,
+      "doc": "P48C:505; P48P:157",
+      "kind": "recorded",
+      "note": "operator strict < (paired 95% CI upper < 0)"
+    },
+    "n_rule_brier_ci95_upper_max": {
+      "value": 0.001,
+      "doc": "P48C:506; P48P:158",
+      "kind": "recorded",
+      "note": "operator <="
+    },
+    "n_rule_required_negative_seeds": {
+      "value": 4,
+      "doc": "P48C:507; P48P:158",
+      "kind": "recorded",
+      "note": "operator >= (at least 4/5 seeds improving)"
+    },
+    "adoption_seeds": {
+      "value": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "doc": "P48P:71",
+      "kind": "recorded"
+    },
+    "n_rule_seed_count": {
+      "value": 5,
+      "doc": "P48P:71; P48P:158 ('4/5 seeds')",
+      "kind": "recorded"
+    },
+    "alpha": {
+      "value": 0.05,
+      "doc": "P48C:510; P48P:158, :162",
+      "kind": "convention_copied",
+      "note": "EXP-P48-001: one-sided, unadjusted; RS-03 also uses 0.05 for C1 (two-sided) and the Holm family"
+    },
+    "p48_bootstrap_seed": {
+      "value": 20260924,
+      "doc": "P48C:513; P48P:154-155",
+      "kind": "recorded"
+    },
+    "a1_top1_agreement_lower_min": {
+      "value": 0.95,
+      "doc": "A1D:134 (section 6 STABLE_X); A1J:269 (decision_rules.stable.top1_lower_at_least); DEC:325",
+      "kind": "judgment_value_recorded_and_approved"
+    },
+    "a1_tv_upper_max": {
+      "value": 0.02,
+      "doc": "A1D:134 (STABLE_X); A1J:269 (decision_rules.stable.mean_tv_upper_at_most); DEC:325",
+      "kind": "judgment_value_recorded_and_approved"
+    },
+    "a1_cost_ratio_max": {
+      "value": 4.0,
+      "doc": "A1D:137 (COST_OK_X); A1J:270 (decision_rules.cost.r_rows_at_most); DEC:325",
+      "kind": "judgment_value_recorded_and_approved"
+    },
+    "a1_confirmation_slice_games": {
+      "value": 50,
+      "doc": "A1J:113 (data.confirmation_slice.selection); A1D:162 (confirmation slice profile)",
+      "kind": "recorded"
+    },
+    "a1_confirmation_slice_salt": {
+      "value": 20261028,
+      "doc": "A1J:113 (data.confirmation_slice.selection); A1D:162",
+      "kind": "recorded"
+    },
+    "a3_nll_margin": {
+      "value": 0.005,
+      "doc": "A3D:206 (section 9 E1); DEC:325",
+      "kind": "judgment_value_recorded_and_approved"
+    },
+    "a3_ece_noninferiority_margin": {
+      "value": 0.002,
+      "doc": "A3D:207 (section 9 E2)",
+      "kind": "judgment_value_recorded"
+    },
+    "certification_chain_seconds_G15_precedent": {
+      "value": 8900,
+      "doc": "DEC:238",
+      "kind": "recorded",
+      "note": "'measured total about 8,900 s' as written in the document"
+    },
+    "ope_2026_seconds": {
+      "value": 47828,
+      "doc": "DEC:208 (D131)",
+      "kind": "recorded",
+      "note": "A2J:568 (cost_budget.recorded_references.OPE_2026_a1_not_rerun) records 47827.57 s with the result file as origin"
+    },
+    "ope_2026_max_rss_gib": {
+      "value": 6.7,
+      "doc": "DEC:208",
+      "kind": "recorded"
+    },
+    "planner_ms_per_decision_derived": {
+      "value": 33,
+      "doc": "A1D:137 (COST_OK_X size note); derivation A1D:201 (measured values: 0.329 s per decision over 10 seeds)",
+      "kind": "recorded_derived_by_doc",
+      "note": "derived estimate in the document, not a live-capacity measurement"
+    },
+    "p17_mean_tv_predictor_swap": {
+      "value": 0.0323,
+      "doc": "EXPS:36; DEC:252",
+      "kind": "recorded"
+    },
+    "p17_top1_agreement": {
+      "value": 0.928,
+      "doc": "EXPS:36 ('92.8%'); DEC:252",
+      "kind": "recorded"
+    },
+    "p18_mean_tv_seed_swap": {
+      "value": 0.0497,
+      "doc": "EXPS:35; DEC:258",
+      "kind": "recorded"
+    },
+    "p18_top1_agreement": {
+      "value": 0.887,
+      "doc": "EXPS:35 ('88.7%'); DEC:258",
+      "kind": "recorded"
+    },
+    "p17_s2_probe_mix_max_diff": {
+      "value": 1.3e-08,
+      "doc": "DEC:252; EXPS:36",
+      "kind": "recorded"
+    },
+    "p16_whole_mlb_delta_nll": {
+      "value": -0.004062,
+      "doc": "EXPS:37",
+      "kind": "recorded",
+      "note": "G15 - G0 on exposed whole-MLB DEV; reference only"
+    },
+    "p16_whole_mlb_delta_nll_ci": {
+      "value": [
+        -0.004383,
+        -0.003752
+      ],
+      "doc": "EXPS:37",
+      "kind": "recorded"
+    },
+    "rs02_equivalence_tolerance": {
+      "value": 1e-06,
+      "doc": "RS02P:21",
+      "kind": "recorded"
+    },
+    "rs01_dryrun_T_abstain": {
+      "value": 283,
+      "doc": "RS01D:9",
+      "kind": "recorded"
+    },
+    "rs01_dryrun_T_intents": {
+      "value": 290,
+      "doc": "RS01D:9",
+      "kind": "recorded"
+    },
+    "snapshot_lag_2026_days": {
+      "value": 3,
+      "doc": "MAT:794 (snapshot d20260930-h2026f); MAT:800 (season end 2026-09-27)",
+      "kind": "arithmetic_this_draft",
+      "note": "date difference of two recorded dates"
+    },
+    "theta": {
+      "value": 0,
+      "doc": "D187 decision 2 (docs/decisions.md:327); proposed in this draft as option 1 of the former open question 2",
+      "kind": "decided_by_song",
+      "note": "threshold of the point-estimate rule; the former alternative MEI 0.001 is history only"
+    },
+    "freeze_offset_days": {
+      "value": 14,
+      "doc": "D187 decision 6 (docs/decisions.md:327); proposed in this draft (former open question 6)",
+      "kind": "judgment_value_decided_by_song",
+      "note": "seal deadline = scheduled first pitch of the 2027 regular season minus this many days; margin for review/seal retry"
+    },
+    "snapshot_lag_days": {
+      "value": 7,
+      "doc": "this draft",
+      "kind": "judgment_value_this_draft",
+      "note": "Statcast snapshot fixed at least this many days after the last regular-season game; more margin than the 2026 precedent (snapshot_lag_2026_days)"
+    },
+    "late_seal_final_cutoff_remaining_share": {
+      "value": 0.5,
+      "doc": "D187 decision 6 (docs/decisions.md:327); proposed in this draft (former open question 6)",
+      "kind": "judgment_value_decided_by_song",
+      "note": "no late seal once the remaining scheduled regular-season games fall to this share; at that point the point SE of the planning proxy is about sqrt(2) times the full-season value"
+    },
+    "e0_per_game_2026": {
+      "value": 61.558,
+      "doc": "arithmetic: e0_pas_2026 / games_2026",
+      "kind": "arithmetic_this_draft"
+    },
+    "censored_share_of_e0_2026": {
+      "value": 0.1171,
+      "doc": "arithmetic: censored_pas_2026 / e0_pas_2026",
+      "kind": "arithmetic_this_draft"
+    },
+    "s6_vs_2026_games_factor": {
+      "value": 1.305,
+      "doc": "arithmetic: (se_point_2026 / se_point_S6_projected_2429)^2",
+      "kind": "arithmetic_this_draft"
+    },
+    "power_table_games_80pct": {
+      "value": [
+        {
+          "delta_we_per_pa": 0.001,
+          "statistical_label_current_se_games": 129.3,
+          "statistical_label_30pct_se_cut_scenario_games": 63.4,
+          "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+        },
+        {
+          "delta_we_per_pa": 0.0003,
+          "statistical_label_current_se_games": 1436.5,
+          "statistical_label_30pct_se_cut_scenario_games": 703.9,
+          "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+        },
+        {
+          "delta_we_per_pa": 0.0002,
+          "statistical_label_current_se_games": 3232.2,
+          "statistical_label_30pct_se_cut_scenario_games": 1583.8,
+          "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+        },
+        {
+          "delta_we_per_pa": 0.0001,
+          "statistical_label_current_se_games": 12928.9,
+          "statistical_label_30pct_se_cut_scenario_games": 6335.4,
+          "bias_sensitivity_b_v_scenario_games": "no solution under this formula (delta <= b_v)"
+        }
+      ],
+      "doc": "arithmetic: n(delta) = games_2026 * (MDE / (delta - b))^2, MDE = mde_point_2026 or mde_point_2026_30pct_cut, b = 0 or b_v",
+      "kind": "arithmetic_this_draft",
+      "note": "L2-based planning proxy at the 2026 E0 density; not a measurement; reproduced by the round-1 reviewer"
+    },
+    "seasons_equivalent_current_se": {
+      "value": [
+        0.053,
+        0.591,
+        1.331,
+        5.323
+      ],
+      "doc": "arithmetic: statistical_label_current_se_games / games_2026",
+      "kind": "arithmetic_this_draft"
+    },
+    "mde_current_rule_floor_n_infinite": {
+      "value": 0.002701,
+      "doc": "arithmetic: mei + s_worst_share_2026 + mde_multiplier * se_censored_2026",
+      "kind": "arithmetic_this_draft",
+      "note": "scenario: censored SE held constant for any n"
+    },
+    "mde_current_rule_floor_n_infinite_bias_adjusted": {
+      "value": 0.005436,
+      "doc": "arithmetic: mde_current_rule_floor_n_infinite + b_v",
+      "kind": "arithmetic_this_draft",
+      "note": "same scenario"
+    },
+    "mde_censoring_width_floor": {
+      "value": 0.0020567,
+      "doc": "arithmetic: mei + s_worst_share_2026",
+      "kind": "arithmetic_this_draft",
+      "note": "scenario: every SE component at 0; 2026 s"
+    },
+    "mde_theta_mei_2026": {
+      "value": 0.00123071,
+      "doc": "arithmetic: mei + mde_point_2026",
+      "kind": "arithmetic_this_draft"
+    },
+    "mde_theta_mei_2026_30pct_cut": {
+      "value": 0.0011615,
+      "doc": "arithmetic: mei + mde_point_2026_30pct_cut",
+      "kind": "arithmetic_this_draft"
+    },
+    "mde_bias_sensitivity_b_v_2026": {
+      "value": 0.0029654,
+      "doc": "arithmetic: b_v + mde_point_2026",
+      "kind": "arithmetic_this_draft",
+      "note": "bias-sensitivity scenario only; not a confirmation threshold"
+    },
+    "id_collision_hits": {
+      "value": 0,
+      "doc": "this draft: search for RS-03 | RS03 | rs03 over docs/, configs/, pitcheezy-pm-jobs and git log --all on 2026-10-27",
+      "kind": "observed_this_draft"
+    },
+    "interim_looks_count": {
+      "value": 0,
+      "doc": "D187 decision 7 (docs/decisions.md:327)",
+      "kind": "decided_by_song"
+    },
+    "look_count": {
+      "value": 1,
+      "doc": "this draft (one look after the season)",
+      "kind": "design_choice_this_draft"
+    },
+    "secondary_family_max_size": {
+      "value": 7,
+      "doc": "arithmetic: count of the listed secondary contrasts C2-C8",
+      "kind": "arithmetic_this_draft"
+    },
+    "p48_stageb_cpanel_dnll": {
+      "value": -0.0037484395146830515,
+      "doc": "P48R:2249 (cpanel_dev_after_blend.rows[tabm_residual_counts/MIX_FIT].paired.nll.delta)",
+      "kind": "recorded"
+    },
+    "p48_stageb_cpanel_dnll_ci95": {
+      "value": [
+        -0.004993674036596522,
+        -0.002515541161161217
+      ],
+      "doc": "P48R:2246-2247 (same row, paired.nll.ci95)",
+      "kind": "recorded"
+    },
+    "p48_stageb_mlb_dnll": {
+      "value": -0.0036469614786121805,
+      "doc": "P48R:13096 (whole_mlb_dev_blended.rows[tabm_residual_counts/MIX_FIT].paired.nll.delta)",
+      "kind": "recorded"
+    },
+    "p48_stageb_mlb_dnll_ci95": {
+      "value": [
+        -0.003915720543680152,
+        -0.003371907495592418
+      ],
+      "doc": "P48R:13093-13094 (same row, paired.nll.ci95)",
+      "kind": "recorded"
+    },
+    "p48_stageb_seeds_improving": {
+      "value": 5,
+      "doc": "P48R:1822-1828 and P48R:12679-12685 (N.seed_deltas of the primary row in each split, all five negative); P48R:1817 and P48R:12674 (N.criteria.seed_direction_stable true)",
+      "kind": "recorded"
+    },
+    "b1_mix_fit_weights_seeds": {
+      "value": [
+        0.65,
+        0.7,
+        0.7,
+        0.75,
+        0.7
+      ],
+      "doc": "CFRZ:38-44 (mix_rule.weights.MIX_FIT.seeds)",
+      "kind": "recorded"
+    },
+    "b1_mix_fit_weight_ensemble": {
+      "value": 0.7,
+      "doc": "CFRZ:37 (mix_rule.weights.MIX_FIT.ensemble)",
+      "kind": "recorded"
+    },
+    "b1_bundle_file_count": {
+      "value": 35,
+      "doc": "CFRZ:244 (bundle_files, 35 entries); CFRZMD:10 (bundle_sha256 over the 35 sorted sha256-path lines)",
+      "kind": "recorded"
+    },
+    "a1_rb6_top1_agreement": {
+      "value": 0.9408929950211667,
+      "doc": "A1R:322 (mandatory.comparison.arms.RB6.top1_agreement)",
+      "kind": "recorded"
+    },
+    "a1_rb6_top1_agreement_ci95": {
+      "value": [
+        0.9358691687746272,
+        0.9456657946818088
+      ],
+      "doc": "A1R:324-325 (mandatory.comparison.arms.RB6.top1_agreement_ci95)",
+      "kind": "recorded"
+    },
+    "a1_rb6_mean_tv": {
+      "value": 0.026378400008667622,
+      "doc": "A1R:327 (mandatory.comparison.arms.RB6.mean_tv)",
+      "kind": "recorded"
+    },
+    "a1_rb6_mean_tv_ci95": {
+      "value": [
+        0.024802878210514998,
+        0.027985826757238312
+      ],
+      "doc": "A1R:329-330 (mandatory.comparison.arms.RB6.mean_tv_ci95)",
+      "kind": "recorded"
+    },
+    "a1_rb6_r_rows": {
+      "value": 2.63429552246794,
+      "doc": "A1R:342 (mandatory.comparison.r_rows.RB6); A1R:16 (verdict.rb6_status.r_rows)",
+      "kind": "recorded"
+    },
+    "a1_a0_top1_agreement": {
+      "value": 0.8869511967837269,
+      "doc": "A1R:300 (mandatory.comparison.arms.A0-MC6.top1_agreement)",
+      "kind": "recorded"
+    },
+    "a1_a0_mean_tv": {
+      "value": 0.05036804917414062,
+      "doc": "A1R:305 (mandatory.comparison.arms.A0-MC6.mean_tv)",
+      "kind": "recorded"
+    },
+    "a1_bf48_top1_agreement": {
+      "value": 0.9630943931866572,
+      "doc": "A1R:1966 (descriptive.BF48.comparison.primary.top1_agreement)",
+      "kind": "recorded"
+    },
+    "a1_bf48_mean_tv": {
+      "value": 0.01740982627106577,
+      "doc": "A1R:1971 (descriptive.BF48.comparison.primary.mean_tv)",
+      "kind": "recorded"
+    },
+    "a1_bf48_r_rows": {
+      "value": 8.009820270192678,
+      "doc": "A1R:1984 (descriptive.BF48.comparison.r_rows)",
+      "kind": "recorded"
+    },
+    "a3_b2_nll_delta": {
+      "value": -0.09489672585524786,
+      "doc": "A3R:6685 (stages[08-score-dev][score.json].paired_vs_b0.B2.nll.delta)",
+      "kind": "recorded"
+    },
+    "a3_b2_nll_delta_ci95": {
+      "value": [
+        -0.09883525759187398,
+        -0.09075592170375131
+      ],
+      "doc": "A3R:6682-6683 (same block, nll.ci95)",
+      "kind": "recorded"
+    },
+    "a3_ece_b0": {
+      "value": 0.0349374703689086,
+      "doc": "A3R:6674 (same block, ece.control)",
+      "kind": "recorded"
+    },
+    "a3_ece_b2": {
+      "value": 0.008791666064920222,
+      "doc": "A3R:6669 (same block, ece.candidate)",
+      "kind": "recorded"
+    },
+    "a3_p1_b0": {
+      "value": 0.0035974190993250713,
+      "doc": "A3R:6694 (same block, p1.control)",
+      "kind": "recorded"
+    },
+    "a3_p1_b2": {
+      "value": 0.00035314114094291984,
+      "doc": "A3R:6689 (same block, p1.candidate)",
+      "kind": "recorded"
+    },
+    "a3_b2_ess_ratio_game": {
+      "value": 1.002635384429555,
+      "doc": "A3R:27482 (stages[09-s6-weights][weights.json].arms.B2.candidate_over_reference_ess.game)",
+      "kind": "recorded"
+    },
+    "a3_b2_ess_ratio_pa": {
+      "value": 0.9617418406643645,
+      "doc": "A3R:27483 (same, .pa)",
+      "kind": "recorded"
+    },
+    "a3_b2_kl_vs_b0": {
+      "value": 0.048863351237125756,
+      "doc": "A3R:27490 (stages[09-s6-weights][weights.json].arms.B2.kl_new_vs_b0.mean)",
+      "kind": "recorded"
+    },
+    "a2_hw_ratio_R1_bxR2_1": {
+      "value": {
+        "game": 0.7458269948068607,
+        "pitcher": 0.7581998033854426
+      },
+      "doc": "A2R:723-726 (summary.half_width_ratios_vs_baseline.R1_bxR2_1); A2R:756-759 (summary.best_pair_descriptive.ratio)",
+      "kind": "recorded",
+      "note": "largest half-width reduction, about 25% (A2R:760), below the registered 30% target"
+    },
+    "a2_hw_ratio_R1_axR2_1": {
+      "value": {
+        "game": 0.838479954481401,
+        "pitcher": 0.8432572377720836
+      },
+      "doc": "A2R:719-722 (summary.half_width_ratios_vs_baseline.R1_axR2_1)",
+      "kind": "recorded"
+    },
+    "a2_hw_ratio_R1_bxR2_0": {
+      "value": {
+        "game": 0.8282064209223654,
+        "pitcher": 0.8358684687248822
+      },
+      "doc": "A2R:687-690 (summary.half_width_ratios_vs_baseline.R1_bxR2_0)",
+      "kind": "recorded"
+    },
+    "a2_hw_ratio_R1_0xR2_1": {
+      "value": {
+        "game": 0.8781665003115672,
+        "pitcher": 0.8889141491260103
+      },
+      "doc": "A2R:715-718 (summary.half_width_ratios_vs_baseline.R1_0xR2_1)",
+      "kind": "recorded"
+    },
+    "a2_hw_ratio_R1_0xR2_3": {
+      "value": {
+        "game": 1.023560162548824,
+        "pitcher": 1.0288674624691831
+      },
+      "doc": "A2R:691-694 (summary.half_width_ratios_vs_baseline.R1_0xR2_3)",
+      "kind": "recorded"
+    },
+    "a2_hw_ratio_R1_0xR2_2": {
+      "value": {
+        "game": 1.0,
+        "pitcher": 1.0
+      },
+      "doc": "A2R:703-706 (summary.half_width_ratios_vs_baseline.R1_0xR2_2)",
+      "kind": "recorded",
+      "note": "Switch with the selected M = inf (a2_selected_M) equals the baseline"
+    },
+    "a2_condition_ii_ratio_max": {
+      "value": 0.7,
+      "doc": "A2R:5 (label_meaning: point half-width ratio <= 0.70 vs the current R1-0 x R2-0 baseline); A2R:6255 (limits: the 30% half-width target is a registered judgment value, D186 4-1)",
+      "kind": "judgment_value_recorded_and_approved"
+    },
+    "a2_precision_requirement_se_max": {
+      "value": 6.3e-06,
+      "doc": "A2R:760 (summary.best_pair_descriptive.note: precision requirement SE <= B/2 = 6.3e-6)",
+      "kind": "recorded_derived_by_doc",
+      "note": "B/2 with B = bias_bound_B 1.26e-5"
+    },
+    "a2_r1b_s2_cell_se": {
+      "value": 2.33e-05,
+      "doc": "A2R:760 (same note: SE 2.33e-5 for the R1_bxR2_1 S2 cells); EXPS:275 (R1-b 2kappa_p cell)",
+      "kind": "recorded"
+    },
+    "a2_selected_lambda": {
+      "value": 100.0,
+      "doc": "A2R:1025, :1027, :1029 (summary.selected_lambda_M, every R2-1 shrinkage pair '100.0')",
+      "kind": "recorded",
+      "note": "unblinded after the decision-record commit (A2R:15)"
+    },
+    "a2_selected_M": {
+      "value": "inf",
+      "doc": "A2R:1026, :1028, :1030 (summary.selected_lambda_M, every R2-2 Switch pair 'inf')",
+      "kind": "recorded",
+      "note": "unblinded after the decision-record commit (A2R:15)"
+    },
+    "a2_gint_values_compared": {
+      "value": 9,
+      "doc": "A2R:2467-2477 (S3_gint.s6_dr_a5_record.compared, 9 keys); EXPS:275",
+      "kind": "recorded"
+    },
+    "a2_gint_mismatches": {
+      "value": 0,
+      "doc": "A2R:2479 (S3_gint.s6_dr_a5_record.mismatches, empty); EXPS:275",
+      "kind": "recorded"
+    },
+    "a2_gint_reproduction_bound": {
+      "value": 1e-12,
+      "doc": "DEC:337 (D191); EXPS:275",
+      "kind": "recorded",
+      "note": "the baseline reproduced the 9 S6-v3 values within this bound, as stated in these documents (not a field of A2R); the registered comparison tolerance is not cited here"
+    },
+    "a2_digest_manifest_seq": {
+      "value": {
+        "first": 0,
+        "last": 78,
+        "bugfix_addendum": 71,
+        "g_code_receipt": 72
+      },
+      "doc": "A2R:469 (digest_manifest.entries seq 0 config_digest), A2R:605 (seq 78, last entry), A2R:560-563 (seq 71 bugfix_addendum), A2R:566-570 (seq 72 review_reference G-CODE PASS_WITH_NOTES); EXPS:275",
+      "kind": "recorded"
+    }
+  }
+}
