@@ -9,7 +9,10 @@ import { normalizeExpectation, normalizeReference } from './extras';
 import { PUBLISH_CONFIG, manifestPollMs, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
 import type { PublishStamp, PublishHealth, PublishedFile } from './publish';
 
-export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
+/** `notice`: the host answered with a service notice (503 `service_notice`, e.g. maintenance / data_hold). A screen that already shows
+ *  a game hides everything it last received while a notice stands, and draws normally again on the next good answer. */
+export class FetchError extends Error { constructor(message: string, public status: number, public notice = false) { super(message); } }
+const isServiceNotice = (status: number, body: unknown) => status === 503 && hostErrorMessage(status, body) !== null;
 export const TIMEOUT_MS = 15000;
 
 /** Host access/notice codes use local copy: never display an arbitrary host message. */
@@ -46,7 +49,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
     throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
   } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new FetchError(hostErrorMessage(response.status, body) ?? (typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.'), response.status);
+  if (!response.ok) throw new FetchError(hostErrorMessage(response.status, body) ?? (typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.'), response.status, isServiceNotice(response.status, body));
   if (body === null) throw new FetchError('서버 응답을 읽지 못했어요.', response.status);
   return body as T;
 }
@@ -86,7 +89,7 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
       const body = response.status === 401 || response.status === 503 ? await response.json().catch(() => null) : null;
       if (body === null) void response.body?.cancel().catch(() => undefined);
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-      throw new FetchError(hostErrorMessage(response.status, body) ?? '자료를 불러오지 못했어요.', response.status);
+      throw new FetchError(hostErrorMessage(response.status, body) ?? '자료를 불러오지 못했어요.', response.status, isServiceNotice(response.status, body));
     }
     const raw = await response.json().catch(() => null);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');

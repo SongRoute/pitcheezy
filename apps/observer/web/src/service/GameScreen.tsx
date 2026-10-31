@@ -162,7 +162,7 @@ function BoxSheet({ ls, game, at, onClose }: { ls: Linescore | null | undefined;
 
 export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [error, setError] = useState<{ text: string; status: number } | null>(null);
+  const [error, setError] = useState<{ text: string; status: number; notice?: boolean } | null>(null);
   const [auto, setAuto] = useState(true);
   const [sel, setSel] = useState<Selection | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
@@ -225,7 +225,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     try {
       if (__PZ_STATIC__) {  // one health-first chain; malformed/old health falls back to a whole-file read
         let h: PublishHealth | null = null;
-        try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch { /* keep the last health */ }
+        try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch (e) { if (e instanceof FetchError && e.notice) throw e; /* keep the last health */ }
         if (ctrl.signal.aborted) return;
         const { present, check } = gameCheck(h, gamePk);
         if (withdrawal.current && !check) { setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 }); return; }
@@ -273,8 +273,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       detailRef.current = next; setDetail(next); setError(null); setLastOk(Date.now());
     } catch (e) {
       if (ctrl.signal.aborted) return;
-      if (__PZ_STATIC__ && pending.current !== null) return;  // announced file is still propagating; keep neutral and retry
-      setError(e instanceof FetchError ? { text: e.message, status: e.status } : { text: '자료를 불러오지 못했어요.', status: 0 });
+      const notice = e instanceof FetchError && e.notice;
+      if (__PZ_STATIC__ && pending.current !== null && !notice) return;  // announced file is still propagating; keep neutral and retry
+      setError(e instanceof FetchError ? { text: e.message, status: e.status, notice } : { text: '자료를 불러오지 못했어요.', status: 0 });
     } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); if (__PZ_STATIC__) setChecking(false); } }
   }, [gamePk]);
 
@@ -335,7 +336,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [pinnedMs, load]);
   // first load failed (nothing to show yet): keep trying by itself, but only when the server could not be reached or failed (network
   // error / timeout = 0, 5xx). A refusal (423 embargo, 400, 404) is an answer, not an outage: it is shown as before and not retried.
-  const firstLoadRetry = detail === null && error !== null && (error.status === 0 || error.status >= 500);
+  // A service notice (maintenance / data_hold) on a page that already shows a game: nothing received before it stays on screen
+  // (recommendations, zone marks, pitches, sheets). Polling goes on; the next good answer draws the game again, and the change note
+  // never names a recommendation from before the notice.
+  const noticeHold = error?.notice === true;
+  useEffect(() => { if (noticeHold) { drawn.current = null; setSheet(s => s === 'sync' ? s : null); } }, [noticeHold]);
+  // (a notice on an open page is retried the same way, so it clears by itself even where the game is no longer polled)
+  const firstLoadRetry = (detail === null || noticeHold) && error !== null && (error.status === 0 || error.status >= 500);
   // static mode: a game with no file yet (404) is asked again slowly, so it appears by itself once it is published; and nothing is
   // asked while the tab is hidden (the retry starts again when it is visible)
   const missing = __PZ_STATIC__ && !withdrawn && detail === null && error !== null && error.status === 404;
@@ -397,8 +404,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const closeSync = () => { if (!readViewer().asked) setSetting(writeViewer({ asked: true })); closeSheet(); };
   const syncSheet = !import.meta.env.VITE_PUBLISH_BASE && sheet === 'sync' ? <div className="sv-sync-host"><SyncSheet gamePk={gamePk} delay={viewer?.delay_s ?? wantedDelay(setting)} max={viewerMeta.current?.max ?? null}
     synced={setting.synced} onDelay={changeDelay} onClose={closeSync} /></div> : null;
-  if (!detail) {
-    return <><div className="sv-page"><TopBar /><main className="sv-center">{__PZ_STATIC__ && pendingSince !== null
+  if (!detail || noticeHold) {
+    return <><div className="sv-page"><TopBar /><main className="sv-center">{!noticeHold && __PZ_STATIC__ && pendingSince !== null
       ? <p className="sv-muted" role="status">{performance.now() - pendingSince > staleAfterMs(pollMs) ? '갱신 지연 · 새 내용이 늦어지고 있어요.' : '확인 중 · 새 내용을 확인하고 있어요.'}</p>
       : error
       // public bundle: no file for a game (not published yet, or withheld while a demo runs on it) = not available now, said calmly
