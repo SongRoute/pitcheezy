@@ -435,3 +435,5 @@ html:has(.sv-game .sv-bottom-nav) { scroll-padding-bottom: var(--sv-nav-space); 
 .sv-we-bar>div { height: 18px; border-radius: 9px; overflow: hidden; background: #e7eaed; }
 .sv-we-bar i { display: block; height: 100%; border-radius: inherit; }
 .sv-we-bar b { font-variant-numeric: tabular-nums; }
+/* service notice on an open page (ui/notice-hide-1021): Korean keep-all, long host words still wrap */
+.sv-alert p{word-break:keep-all;overflow-wrap:anywhere}

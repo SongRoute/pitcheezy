@@ -474,6 +474,19 @@ def test_ops_armb_off_while_running_is_critical_and_closes_when_on(w):
     w.health(T0 + 45)
     w.ops_path.write_text(json.dumps(ops_status(T0 + 45, 'prestart', publisher={'running': False, 'armb': False})))
     assert 'ops_armb_off' not in w.keys(w.run(T0 + 45))
+    # review P2-3: off → backoff (block without armb) → off again. The key is not evaluated between segments, so the engine closes it
+    # silently (no 복구) and the next off segment fires at once. (The armb-on 복구 at T0+30 started the 300 s flapping cooldown, so
+    # this part runs after it.)
+    w.health(T0 + 400)
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 400, publisher={'pid': 4, 'running': True, 'armb': False})))
+    assert w.keys(w.run(T0 + 400)) == {'ops_armb_off'}
+    w.health(T0 + 415)
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 415, 'backoff', publisher={'running': False}, restarts={'count': 1, 'max': 3, 'last_exit': {'why': 'exit_code_1'}})))
+    events = w.run(T0 + 415)
+    assert 'ops_armb_off' not in w.keys(events) and 'ops_armb_off' not in w.keys(events, 'recover')
+    w.health(T0 + 430)
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 430, publisher={'pid': 5, 'running': True, 'armb': False})))
+    assert 'ops_armb_off' in w.keys(w.run(T0 + 430))
 
 
 def test_ops_contract_stale_heartbeat_and_alert_strings(w):

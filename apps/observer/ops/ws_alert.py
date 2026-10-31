@@ -542,10 +542,12 @@ def evaluate(cfg, obs, tracker):
         # ARM-B (recommendation policy) switched off while the publisher runs: the supervisor turns it off by itself when
         # available memory is under armb_min_available_bytes at prestart (WS game 2, 2026-10-25: 341 pitches, 0 recommendations,
         # no alert). Announced as critical for the whole segment; closes when a segment starts with armb on.
+        # Evaluated only while a segment runs and its block carries `armb`: between segments (backoff/prestart/stopped) the key
+        # is absent, so the engine closes it silently and a new off segment fires again at once (no false 복구, no cooldown).
         pub = ops.get('publisher') if isinstance(ops.get('publisher'), dict) else {}
-        armb_off = ops_state == 'running' and pub.get('running', True) is not False and pub.get('armb') is False
-        conds.append(_cond('ops_armb_off', CRITICAL, armb_off,
-                           '운영: 추천 정책(ARM-B)이 꺼진 채 발행 중 — 공개 화면에 추천이 비어 있음(메모리 자동 off 여부 확인, 런북 §0)'))
+        if ops_state == 'running' and 'armb' in pub:
+            conds.append(_cond('ops_armb_off', CRITICAL, pub.get('running', True) is not False and pub['armb'] is False,
+                               '운영: 추천 정책(ARM-B)이 꺼진 채 발행 중 — 공개 화면에 추천이 비어 있음(메모리 자동 off 여부 확인, 런북 §0)'))
         items = ops.get('problems') if isinstance(ops.get('problems'), list) else ops.get('alerts')
         for item in items if isinstance(items, list) else []:
             if isinstance(item, str) and item and item not in OPS_ALERTS_COVERED:

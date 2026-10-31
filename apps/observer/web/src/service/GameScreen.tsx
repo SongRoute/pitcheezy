@@ -173,6 +173,10 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [sheet, setSheet] = useState<'pa' | 'pa-empty' | 'detail' | 'info' | 'box' | 'player-b' | 'player-p' | 'sync' | 'reference' | 'history' | 'mix' | 'win' | null>(null);
   // the header status button's explanation bubble (UI 10/26 ⑥): the state's sentence lives here, not on the main screen
   const [pop, setPop] = useState(false);
+  // service notice hold (ui/notice-hide-1021, review P2-1): set by a notice answer, cleared only when a good answer is applied, so a
+  // network error or 404 between the notice and the next good answer never redraws the pre-notice game
+  const [hold, setHold] = useState(false);
+  const holdRef = useRef(false);  // mirrors `hold` for the load closure
   const [abOpen, setAbOpen] = useState(false);  // ④ the at-bat list, closed by default
   // viewer delay (중계 맞추기): this device's setting, what the server last said about its limits, and the one-time question
   const [setting, setSetting] = useState<ViewerSetting>(readViewer);
@@ -229,7 +233,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         if (ctrl.signal.aborted) return;
         const { present, check } = gameCheck(h, gamePk);
         if (withdrawal.current && !check) { setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 }); return; }
-        if (present) { setLastOk(Date.now()); setError(null); }
+        if (present) { setLastOk(Date.now()); if (!holdRef.current) setError(null); }
         if (check && check.file_sequence !== null && (appliedSequence.current === null || check.file_sequence > appliedSequence.current)) {
           pendingTarget.current = Math.max(pendingTarget.current ?? 0, check.file_sequence);
           pending.current ??= performance.now(); setPendingSince(pending.current);
@@ -239,14 +243,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
           setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 });
           return;
         }
-        if (pendingTarget.current === null && check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
+        if (!holdRef.current && pendingTarget.current === null && check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
           setError(null); setLastOk(Date.now()); return;
         }
         const got = await fetchPublishedDetail(gamePk, ctrl.signal);
         if (ctrl.signal.aborted) return;
         if (pendingTarget.current !== null && got.stamp.seq! < pendingTarget.current) return;  // propagation delay: retry this target next tick
         pendingTarget.current = null; pending.current = null; setPendingSince(null); appliedSequence.current = got.stamp.seq;
-        withdrawal.current = false; setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
+        withdrawal.current = false; setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now()); holdRef.current = false; setHold(false);
         return;
       }
       const old = detailRef.current;
@@ -270,10 +274,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         next = await fetchDetail(gamePk, ctrl.signal, undefined, requestDelay());
       }
       if (ctrl.signal.aborted) return;
-      detailRef.current = next; setDetail(next); setError(null); setLastOk(Date.now());
+      detailRef.current = next; setDetail(next); setError(null); setLastOk(Date.now()); holdRef.current = false; setHold(false);
     } catch (e) {
       if (ctrl.signal.aborted) return;
       const notice = e instanceof FetchError && e.notice;
+      if (notice) { holdRef.current = true; setHold(true); }
       if (__PZ_STATIC__ && pending.current !== null && !notice) return;  // announced file is still propagating; keep neutral and retry
       setError(e instanceof FetchError ? { text: e.message, status: e.status, notice } : { text: '자료를 불러오지 못했어요.', status: 0 });
     } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); if (__PZ_STATIC__) setChecking(false); } }
@@ -339,8 +344,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // A service notice (maintenance / data_hold) on a page that already shows a game: nothing received before it stays on screen
   // (recommendations, zone marks, pitches, sheets). Polling goes on; the next good answer draws the game again, and the change note
   // never names a recommendation from before the notice.
-  const noticeHold = error?.notice === true;
-  useEffect(() => { if (noticeHold) { drawn.current = null; setSheet(s => s === 'sync' ? s : null); } }, [noticeHold]);
+  const noticeHold = hold || error?.notice === true;
+  useEffect(() => { if (noticeHold) { drawn.current = null; setPop(false); setSheet(s => s === 'sync' ? s : null); } }, [noticeHold]);
   // (a notice on an open page is retried the same way, so it clears by itself even where the game is no longer polled)
   const firstLoadRetry = (detail === null || noticeHold) && error !== null && (error.status === 0 || error.status >= 500);
   // static mode: a game with no file yet (404) is asked again slowly, so it appears by itself once it is published; and nothing is
@@ -742,7 +747,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <dl className="sv-dl sv-facts"><dt>등번호</dt><dd>{sheetInfo?.jersey ? `#${sheetInfo.jersey}` : '—'}</dd>
         <dt>시즌</dt><dd>{playerRole === 'b' ? `AVG ${stat3(sheetInfo?.avg)} · OPS ${stat3(sheetInfo?.ops)}` : `ERA ${era(sheetInfo?.era)}`}</dd>
         <dt>오늘</dt><dd>{playerRole === 'b' ? [part(bt?.at_bats, '타수'), part(bt?.hits, '안타'), part(bt?.on_base, '출루')].join(' · ') : [part(pt?.pitches, '구'), part(pt?.strikeouts, '삼진'), part(pt?.earned_runs, '자책')].join(' · ')}</dd></dl>
-      {playerRole === 'p' && !maskPublished && <MixTable detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} heading />}
+      {playerRole === 'p' && !maskPublished && <MixTable detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} heading asOfIndex={asOfIndex} />}
       <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 —로 표시합니다.</p>
       </div>
     </Sheet>}
