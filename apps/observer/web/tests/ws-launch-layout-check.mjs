@@ -1,8 +1,9 @@
-// WS launch layout check (2026-10-17, workstream D): the four public-screen defects reported 10/12, measured on both bundles.
-//  1. 320x568 in progress: the header's team names never run under the LIVE button, and the "다음 타자" row is never clipped.
-//  2. A "정정됨" tag on a pitch card never covers that card's ball.
-//  3. 320-wide 이닝별 기록: R·H·E·사사구 are visible without side-scrolling the table.
-//  4. A game-level 확인 중 (display_state.state = unconfirmed): the status line never says 실시간으로 받는 중 at the same time.
+// WS launch layout check (2026-10-17, workstream D), moved to the 10/26 screen (docs/handoffs/UI-design-1026.md), both bundles:
+//  1. In progress at 320–1440: score and the single status marker share header row 1 without overlap; player names are not cut.
+//  2. A "정정됨" tag on a corrected pitch (at-bat list) never covers that pitch's mark or words.
+//  3. 이닝별 기록 (opened from the header linescore): R·H·E·사사구 are visible without side-scrolling the table.
+//  4. A game-level 확인 중: the marker says 확인 중 and no candidate appears in cells, squares or labels.
+//  Also: no spoiler / limitation prose on the game screen; the guarded win probability (undecided sheet) still opens, from 기록.
 // Synthetic rows built in memory from tests/fixtures/service-849843.json; served on an own loopback port (port 0), closed at the end.
 // No backend, no network.   npm run build && npm run build:public && node tests/ws-launch-layout-check.mjs [screenshotDir] [tag]
 import { chromium } from 'playwright';
@@ -53,7 +54,7 @@ function body(state) {
 }
 
 // ---------- own loopback server: dist/ answers /api/service/**, dist-public/ answers v1/** (stamped now) ----------
-let dist = DISTS.api, game = null, seq = 200;
+let dist = DISTS.api, game = null, seq = 200, fixedDelay;
 const stamp = (o) => { const at = new Date().toISOString(); return { ...o, publish: { contract: 'v1', sequence: seq, published_at: at } }; };
 const TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.html': 'text/html' };
 const server = createServer((req, res) => {
@@ -67,7 +68,7 @@ const server = createServer((req, res) => {
     seq++;
     const f = u.pathname.slice(4);
     if (f === 'health.json') return json(stamp({ schema: 'pitcheezy-publish-health-v1', sequence: seq, published_at: new Date().toISOString(), publish_interval_s: 2, unavailable_games: [], unavailable_dates: [], feed_failing_games: [] }));
-    if (f === 'manifest.json') return json(stamp({ schema: 'pitcheezy-publish-manifest-v1', contract: 'v1', published_at: new Date().toISOString(), publish_interval_s: 2, fixed_delay_s: 0, live_dates: [card.date_kst] }));
+    if (f === 'manifest.json') return json(stamp({ schema: 'pitcheezy-publish-manifest-v1', contract: 'v1', published_at: new Date().toISOString(), publish_interval_s: 2, ...(fixedDelay === undefined ? {} : { fixed_delay_s: fixedDelay }), live_dates: [card.date_kst] }));
     if (f === 'dates.json') return json(stamp({ schema: 'pitcheezy-service-dates-v2', source: { kind: 'live', session_id: null }, dates: [card.date_kst] }));
     if (f === `games/${card.date_kst}.json`) return json(stamp({ schema: 'pitcheezy-service-games-v2', source: { kind: 'live', session_id: null }, date: card.date_kst, games: [card], live_ok: true }));
     if (f === `game/${PK}.json`) return json(stamp({ schema: 'pitcheezy-service-game-v2', ...game }));
@@ -90,54 +91,93 @@ try {
     dist = DISTS[mode];
     if (!existsSync(path.join(dist, 'index.html'))) { ok(false, `${mode}: ${dist} is missing (build first)`); continue; }
     for (const [width, height] of SIZES) for (const state of ['live', 'confirming', 'final']) {
+      fixedDelay = state === 'live' ? { 320: -1, 375: 15, 390: 0 }[width] : 0;
       game = body(state);
       const ctx = await browser.newContext({ viewport: { width, height } }), page = await ctx.newPage(), errors = [];
       page.on('pageerror', (e) => errors.push(String(e)));
       await ctx.route('**/*', (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       await page.goto(origin + (mode === 'public' ? `/?game=${PK}` : `/watch/${PK}`));
-      await page.locator('.sv-head-score').waitFor({ timeout: 10000 });
+      await page.locator('.sv-hd-score').waitFor({ timeout: 10000 });
       await page.locator(`.sv-state[data-state="${game.display_state.state}"]`).waitFor({ timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(300);
       const id = `${mode} ${width}x${height} ${state}`;
       ok(await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth + 1), `${id}: no side scroll`);
-      // 1. header: each team name and score stays clear of the LIVE / 종료 button
-      const live = await rect(page.locator('.sv-head .sv-live'));
-      const parts = page.locator('.sv-head-score > *');
-      let hit = 0; for (let i = 0; i < await parts.count(); i++) hit += overlap(await rect(parts.nth(i)), live);
-      const score = await rect(page.locator('.sv-head-score'));
-      ok(hit === 0 && score.r <= live.l + 0.5, `${id}: team names clear of the status button (score right ${score.r.toFixed(1)} ≤ button left ${live.l.toFixed(1)})`);
-      // 1. next batters: when the row is shown, no name is cut (no ellipsis-hidden or horizontally clipped text)
-      const up = page.locator('.sv-upcoming');
-      if (await up.isVisible()) {
-        const cut = await up.evaluate((e) => [...e.querySelectorAll('span')].some((s) => s.scrollWidth > s.clientWidth + 1 || s.scrollHeight > s.clientHeight + 1));
-        ok(!cut, `${id}: 다음 타자 names not clipped`);
+      if (width === 390 && state !== 'final') {
+        const ab = await rect(page.locator('.sv-atbat-head'));
+        const nav = await rect(page.locator('.sv-bottom-nav'));
+        ok(ab.b <= nav.t, `${id}: at-bat line clears the fixed bottom bar (${ab.b.toFixed(1)} ≤ ${nav.t.toFixed(1)})`);
       }
-      // 2. a corrected pitch card: the tag never covers the ball
+      ok(await page.locator('.sv-limit-line').count() === 0, `${id}: main view omits the old limitation banner`);
+      // UI 10/26 (decision line): no spoiler / limitation prose on the game screen in any state; the game list keeps its line (below)
+      ok(await page.locator('.sv-game .sv-spoiler-line').count() === 0 && !/스포일러|TV 중계보다/.test(await page.locator('.sv-page').innerText()), `${id}: no spoiler line on the game screen`);
+      // UI 10/26 ①⑥: row 1 is back · score · ONE status marker (none on a finished game); score and marker never overlap.
+      const scoreBox = await rect(page.locator('.sv-hd-score > span'));
+      const chip = page.locator('.sv-hd .sv-hd-status');
+      if (state === 'final') ok(await chip.count() === 0, `${id}: a finished game has no status marker`);
+      else {
+        const c = await rect(chip);
+        ok(overlap(scoreBox, c) === 0 && c.r <= width + 0.5 && Math.abs((c.t + c.b) / 2 - (scoreBox.t + scoreBox.b) / 2) < 12, `${id}: score and status marker share row 1 without overlap`, { scoreBox, c });
+        const status = (await chip.innerText()).trim();
+        ok(status === (state === 'live' ? '라이브' : '확인 중'), `${id}: status marker reflects the state (${status})`);
+      }
+      // row 2: the linescore (two team rows, R) sits in the header; the half in progress is highlighted, a finished game highlights nothing
+      const ls = page.locator('.sv-hd-2 .sv-ls');
+      const cur = await ls.locator('.cur').count(), teams = await ls.locator('.t').allInnerTexts();
+      ok(await ls.isVisible() && teams.join('|') === 'SF|STL' && (state === 'final' ? cur === 0 : cur === 3), `${id}: header linescore with both teams (${teams.join('|')}, ${cur} highlighted cells)`);
+      // UI 10/26 ⑤: the win probability has no place on the main screen; the undecided sheet itself (guards unchanged) opens from 기록
+      ok(!/승리확률|61%|39%/.test(await page.locator('.sv-page').evaluate((e) => { const c = e.cloneNode(true); c.querySelectorAll('.sv-backdrop').forEach((x) => x.remove()); return c.innerText; })), `${id}: no win probability on the main screen`);
+      if (state !== 'confirming') {
+        await page.locator('.sv-bottom-nav button', { hasText: '기록' }).click();
+        await page.locator('.sv-sheet').getByRole('button', { name: '승리확률' }).click();
+        const bars = page.locator('.sv-sheet .sv-we-bar');
+        if (state === 'live') ok(await bars.count() === 2 && (await bars.allInnerTexts()).some(t => /61%/.test(t)) && (await bars.allInnerTexts()).some(t => /39%/.test(t)), `${id}: guarded current probability still opens two-team 61/39 bars (from 기록)`);
+        else ok(await bars.count() === 0 && /정보 없음/.test(await page.locator('.sv-sheet').innerText()), `${id}: finished game's snapshot is not reused as a current probability`);
+        await page.keyboard.press('Escape'); await page.getByRole('dialog').waitFor({ state: 'detached' });
+      }
+      // the at-bat list opens in place; it carries the corrected tags and the past-pitch entry
       if (state !== 'final') {
-        const cards = page.locator('.sv-strip .sv-card').filter({ has: page.locator('.sv-card-tag') });
-        const n = await cards.count();
-        ok(n === 2, `${id}: two corrected cards carry the tag (${n})`);
+        await page.locator('.sv-atbat-toggle').click();
+        ok(await page.locator('.sv-atbat-toggle').getAttribute('aria-expanded') === 'true' && await page.locator('#sv-atbat-list').isVisible(), `${id}: 펼치기 opens the at-bat list in place`);
+      }
+      if (state === 'live' && width === 390) {
+        // a past pitch's detail never changes the live marker (transport state only)
+        await page.locator('.sv-pitch-row').first().click();
+        await page.getByRole('dialog').waitFor();
+        ok((await chip.innerText()).trim() === '라이브', `${id}: past detail leaves the live marker as 라이브`);
+        await page.keyboard.press('Escape');
+        await page.getByRole('dialog').waitFor({ state: 'detached' });
+      }
+      // 1. row 3: no player name is cut (the next-batter row of the old layout is gone)
+      if (await page.locator('.sv-who').count()) {
+        const cut = await page.locator('.sv-who b').evaluateAll((bs) => bs.some((b) => b.scrollWidth > b.clientWidth + 1));
+        ok(!cut, `${id}: batter / pitcher names not clipped`);
+      }
+      // 2. a corrected pitch: its 정정됨 tag never covers the result mark or the words of that row
+      if (state !== 'final') {
+        const rows = page.locator('.sv-pitch-row').filter({ has: page.locator('.sv-card-tag') });
+        const n = await rows.count();
+        ok(n === 2, `${id}: two corrected pitches carry the tag (${n})`);
         for (let i = 0; i < n; i++) {
-          const card = cards.nth(i), t = await rect(card.locator('.sv-card-tag'));
-          const ball = card.locator('.sv-zone.mini .sv-actual circle').first();
-          const dot = await ball.isVisible() ? await rect(ball) : null;  // the 10/13 strip draws no mini zone: nothing to cover
-          ok(dot === null || overlap(t, dot) === 0, `${id}: 정정됨 tag clear of the ball on card ${i + 1} (${dot ? `overlap ${overlap(t, dot).toFixed(1)} px²` : 'no mini zone drawn'})`);
-          const cap = await card.locator('.sv-card-cap > span').evaluateAll((ss) => ss.map((s) => { const r = document.createRange(); r.selectNodeContents(s); const b = r.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }));
-          const capHit = cap.reduce((a, c) => a + overlap(t, c), 0);
-          ok(capHit === 0, `${id}: 정정됨 tag clear of card ${i + 1}'s text (overlap ${capHit.toFixed(1)} px²)`);
+          const row = rows.nth(i), t = await rect(row.locator('.sv-card-tag'));
+          const dot = await rect(row.locator('.sv-g1'));
+          ok(overlap(t, dot) === 0, `${id}: 정정됨 tag clear of the mark on row ${i + 1}`);
+          const words = await row.locator('.sv-pr-what, .sv-pr-res').evaluateAll((ss) => ss.map((s) => { const r = document.createRange(); r.selectNodeContents(s); const b = r.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }));
+          const hit = words.reduce((a, c) => a + overlap(t, c), 0);
+          ok(hit === 0, `${id}: 정정됨 tag clear of row ${i + 1}'s text (overlap ${hit.toFixed(1)} px²)`);
         }
       }
-      // 4. one story: game-level 확인 중 never sits next to 실시간으로 받는 중
-      const line = (await page.locator('.sv-notice.line .sv-line-text').innerText().catch(() => '')).trim();
-      const chip = (await page.locator('.sv-chip').innerText().catch(() => '')).trim();
-      if (state === 'confirming') ok(/확인 중/.test(chip) && !/실시간으로 받는 중/.test(line) && /확인 중/.test(line), `${id}: chip "${chip}" and status line "${line}" agree`);
-      if (state === 'live') ok(/실시간으로 받는 중/.test(line), `${id}: live status line "${line}"`);
+      ok(await page.locator('.sv-notice.line,.sv-chip').count() === 0, `${id}: no duplicate receive-time/status row`);
+      if (state === 'confirming') {
+        const pending = page.locator('.sv-state[data-state="unconfirmed"]');
+        const cells = await pending.locator('.sv-rec-cell').allInnerTexts();
+        ok(await pending.isVisible() && cells.length === 3 && cells.every((c) => c.trim() === '—') && await page.locator('.sv-zrow .sv-rec').count() === 0
+          && /확인/.test(await pending.locator('[role="status"]').textContent()) && !/순위/.test(await pending.locator('.sv-reclist').getAttribute('aria-label')),
+          `${id}: unconfirmed recommendation stays explicit ('—' cells, no square, no candidate in labels; sentence in the live region)`);
+      }
       if (shots) await page.screenshot({ path: path.join(shots, `${tag}-${mode}-${width}x${height}-${state}.png`), fullPage: true });
-      // 3. linescore sheet: R·H·E·사사구 visible without side-scrolling
+      // 3. linescore sheet (opened from the header linescore): R·H·E·사사구 visible without side-scrolling
       if (state === 'live' && mode === 'public') {
-        const link = width >= 760 ? page.locator('.sv-panel-link').filter({ hasText: '이닝별 점수표' }) : page.locator('.sv-inning');
-        await link.first().click();
-        if (width < 760) await page.locator('.sv-sheet').getByRole('button', { name: '박스스코어', exact: true }).click();
+        await page.locator('.sv-hd-2 .sv-ls').click();
         const box = page.locator('.sv-sheet .sv-box');
         if (await box.count()) {
           const scroller = await rect(page.locator('.sv-sheet .sv-box-scroll'));
@@ -150,6 +190,34 @@ try {
       ok(errors.length === 0, `${id}: no page errors ${errors.join(' | ')}`);
       await ctx.close();
     }
+  }
+  // Missing or out-of-range source values must never become a fabricated probability bar (sheet reached from 기록).
+  dist = DISTS.public;
+  for (const [label, value] of [['missing', null], ['out-of-range', 1.1]]) {
+    game = body('live'); fixedDelay = 0;
+    game.win_expectancy = value === null ? null : { status: 'available', home_probability: value, perspective: 'home' };
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } }), page = await ctx.newPage();
+    await page.goto(`${origin}/?game=${PK}`);
+    await page.locator('.sv-bottom-nav button', { hasText: '기록' }).click();
+    await page.locator('.sv-sheet').getByRole('button', { name: '승리확률' }).click();
+    ok(await page.locator('.sv-sheet .sv-we-bar').count() === 0 && /정보 없음/.test(await page.locator('.sv-sheet').innerText()), `public win ${label}: guarded empty state`);
+    await ctx.close();
+  }
+  // A long series title must leave a full-width row for team names on a phone list card.
+  dist = DISTS.public; game = body('live');
+  for (const width of [320, 390]) {
+    fixedDelay = width === 320 ? 15 : 0;
+    const ctx = await browser.newContext({ viewport: { width, height: 844 } }), page = await ctx.newPage();
+    await page.goto(`${origin}/?date=${game.game.date_kst}`);
+    const card = page.locator('.sv-list .sv-card.live');
+    await card.waitFor();
+    const teams = await card.locator('.sv-card-team').evaluateAll((els) => els.map((e) => ({ height: e.getBoundingClientRect().height, text: e.textContent.trim() })));
+    const row = await card.locator('.sv-card-teams').evaluate((e) => getComputedStyle(e).gridRowStart);
+    ok(teams.length === 2 && teams.every(t => t.height <= 32) && row === '2', `public list ${width}: team names use their own full-width row (${teams.map(t => `${t.text}:${t.height.toFixed(1)}`).join(', ')})`);
+    const words = await page.locator('.sv-list .sv-spoiler-line').innerText();
+    ok(width === 320 ? /공통 15초 지연 설정/.test(words) : /공통 지연 설정 없이/.test(words), `public list ${width}: spoiler copy follows manifest`);
+    if (shots) await page.screenshot({ path: path.join(shots, `${tag}-public-list-${width}.png`) });
+    await ctx.close();
   }
 } finally { await browser.close(); await new Promise((r) => server.close(r)); }
 console.log(`${passed} passed, ${failures} failed`);

@@ -1,9 +1,8 @@
 // Route-mocked layout contract for the current service entry. Run after npm run build.
 //   node tests/studio-layout-check.mjs [screenshot-directory]
-// Approved 2026-10-13 redesign (docs/decisions.md, UI-CONNECTION-2026-10-13.md): phone screens may scroll
-// vertically above a fixed bottom tab bar (.sv-bottom-nav); the main zone keeps the recent (≤3) published
-// pitches of the current at-bat as numbered dots; .sv-context (next batters) is hidden below 1200px; on a live
-// game a past-pitch card opens a detail sheet only and the main stage stays on the current pitch.
+// Moved to the 10/26 screen (docs/handoffs/UI-design-1026.md): header rows 1–3 (batter left, pitcher right), the zone with the at-bat's
+// published pitches as numbered marks, a three-cell recommendation row and a folded at-bat line, above a fixed bottom bar. Phones may
+// scroll vertically; nothing is hidden by width. On a live game a past pitch opens its own sheet and the main stage stays current.
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -71,127 +70,137 @@ for (const [width, height] of [[390, 844], [375, 667], [320, 568], [375, 560], [
   });
   await page.goto('http://pz.test/watch/849843');
   await page.waitForSelector('svg.sv-zone:not(.mini) .sv-zone-box');
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(150);
   const geometry = await page.evaluate(() => {
-    const rect = selector => document.querySelector(selector).getBoundingClientRect();
-    const zone = rect('svg.sv-zone:not(.mini) .sv-zone-box'), duel = rect('.sv-duel'), row = rect('.sv-zrow');
-    const summary = rect('.sv-pitch-summary'), strip = rect('.sv-strip-shell'), context = rect('.sv-context');
-    const contextShown = document.querySelector('.sv-context').getClientRects().length > 0;
+    const rect = selector => document.querySelector(selector)?.getBoundingClientRect() ?? null;
+    const zone = rect('svg.sv-zone:not(.mini) .sv-zone-box'), head = rect('.sv-hd'), mu = rect('.sv-mu');
+    const recs = rect('.sv-rec-sec'), atbat = rect('.sv-atbat');
     const markTop = Math.min(...[...document.querySelectorAll('svg.sv-zone:not(.mini) .sv-rec, svg.sv-zone:not(.mini) .sv-actual')].map(e => e.getBoundingClientRect().top));
-    return { duel: duel.top, duelBottom: duel.bottom, markTop, row: row.top, rowBottom: row.bottom, zone: zone.top, zoneBottom: zone.bottom, summary: summary.top,
-      strip: strip.top, stripBottom: rect('.sv-strip').bottom, navTop: document.querySelector('.sv-bottom-nav')?.getBoundingClientRect().top ?? innerHeight,
-      context: context.top, contextShown, documentHeight: document.documentElement.scrollHeight,
-      below: getComputedStyle(document.querySelector('.sv-stage')).getPropertyValue('--sv-below'),
-      horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 };
+    return { head: head.bottom, mu: mu?.top ?? null, muBottom: mu?.bottom ?? null, markTop, zone: zone.top, zoneBottom: zone.bottom, recs: recs.top, atbat: atbat?.top ?? null,
+      navTop: document.querySelector('.sv-bottom-nav')?.getBoundingClientRect().top ?? innerHeight, documentHeight: document.documentElement.scrollHeight,
+      horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+      // the page must stay at the CONFIGURED width: a mobile page that overflows grows innerWidth with it, so compare with the setting
+      widths: { inner: innerWidth, client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, vv: visualViewport.width, scale: visualViewport.scale } };
   });
   const key = `${width}x${height} ${state}`;
-  // Pre-redesign intent: every piece of content is on screen, nothing clipped, no nested scroller. The approved
-  // design lets phones scroll, so this now means: nothing off to the side, nothing clipped, no nested scroller,
-  // nothing silently hidden except .sv-context below 1200px, and every element can be scrolled above the fixed nav.
+  // Every piece of content is reachable: nothing off to the side, nothing clipped, no nested scroller, every element can be scrolled
+  // above the fixed bottom bar (the 10/26 screen hides no section by width).
   const allVisible = await page.evaluate(() => {
-    const selectors = ['.sv-head', '.sv-board', '.sv-duel', 'svg.sv-zone:not(.mini) .sv-zone-box', 'svg.sv-zone:not(.mini) .sv-rec', 'svg.sv-zone:not(.mini) .sv-actual', '.sv-pitch-summary', '.sv-rec-summary', '.sv-actual-summary', '.sv-strip-shell', '.sv-context', '.sv-players', '.sv-upcoming', '.sv-duel b', '.sv-player-name', '.sv-player-2', '.sv-player-3', '.sv-upcoming span'];
+    const selectors = ['.sv-hd', '.sv-hd-score', '.sv-ls', '.sv-mu', 'svg.sv-zone:not(.mini) .sv-zone-box', 'svg.sv-zone:not(.mini) .sv-rec', 'svg.sv-zone:not(.mini) .sv-actual', '.sv-zone-legend', '.sv-rec-sec', '.sv-reclist', '.sv-atbat-head', '.sv-who b', '.sv-who-today'];
     const navHeight = document.querySelector('.sv-bottom-nav')?.getBoundingClientRect().height ?? 0;
     const height = document.documentElement.scrollHeight;
     const shown = e => e.getClientRects().length > 0;
-    const hidden = selectors.flatMap(s => [...document.querySelectorAll(s)].filter(e => !shown(e))
-      .filter(e => !(innerWidth < 1200 && e.closest('.sv-context'))).map(e => s));
+    const hidden = selectors.flatMap(s => [...document.querySelectorAll(s)].filter(e => !shown(e)).map(() => s));
     const bad = selectors.flatMap(s => [...document.querySelectorAll(s)].filter(shown).filter(e => { const r = e.getBoundingClientRect(); return r.top + scrollY < -1 || r.bottom + scrollY > height - navHeight + 1 || r.left < -1 || r.right > innerWidth + 1; }).map(e => ({ selector: s, text: e.textContent?.slice(0, 30), box: e.getBoundingClientRect().toJSON() })));
-    const nested = [...document.querySelectorAll('.sv-page *')].filter(e => { const style = getComputedStyle(e); return /auto|scroll/.test(style.overflowY) && e.scrollHeight > e.clientHeight + 1; }).map(e => e.className);
-    const clippedText = [...document.querySelectorAll('.sv-duel b,.sv-player-name b,.sv-player-2,.sv-player-3,.sv-upcoming span')].filter(shown)
+    const nested = [...document.querySelectorAll('.sv-page *')].filter(e => { const style = getComputedStyle(e); return e.closest('.sv-ls') === null && /auto|scroll/.test(style.overflowY) && e.scrollHeight > e.clientHeight + 1; }).map(e => e.className);
+    const clippedText = [...document.querySelectorAll('.sv-who b,.sv-who-today,.sv-rec-cell')].filter(shown)
       .filter(e => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1).map(e => ({ text: e.textContent, className: e.className }));
-    // Key information that must be readable on first paint without scrolling, above the fixed tab bar.
+    // Key information readable on first paint without scrolling, above the fixed bottom bar.
     const navTop = document.querySelector('.sv-bottom-nav')?.getBoundingClientRect().top ?? innerHeight;
     const core = innerWidth === 390 && innerHeight >= 800
-      ? ['.sv-head', '.sv-board', '.sv-duel', 'svg.sv-zone:not(.mini) .sv-zone-box', '.sv-rec-summary', '.sv-actual-summary', '.sv-strip']
-      : ['.sv-head', '.sv-board', '.sv-duel'];
-    const belowFold = core.filter(s => { const e = document.querySelector(s); if (!e) return true; const r = e.getBoundingClientRect(); return r.top < -1 || r.bottom > navTop + 1; })
+      ? ['.sv-hd', '.sv-mu', 'svg.sv-zone:not(.mini) .sv-zone-box', '.sv-reclist', '.sv-atbat-head']
+      : ['.sv-hd', '.sv-mu'];
+    const belowFold = core.filter(s => { const e = document.querySelector(s); /* a finished game has no row 3 */ if (!e) return !(s === '.sv-mu' && /경기 종료/.test(document.querySelector('.sv-hd-2')?.textContent ?? '')); const r = e.getBoundingClientRect(); return r.top < -1 || r.bottom > navTop + 1; })
       .map(s => ({ selector: s, bottom: document.querySelector(s)?.getBoundingClientRect().bottom, navTop }));
     return { bad, hidden, nested, clippedText, belowFold, scrollY, height, viewport: innerHeight, navHeight };
   });
   check(allVisible.bad.length === 0 && allVisible.hidden.length === 0 && allVisible.nested.length === 0 && allVisible.clippedText.length === 0,
-    `${key} all content reachable above the bottom nav without sideways overflow, clipping or nested scroll`, allVisible);
+    `${key} all content reachable above the bottom bar without sideways overflow, clipping or nested scroll`, allVisible);
   check(allVisible.scrollY === 0 && allVisible.belowFold.length === 0, `${key} key information visible without scrolling`, allVisible.belowFold);
-  // Reading order of the visible core; .sv-context is only ordered after the strip where it is displayed (>=1200px).
-  check(geometry.duel < geometry.zone && geometry.duelBottom + 4 <= geometry.markTop && geometry.zoneBottom <= geometry.summary + 2 && geometry.summary < geometry.strip && (!geometry.contextShown || geometry.strip < geometry.context),
+  // Reading order: header, row 3 (live only), zone with its marks, recommendation row, at-bat line.
+  check(geometry.head <= geometry.zone && (geometry.mu === null || (geometry.head <= geometry.mu + 0.5 && geometry.muBottom + 4 <= geometry.markTop)) && geometry.zoneBottom <= geometry.recs + 2 && (geometry.atbat === null || geometry.recs < geometry.atbat),
     `${key} visual reading order`, geometry);
   check(!geometry.horizontalOverflow, `${key} no horizontal overflow`, geometry);
-  check(await page.locator('.sv-rec-summary .sv-rec-row').count() === 3, `${key} three recommendations`);
-  check(await page.locator('.sv-context .sv-player').count() === 2 && await page.locator('.sv-context .sv-upcoming span').count() === 2,
-    `${key} all player and upcoming context remains`);
-  const duel = await page.locator('.sv-duel b').allInnerTexts();
-  check(duel[0]?.startsWith('타자: ') && duel[1]?.startsWith('투수: '), `${key} batter is always left and pitcher right`, duel);
-  if (!final && state !== 'live_missing') {
-    const footer = await page.locator('.sv-player-name').allInnerTexts();
-    const expected = state === 'live_bottom' ? ['투수: CHC #123', '타자: SD #23'] : ['타자: CHC #23', '투수: SD #123'];
-    check(footer.every((s, i) => s.includes(expected[i])) && footer.every(s => !s.includes(body.current.batter.name) && !s.includes(body.current.pitcher.name)),
-      `${key} footer maps away/home roles and jersey without duplicate names`, footer);
-  }
-  if (state === 'live_missing') check(duel.every(s => s.includes('선수 미확인')) && await page.locator('svg.sv-zone:not(.mini) .sv-rec').count() === 2,
-    `${key} missing players and target stay unknown without fabricated mark`, duel);
+  const W = geometry.widths;
+  check(W.inner === width && W.client === width && W.scroll <= width && Math.abs(W.vv - width) < 0.5 && W.scale === 1, `${key} page stays at the configured ${width}px (inner ${W.inner}, client ${W.client}, scroll ${W.scroll}, visual ${W.vv} × ${W.scale})`, W);
+  const cells = await page.locator('.sv-rec-sec .sv-rec-cell').allInnerTexts();
+  check(cells.length === 3 && cells.every(c => /^\d\s*\S/.test(c.trim())), `${key} three recommendations`, cells);
   if (!final) {
-    // Pre-redesign: no actual mark at all before reveal. The approved main zone keeps up to three already-published
-    // pitches of the current at-bat as numbered dots, so every mark must be such a dot sitting exactly on a published
-    // pitch of this at-bat; the pending pitch has no mark, no speed and the actual summary waits.
+    const roles = [await page.locator('.sv-who.bat small').innerText(), await page.locator('.sv-who.pit small').innerText()];
+    check(roles[0].startsWith('타자') && roles[1].startsWith('투수'), `${key} batter is always left and pitcher right`, roles);
+  } else check(await page.locator('.sv-mu').count() === 0 && await page.locator('.sv-hd .sv-hd-status').count() === 0 && /경기 종료/.test(await page.locator('.sv-hd-2').innerText()), `${key} finished game: final header, no row 3, no marker`);
+  if (state === 'live_missing') check((await page.locator('.sv-who b').allInnerTexts()).every(s => s.trim() === '—') && await page.locator('svg.sv-zone:not(.mini) .sv-rec').count() === 2,
+    `${key} missing players and target stay unknown without fabricated mark`, await page.locator('.sv-who b').allInnerTexts());
+  if (!final) {
+    // Before reveal the main zone draws only already-published pitches of the current at-bat (UI 10/26: every one of them), each at its
+    // published coordinate; the pending pitch has no mark and nothing names its type, speed or result.
     const published = body.pitches.filter(p => p.pa_key === body.current?.pa_key);
     const marks = await page.locator('svg.sv-zone:not(.mini) .sv-actual').evaluateAll(es => es.map(e => ({
       dot: e.classList.contains('sv-pa-dot'), x: Number(e.dataset.x), z: Number(e.dataset.z), n: Number(/^(\d+)구/.exec(e.querySelector('title')?.textContent.trim() ?? '')?.[1]) })));
     const onPublished = m => m.dot && published.some(p => p.pitch_number === m.n && Math.abs(p.actual.x - m.x) < 1e-6 && Math.abs(p.actual.z - m.z) < 1e-6);
-    check(marks.length <= Math.min(3, published.length) && marks.every(onPublished) && await page.locator('.sv-actual-summary.waiting').count() === 1 &&
-      !(await page.locator('.sv-strip .sv-card.pending').allInnerTexts()).some(t => /km\/h|mph/.test(t)),
+    check(marks.length <= published.length && marks.every(onPublished) && await page.locator('.sv-actual-line').count() === 0,
       `${key} actual pitch stays hidden before reveal`, { marks, published: published.map(p => p.key) });
     if (state === 'live' || state === 'live_left') check(await page.locator('svg.sv-zone:not(.mini) .sv-rec.out .sv-out-arrow').count() >= 1, `${key} outside recommendation keeps edge arrow`);
-    check(!(await page.locator('.sv-actual-summary').innerText()).includes('km/h'), `${key} actual speed stays hidden`);
+    check(!/km\/h|mph/.test(await page.locator('.sv-stage').innerText()), `${key} no speed on the main stage before reveal`);
   } else {
-    check(await page.locator('.sv-actual-summary.waiting').count() === 0 && await page.locator('.sv-actual-summary .sv-result').count() === 1,
-      `${key} published actual result remains`);
+    check(await page.locator('.sv-actual-line .sv-actual-name').count() === 1, `${key} published actual of the selected pitch remains`);
   }
   if (out) await page.screenshot({ path: path.join(out, `${key.replace(/ /g, '-')}.png`), fullPage: true });
+  if (state === 'live' && width === 390) {
+    // long names: the full name falls back to the family name inside its cell; widening the screen restores it, narrowing falls back
+    // again, and a later poll does not flip it (fit measured against the cell, not against the shown name)
+    const fit = () => page.evaluate(() => [...document.querySelectorAll('.sv-who')].map(w => { const b = w.querySelector(':scope > b'), r = b.getBoundingClientRect(), c = w.getBoundingClientRect();
+      return { tight: w.classList.contains('tight'), shown: getComputedStyle(b.querySelector('.sur')).display !== 'none' ? b.querySelector('.sur').textContent : b.querySelector('.full').textContent, inCell: r.left >= c.left - .5 && r.right <= c.right + .5, cut: b.scrollWidth > b.clientWidth + 1 }; }));
+    const narrow = await fit();
+    check(narrow.every(f => f.tight && f.shown === 'Name' && f.inCell && !f.cut), `${key} long names show the family name inside their cells`, narrow);
+    await page.setViewportSize({ width: 1100, height }); await page.waitForTimeout(400);
+    const wide = await fit();
+    check(wide.every(f => !f.tight && /Extraordinarily/.test(f.shown) && f.inCell && !f.cut), `${key} widened: full names come back`, wide);
+    await page.setViewportSize({ width, height }); await page.waitForTimeout(400);
+    const back = await fit(); await page.waitForTimeout(2600); const later = await fit();
+    const w2 = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, inner: innerWidth }));
+    check(JSON.stringify(back) === JSON.stringify(narrow) && JSON.stringify(later) === JSON.stringify(narrow) && w2.client === width && w2.scroll <= width && w2.inner === width, `${key} narrowed again and after a poll: same fallback, page at ${width}px`, { back, later, w2 });
+    // the bottom bar takes an ordinary tap (nothing outside the configured viewport)
+    await page.locator('.sv-bottom-nav button', { hasText: '구종' }).click({ timeout: 5000 });
+    const dlg = page.getByRole('dialog'); await dlg.waitFor(); check(true, `${key} bottom bar answers an ordinary tap`); await page.keyboard.press('Escape'); await dlg.waitFor({ state: 'detached' });
+  }
   if (state === 'live_real') {
-    check((await page.locator('.sv-player-3').allInnerTexts()).some(s => s.includes('2타수')) &&
-      (await page.locator('.sv-player-3').allInnerTexts()).some(s => s.includes('36구')) &&
-      (await page.locator('.sv-upcoming').innerText()).includes('Mookie Betts'), `${key} current player and upcoming data preserved`);
-    await page.locator('.sv-rec-summary .sv-reclist').click();
+    check((await page.locator('.sv-who.bat .sv-who-today').innerText()).includes('2타수') && (await page.locator('.sv-who.pit .sv-who-today').innerText()).includes('36구'), `${key} current player data preserved in row 3`);
+    await page.locator('.sv-rec-sec .sv-reclist').click();
     check(await page.locator('.sv-sheet').getByText('아직 던지지 않았어요.').count() === 1 && await page.locator('.sv-sheet .sv-detail-zone').count() === 0,
       `${key} detail keeps unrevealed actual hidden`);
-    await page.locator('.sv-sheet-head button').click();
-    // Pre-redesign: selecting a past pitch moved the main view to it (revealing only that pitch) and pinned it with a
-    // '최신으로' button. Approved for a live game: the selection opens a detail sheet only, so the selected pitch's
-    // actual is revealed inside the sheet, while the main stage stays pre-reveal and LIVE is never pinned.
-    const stageBefore = await page.locator('.sv-stage').innerText(), liveBefore = await page.locator('.sv-live').evaluate(e => [e.className, e.innerText, e.getAttribute('aria-label')]);
-    const selected = body.pitches.at(-1), card = page.locator('.sv-strip .sv-card:not(.pending)').first();
-    check((await card.innerText()).startsWith(`${selected.pitch_number}.`), `${key} first past card is the latest published pitch`, await card.innerText());
-    await card.click();
+    await page.locator('.sv-sheet-head').getByRole('button', { name: '닫기' }).click();
+    // A past pitch of a live game opens its own sheet; the main stage stays on the unrevealed current pitch and the marker is unchanged.
+    const stageBefore = await page.locator('.sv-stage').innerText(), liveBefore = await page.locator('.sv-hd-status').evaluate(e => [e.dataset.tone, e.innerText]);
+    const selected = body.pitches.at(-1);
+    await page.locator('.sv-atbat-toggle').click();
+    const row = page.locator('.sv-pitch-row').first();
+    check((await row.locator('.sv-g1').innerText()).trim() === String(selected.pitch_number), `${key} first listed pitch is the latest published pitch`, await row.innerText());
+    const stageOpen = await page.locator('.sv-stage').innerText();
+    await row.click();
     const dialog = page.getByRole('dialog'); await dialog.waitFor();
     const sheet = (await dialog.innerText()).replace(/\s+/g, ' ');
     check(sheet.includes(`${selected.pitch_number}구`) && sheet.includes(selected.batter.name) && sheet.includes(selected.actual.pitch_label) && /km\/h/.test(sheet) &&
-      await dialog.locator('.sv-actual').count() === 1 && await page.locator('[role=dialog]').count() === 1,
+      await dialog.locator('.sv-actual:not(.sv-pa-dot)').count() === 1 && await page.locator('[role=dialog]').count() === 1,
       `${key} past-pitch selection reveals only the selected pitch in its detail sheet`, sheet);
-    check(await page.locator('.sv-actual-summary.waiting').count() === 1 && await page.locator('.sv-actual-summary .sv-result').count() === 0 &&
-      await page.locator('.sv-stage').innerText() === stageBefore,
+    check(await page.locator('.sv-actual-line').count() === 0 && await page.locator('.sv-stage').innerText() === stageOpen && stageOpen.startsWith(stageBefore.split('\n')[0]),
       `${key} past-pitch selection keeps the main stage on the unrevealed current pitch`);
-    const liveAfter = await page.locator('.sv-live').evaluate(e => [e.className, e.innerText, e.getAttribute('aria-label')]);
-    check(JSON.stringify(liveAfter) === JSON.stringify(liveBefore) && !liveAfter[1].includes('최신으로'),
-      `${key} live selection does not pin the main view`, { liveBefore, liveAfter });
+    const liveAfter = await page.locator('.sv-hd-status').evaluate(e => [e.dataset.tone, e.innerText]);
+    check(JSON.stringify(liveAfter) === JSON.stringify(liveBefore), `${key} live selection does not change the marker`, { liveBefore, liveAfter });
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
-    await page.locator('.sv-live').click();
-    await page.waitForTimeout(100);
-    check(await page.locator('.sv-actual-summary.waiting').count() === 1 && await page.locator('svg.sv-zone:not(.mini) .sv-actual:not(.sv-pa-dot)').count() === 0,
-      `${key} latest stays pre-reveal`);
+    check(await page.locator('svg.sv-zone:not(.mini) .sv-actual:not(.sv-pa-dot)').count() === 0, `${key} latest stays pre-reveal`);
   }
   if (state === 'live_bottom') {
-    // In the bottom half the pitcher is the away (CHC) player. Below 1200px the .sv-context player buttons are hidden
-    // by design, so the phone path is the bottom-nav '선수' tab with its 타자/투수 switch; focus returns to the opener.
-    const away = page.locator('.sv-player.away'), opener = await away.isVisible() ? away : page.locator('.sv-bottom-nav button', { hasText: '선수' });
+    // In the bottom half the pitcher is the away (CHC) player: the pitcher cell (row 3, right) opens the 투수 tab; focus returns.
+    const opener = page.locator('.sv-who.pit');
     await opener.click();
     const dialog = page.getByRole('dialog'); await dialog.waitFor();
-    if (!(await away.isVisible())) await dialog.locator('.sv-row button', { hasText: '투수' }).click();
     const sheet = (await dialog.innerText()).replace(/\s+/g, ' ');
-    check((await page.locator('.sv-sheet-head').innerText()).includes(body.current.pitcher.name) && sheet.includes('컵스 · 투수') && sheet.includes('#123'),
+    check((await page.locator('.sv-sheet-head').innerText()).includes(body.current.pitcher.name) && /컵스/.test(sheet) && sheet.includes('#123') && await dialog.locator('[role=tab][aria-selected=true]').innerText() === '투수',
       `${key} away pitcher sheet mapping`, sheet);
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
     check(await opener.evaluate(e => e === document.activeElement), `${key} player focus restored`);
+  }
+  if (!final && state !== 'live_missing' && state !== 'live_bottom') {
+    // 선수 tab: 타자 first, jersey from the as-of player data, and the 투수 tab carries today's pitch mix
+    await page.locator('.sv-bottom-nav button', { hasText: '선수' }).click();
+    const dialog = page.getByRole('dialog'); await dialog.waitFor();
+    check(await dialog.locator('[role=tab][aria-selected=true]').innerText() === '타자' && (await dialog.innerText()).includes('#23'), `${key} 선수 opens the batter tab with jersey #23`);
+    await dialog.getByRole('tab', { name: '투수' }).click();
+    check((await dialog.innerText()).includes('#123') && await dialog.locator('.sv-mix-table, .sv-muted').count() >= 1, `${key} pitcher tab: jersey #123 and today's mix`);
+    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
   }
   console.log(key, JSON.stringify(geometry));
   await context.close();

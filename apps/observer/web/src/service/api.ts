@@ -152,18 +152,19 @@ export async function fetchPublishedGames(date: string, signal?: AbortSignal): P
 /** `v1/dates.json` lists archived-game dates only (as the server route does), so the dates the publisher is following now
  *  (`live_dates` of `v1/manifest.json`: today and its neighbours) are added. Either file may be missing; both missing = an error. */
 export async function fetchPublishedManifest(signal?: AbortSignal) {
-  return (await readPublished<Raw, { liveDates: string[]; pollMs: number | null }>({ kind: 'manifest' }, signal, b => ({
+  return (await readPublished<Raw, { liveDates: string[]; pollMs: number | null; fixedDelayS: number | null }>({ kind: 'manifest' }, signal, b => ({
     liveDates: (Array.isArray(b.live_dates) ? b.live_dates : []).filter(isCalendarDate), pollMs: manifestPollMs(b.publish_interval_s),
+    fixedDelayS: typeof b.fixed_delay_s === 'number' && Number.isFinite(b.fixed_delay_s) && b.fixed_delay_s >= 0 ? b.fixed_delay_s : null,
   }))).value;
 }
-export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[]; pollMs: number | null }> {
+export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[]; pollMs: number | null; fixedDelayS: number | null }> {
   const [archived, manifest] = await Promise.allSettled([
     readPublished<Raw, string[]>({ kind: 'dates' }, signal, b => (Array.isArray(b.dates) ? b.dates : []).filter(isCalendarDate)),
     fetchPublishedManifest(signal)]);
   if (archived.status === 'rejected' && manifest.status === 'rejected') throw archived.reason;
   const liveDates = manifest.status === 'fulfilled' ? manifest.value.liveDates : [];
   const dates = [...new Set([...(archived.status === 'fulfilled' ? archived.value.value : []), ...liveDates])].sort().reverse();
-  return { dates, liveDates, pollMs: manifest.status === 'fulfilled' ? manifest.value.pollMs : null };
+  return { dates, liveDates, pollMs: manifest.status === 'fulfilled' ? manifest.value.pollMs : null, fixedDelayS: manifest.status === 'fulfilled' ? manifest.value.fixedDelayS : null };
 }
 /** Is this game on the list of any date the publisher is following now? true / false, or null when that could not be read.
  *  A game with no file that no followed list names (a demo runs on it, a wrong number, long over) is not waited for. */

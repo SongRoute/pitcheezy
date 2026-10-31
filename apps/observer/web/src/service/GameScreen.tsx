@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
 import { PUBLISH_CONFIG, gameCheck, gameCheckLag, staleAfterMs, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp, PublishHealth } from './publish';
-import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
-import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
+import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PreviousPick, Rec, Situation } from './model';
 import { teamColor } from './teams';
-import Zone from './Zone';
-import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, Sheet, absentLine, provenanceText } from './Sheets';
+import { inningText, kstTime, pitchName, plainZone, resultKind, short, surname } from './model';
+import Zone, { G1Dot, RankSq, ZoneLegend } from './Zone';
+import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, PitchSheet, Sheet, SheetFrame, absentLine } from './Sheets';
 import SyncSheet, { FOLD_TEXT } from './SyncSheet';
 import { ExpectationLine, ReferenceSheet, ReferenceTeaser } from './Reference';
 import type { ViewerSetting } from './viewer';
 import { VIEWER_KEY, learnViewer, readViewer, reloadViewer, requestDelay, wantedDelay, writeViewer } from './viewer';
-import { RecordSheet, PitchMixSheet } from './LivePanels';
+import { MixTable, RecordSheet, PitchMixSheet } from './LivePanels';
 import './service.css';
 
 /** One game screen for live, demo and finished games (UI redesign 2026-10-05).
@@ -26,18 +26,12 @@ export const FIRST_LOAD_RETRY_MS = 4000;
 /** API mode keeps these cadences; static mode uses the manifest period or build-time fallbacks. */
 const CADENCE = __PZ_STATIC__ ? { live: PUBLISH_CONFIG.livePollMs, pregame: PUBLISH_CONFIG.pregamePollMs, retry: PUBLISH_CONFIG.firstLoadRetryMs }
   : { live: POLL_MS, pregame: PREGAME_POLL_MS, retry: FIRST_LOAD_RETRY_MS };
-/** Display state → chip mark. The state is always written as words (server label); the mark and the colour only support it. */
-/** U+FE0E asks for the text (not emoji) form of the two symbols. */
-const LATE = '⏱\uFE0E', WARN = '⚠\uFE0E';
-const STATE_MARK: Record<DisplayStateName, string> = { recommended: '', unconfirmed: '…', unsupported: '–', feed_delayed: LATE, disconnected: WARN,
-  ledger_unavailable: '', waiting: '…', unavailable: '–', pregame: '', final: '' };
 /** The client's own connection is failing: what is on screen is the last answer, not the current state. */
 const CLIENT_LOST = { state: 'disconnected' as DisplayStateName, label: '연결 끊김', message: '연결이 잠시 끊겼어요. 마지막으로 받은 내용을 보여 드려요.' };
 /** Static mode: the files are reachable but the last publish is older than the (provisional) threshold. Same held look as a lost connection. */
 const PUBLISH_LATE = { state: 'disconnected' as DisplayStateName, label: '갱신 지연', message: '새 내용이 늦어지고 있어요. 마지막으로 받은 내용을 보여 드려요.' };
 /** Static mode: back in view (or back online / awake) and the first read is still on its way: neutral, never "late" from old data. */
 const PUBLISH_CHECKING = { state: 'unconfirmed' as DisplayStateName, label: '확인 중', message: '새 내용을 확인하고 있어요.' };
-const isDemoSession = (d: Detail) => d.session !== null;
 const unconfirmed = (p: PitchRow | null | undefined) => p?.receipt?.status === 'unconfirmed';
 const pickText = (pitch: string, zone: string | null | undefined) => zone ? `${pitch} · ${zone}` : pitch;
 const previousText = (p: PreviousPick | null) => p ? pickText(pitchName(p.pitch_label, p.pitch_type), p.zone_label ? plainZone(p.zone_label) : null) : '';
@@ -48,8 +42,14 @@ type Selection = { kind: 'latest' } | { kind: 'pitch'; key: string };
 const UNIT_KEY = 'pitcheezy.unit';
 const readUnit = () => { try { return localStorage.getItem(UNIT_KEY) === 'mph' ? 'mph' : 'kmh'; } catch { return 'kmh'; } };
 const speedText = (mph: number | null, unit: 'kmh' | 'mph') => mph === null ? '' : unit === 'kmh' ? `${Math.round(mph * 1.609344)}km/h` : `${mph.toFixed(1)}mph`;
-const clockText = (ms: number) => new Date(ms).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
-const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' });
+const shortGameDate = (ymd: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '날짜 미정';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return '날짜 미정';
+  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' }).format(date);
+  return `${ymd.slice(2)} (${day})`;
+};
 export const gameIdFromPath = () => {
   const m = /^\/(?:watch|game|live)\/(\d+)\/?$/.exec(window.location.pathname);
   const q = new URLSearchParams(window.location.search).get('game');
@@ -60,38 +60,66 @@ export const gameIdFromPath = () => {
 
 function Bases({ mask }: { mask: number }) {
   const on = (b: number) => (mask & (1 << (b - 1))) !== 0;
-  const runners = [1, 2, 3].filter(on);
-  return <svg className="sv-bases" viewBox="0 0 44 32" role="img" aria-label={`주자 ${runners.length ? runners.join('·') + '루' : '없음'}`}>
-    {[[22, 6, 2], [36, 18, 1], [8, 18, 3]].map(([x, y, b]) => <rect key={b} x={x - 5.5} y={y - 5.5} width="11" height="11" transform={`rotate(45 ${x} ${y})`} className={on(b) ? 'on' : ''} />)}
+  return <svg className="sv-runners" viewBox="0 0 44 32" aria-hidden="true">
+    {[[22, 9, 2], [34, 21, 1], [10, 21, 3]].map(([x, y, b]) => <rect key={b} x={x - 6} y={y - 6} width="12" height="12" transform={`rotate(45 ${x} ${y})`} className={on(b) ? 'on' : ''} />)}
   </svg>;
 }
-const handText = (h: string | null | undefined, role: 'p' | 'b') => h === 'R' ? (role === 'p' ? '우투' : '우타') : h === 'L' ? (role === 'p' ? '좌투' : '좌타') : h === 'S' ? '양타' : '';
-const stat3 = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(3).replace(/^0/, '') : '–';
-const era = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(2) : '–';
+export const handText = (h: string | null | undefined, role: 'p' | 'b') => h === 'R' ? (role === 'p' ? '우투' : '우타') : h === 'L' ? (role === 'p' ? '좌투' : '좌타') : h === 'S' ? '양타' : '';
+const stat3 = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(3).replace(/^0/, '') : '—';
+const era = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(2) : '—';
+/** '14구' when known, '자책 —' when not: a missing number keeps its word and an em dash, never a 0. */
+const part = (v: number | null | undefined, unit: string) => typeof v === 'number' ? `${v}${unit}` : `${unit} —`;
 
-/** B 3 green / S 2 yellow / O 2 red dots; the count is spoken, not printed as a number. */
-function Count({ s }: { s: Situation }) {
-  const dots = (n: number, on: number, cls: string) => Array.from({ length: n }, (_, i) => <i key={i} className={`${cls}${i < on ? ' on' : ''}`} />);
-  return <span className="sv-bso" role="img" aria-label={`볼 ${s.balls}, 스트라이크 ${s.strikes}, ${s.outs}아웃`}>
-    <span aria-hidden="true"><b>B</b>{dots(3, s.balls, 'b')}</span><span aria-hidden="true"><b>S</b>{dots(2, s.strikes, 's')}</span><span aria-hidden="true"><b>O</b>{dots(2, s.outs, 'o')}</span></span>;
+/** Header row 3 centre: the count in large type, runners and outs below it (UI 10/26 ①). */
+function CountBox({ s }: { s: Situation }) {
+  const runners = [1, 2, 3].filter(b => (s.bases & (1 << (b - 1))) !== 0);
+  return <div className="sv-mu-count" role="img" aria-label={`볼 ${s.balls}, 스트라이크 ${s.strikes}, ${s.outs}아웃, 주자 ${runners.length ? runners.join('·') + '루' : '없음'}`}>
+    <b aria-hidden="true">{s.balls}<i>-</i>{s.strikes}</b>
+    <span aria-hidden="true"><Bases mask={s.bases} /><span className="sv-outs">{[0, 1, 2].map(i => <i key={i} className={i < s.outs ? 'on' : ''} />)}</span></span></div>;
 }
 
-/** Away always on the LEFT, home on the RIGHT; only the pitcher/batter roles swap with the half-inning. */
-function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side, today, idle = false }: { team: string; abbr?: string | null; role: 'p' | 'b'; person: Person | null; hand: string | null | undefined;
-  info: PlayerInfo | undefined; onOpen: () => void; side: 'away' | 'home'; today: { text: string; spoken: string } | null; idle?: boolean }) {
-  // nobody at the plate (before the first pitch, between innings): the team only, no role, no numbers of the finished half
-  if (idle && !person) return <button className={`sv-player ${side} idle`} style={{ '--team': teamColor(team) } as CSSProperties} disabled aria-label={`${short(team)}, 지금은 타석이 없어요`}>
-    <span className="sv-player-name"><b>{abbr || short(team)}</b></span><span className="sv-player-2">–</span><span className="sv-player-3">–</span></button>;
-  const name = person?.name ?? '—';
-  const stats = role === 'p' ? `ERA ${era(info?.era)}` : `AVG ${stat3(info?.avg)} OPS ${stat3(info?.ops)}`;
+/** Header row 3 side: the batter is always on the LEFT and the pitcher on the RIGHT, whichever team is at bat. Below 360px only the
+ *  family name is drawn (the full name stays in the label and title). */
+function Who({ role, person, hand, team, today, onOpen }: { role: 'b' | 'p'; person: Person | null; hand: string | null | undefined; team: string; today: ReactNode; onOpen: () => void }) {
+  const name = person?.name ?? null;
   const handed = handText(hand, role);
-  const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}, ${handed}, ${stats}, ${today?.spoken ?? '오늘 기록 미확인'}. 선수 상세 열기`;
-  return <button className={`sv-player ${side}`} style={{ '--team': teamColor(team) } as CSSProperties} onClick={onOpen} aria-haspopup="dialog" aria-label={spoken} title={name}>
-    <span className="sv-player-name"><b>{role === 'b' ? '타자' : '투수'}: {abbr || short(team)} #{info?.jersey ?? '–'}</b> <small>{handed}</small></span>
-    <strong className="sv-player-fullname">{name}</strong><span className="sv-player-2">{stats}</span>
-    <span className="sv-player-3">{today?.text ?? (role === 'b' ? '–타수 · –안타 · –출루' : '–구 · –삼진 · –자책')}</span>
-  </button>;
+  const roleWord = role === 'b' ? '타자' : '투수';
+  // a full name that does not fit its cell falls back to the family name (as below 360px), never an ellipsis
+  const nameRef = useRef<HTMLElement>(null);
+  const [tight, setTight] = useState(false);
+  useLayoutEffect(() => { const b = nameRef.current; if (!b) return;
+    const fit = () => { const full = b.querySelector<HTMLElement>('.full'); if (full) setTight(full.getBoundingClientRect().width > b.clientWidth + 0.5); };  // an inline span has no scroll width: use its box
+    fit(); const ro = new ResizeObserver(fit); ro.observe(b); return () => ro.disconnect(); }, [name]);
+  return <button className={`sv-who ${role === 'b' ? 'bat' : 'pit'}${tight ? ' tight' : ''}`} onClick={onOpen} aria-haspopup="dialog" title={name ?? undefined}
+    aria-label={`${short(team)} ${roleWord} ${name ?? '정보 없음'}${handed ? `, ${handed}` : ''}. 선수 상세 열기`}>
+    <small>{roleWord}{handed ? ` · ${handed}` : ''}</small>
+    {name ? <b ref={nameRef}><span className="full">{name}</span><span className="sur">{surname(name)}</span></b> : <b>—</b>}
+    <span className="sv-who-today">{today}</span></button>;
 }
+
+/** Header row 2: 1–9 (more in extra innings) and R. Missing cells stay blank; the column of the half in progress is highlighted and its
+ *  not-yet-played cell reads '–'. Taps open the inning-by-inning sheet. */
+function LineScore({ ls, away, home, awayR, homeR, current, onOpen }: { ls: Linescore | null | undefined; away: string; home: string; awayR: number | null; homeR: number | null;
+  current: number | null; onOpen: () => void }) {
+  const n = Math.max(9, ls?.innings ?? 0, current ?? 0);
+  const cell = (k: 'away' | 'home', i: number) => { const v = ls?.[k].innings[i]; return typeof v === 'number' ? v : ''; };
+  const r = (k: 'away' | 'home') => ls?.[k].r ?? (k === 'away' ? awayR : homeR) ?? '–';
+  return <button className="sv-ls" onClick={onOpen} aria-haspopup="dialog" aria-label={`이닝별 점수. ${away} ${r('away')}, ${home} ${r('home')}. 이닝별 기록 보기`}>
+    <span className="sv-ls-grid" style={{ '--n': n } as CSSProperties} aria-hidden="true">
+      <span />{Array.from({ length: n }, (_, i) => <span key={i} className={current === i + 1 ? 'h cur' : 'h'}>{i + 1}</span>)}<span className="h r">R</span>
+      {(['away', 'home'] as const).map(k => [<span key={`${k}t`} className="t">{k === 'away' ? away : home}</span>,
+        ...Array.from({ length: n }, (_, i) => <span key={`${k}${i}`} className={current === i + 1 ? 'cur v' : 'v'}>{cell(k, i)}</span>), <span key={`${k}r`} className="r v">{r(k)}</span>])}
+    </span></button>;
+}
+
+type Tone = 'live' | 'late' | 'lost' | 'checking' | 'none' | 'fixed' | 'pregame';
+const NavIcon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} /></svg>;
+const ICONS = {
+  rec: 'M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16',
+  player: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c.8-3.9 3.8-6 7.5-6s6.7 2.1 7.5 6',
+  mix: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 3.6c2.2 2.4 2.2 14.4 0 16.8M15 3.6c-2.2 2.4-2.2 14.4 0 16.8',
+  record: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+};
 
 /** Pitcher's view: a right-handed batter stands on the SCREEN RIGHT, a left-handed batter on the left (broadcast camera).
  *  The figure holds the bat on the side away from the plate. */
@@ -103,16 +131,17 @@ function Silhouette({ side }: { side: 'L' | 'R' }) {
   </svg>;
 }
 
-/** Ranked list on the side opposite the batter; % = policy selection share (spoken, never a success probability). */
-function RecList({ rec, emptyText, onOpen, lead = '', pair = false, absentText = ABSENT_PAST }: { rec: Rec | null; emptyText: string; onOpen: () => void; lead?: string;
-  /** past pitch: each row also names the target zone in words, so it reads next to the actual pitch's type and location */
-  pair?: boolean; absentText?: string }) {
-  if (!rec || rec.status !== 'ready' || !rec.candidates.length) return <button className="sv-reclist empty" onClick={onOpen} aria-haspopup="dialog">
-    <span className="sv-norec">{rec?.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황' : rec ? absentLine(rec, absentText) : emptyText}</span></button>;
-  return <button className={`sv-reclist${pair ? ' pair' : ''}`} onClick={onOpen} aria-haspopup="dialog"
-    aria-label={`${lead}추천 후보 ${rec.candidates.map(c => `${c.rank}순위 ${c.pitch_label} ${c.zone_label || '위치 없음'}, 정책 선택 비중 ${policyShare(c.probability)}`).join('; ')}. 퍼센트는 성공 확률이 아니에요. 자세히 보기`}>
-    {rec.candidates.map((c: Candidate) => <span key={c.rank} className="sv-rec-row" aria-hidden="true">
-      <i className="sv-rk">{c.rank}</i><span className="sv-rec-pct">{policyShare(c.probability)}</span><span className="sv-rec-type">{c.pitch_label}</span>{typeof c.probability === 'number' && c.probability >= 0 && c.probability <= 1 && <span className="sv-share-bar"><i style={{width:`${c.probability * 100}%`}} /></span>}{pair && c.zone_label && <span className="sv-rec-zone">{c.zone_label}</span>}</span>)}
+/** Main screen: one ruled row of three cells, rank square + pitch name (UI 10/26 ③; location and numbers stay in the detail sheet, D49).
+ *  Without candidates the cells read '—' and the reason is kept for screen readers. Any cell opens the recommendation sheet. */
+function RecList({ rec, emptyText, onOpen, lead = '', absentText = ABSENT_PAST }: { rec: Rec | null; emptyText: string; onOpen: () => void; lead?: string; absentText?: string }) {
+  const cands = rec?.status === 'ready' ? [...rec.candidates].sort((a, b) => a.rank - b.rank).slice(0, 3) : [];
+  if (!cands.length) { const why = rec?.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황' : rec ? absentLine(rec, absentText) : emptyText;
+    return <button className="sv-reclist empty" onClick={onOpen} aria-haspopup="dialog" aria-label={`${why}. 자세히 보기`}>
+      {[0, 1, 2].map(i => <span key={i} className="sv-rec-cell" aria-hidden="true">—</span>)}</button>; }
+  return <button className="sv-reclist" onClick={onOpen} aria-haspopup="dialog"
+    aria-label={`${lead}추천 후보 ${cands.map(c => `${c.rank}순위 ${c.pitch_label}`).join('; ')}. 자세히 보기`}>
+    {[0, 1, 2].map(i => { const c: Candidate | undefined = cands[i];
+      return <span key={i} className="sv-rec-cell sv-rec-row" aria-hidden="true">{c ? <><RankSq rank={c.rank} /><b className="sv-rec-type">{c.pitch_label}</b></> : '—'}</span>; })}
   </button>;
 }
 
@@ -141,19 +170,19 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // the tab was hidden: polling paused on purpose, so that time never counts as a late or lost connection (re-based on return)
   const [hidden, setHidden] = useState(() => document.hidden);
   const [resumed, setResumed] = useState(0);
-  const [sheet, setSheet] = useState<'pa' | 'pa-empty' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | 'sync' | 'reference' | 'history' | 'mix' | 'win' | null>(null);
+  const [sheet, setSheet] = useState<'pa' | 'pa-empty' | 'detail' | 'info' | 'box' | 'player-b' | 'player-p' | 'sync' | 'reference' | 'history' | 'mix' | 'win' | null>(null);
+  // the header status button's explanation bubble (UI 10/26 ⑥): the state's sentence lives here, not on the main screen
+  const [pop, setPop] = useState(false);
+  const [abOpen, setAbOpen] = useState(false);  // ④ the at-bat list, closed by default
   // viewer delay (중계 맞추기): this device's setting, what the server last said about its limits, and the one-time question
   const [setting, setSetting] = useState<ViewerSetting>(readViewer);
   const viewerMeta = useRef<{ max: number | null } | null>(null);
   const prompted = useRef(false);
   const [emptyPa, setEmptyPa] = useState<Pa | null>(null);  // a plate appearance with no pitch, shown by itself in a sheet
-  const stripRef = useRef<HTMLDivElement>(null);
   const sheetOpener = useRef<HTMLElement | null>(null);
   const openSheet = (kind: typeof sheet) => { sheetOpener.current = document.activeElement as HTMLElement; setSheet(kind); };
   const closeSheet = () => { setSheet(null); const opener = sheetOpener.current; requestAnimationFrame(() => opener?.isConnected && opener.focus()); };
-  const [edges, setEdges] = useState({ left: false, right: false });
   const [busy, setBusy] = useState(false);
-  const [allPitches, setAllPitches] = useState(false);
   const [unit, setUnit] = useState<'kmh' | 'mph'>(readUnit);
   const detailRef = useRef<Detail | null>(null);
   // static mode only: what the last game file and health.json said about publish time
@@ -363,19 +392,6 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [detail, live, sel]);
   // a pinned pitch that disappeared (demo seek back) falls back to latest
   useEffect(() => { if (detail && sel?.kind === 'pitch' && !detail.pitches.some(p => p.key === sel.key)) { setSel({ kind: 'latest' }); setSheet(s => s === 'detail' ? null : s); } }, [detail, sel]);
-  // following the latest keeps the newest card in view; a pinned card never moves the strip
-  useEffect(() => { const el = stripRef.current; if (!el) return; if (sel?.kind !== 'pitch') el.scrollLeft = el.scrollWidth; else { const selected = el.querySelector<HTMLElement>('[aria-pressed="true"]'); if (selected) el.scrollLeft = selected.offsetLeft - el.offsetLeft - (el.clientWidth - selected.clientWidth) / 2; } }, [sel, detail?.pitches.length]);
-  useEffect(() => { if (detail) document.title = `${short(detail.game.away_team)} 대 ${short(detail.game.home_team)} · 피치이지`; }, [detail?.game.away_team, detail?.game.home_team]);
-
-  useEffect(() => {
-    const el = stripRef.current; if (!el) return;
-    const measure = () => setEdges({ left: el.scrollLeft > 2, right: el.scrollWidth - el.clientWidth - el.scrollLeft > 2 });
-    const ro = new ResizeObserver(measure); ro.observe(el);
-    for (const child of el.children) ro.observe(child);
-    el.addEventListener('scroll', measure, { passive: true }); measure();
-    return () => { ro.disconnect(); el.removeEventListener('scroll', measure); };
-  }, [detail, sel]);
-
   const byIndex = useMemo(() => new Map(detail?.pitches.map(p => [p.index, p]) ?? []), [detail?.pitches]);
   // The sync sheet sits beside the page (not inside it) so it stays open, with its own state, while a changed delay reloads the game.
   const closeSync = () => { if (!readViewer().asked) setSetting(writeViewer({ asked: true })); closeSheet(); };
@@ -465,12 +481,6 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const fold = viewer !== null && viewer.fold && !setting.synced && game.status === 'live';
   const openSync = () => openSheet('sync');
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
-  const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
-    : publishStale ? { kind: 'late', text: `${LATE} 갱신 지연` } : publishChecking ? { kind: 'ok', text: '확인 중…' }
-    : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
-    /* game-level 확인 중 from the server: the line tells the chip's story, never 실시간으로 받는 중 beside it */
-    : live && auto && disp?.state === 'unconfirmed' ? { kind: 'ok', text: '확인 중…' }
-    : { kind: 'ok', text: live ? (auto ? (behind > 0 ? `${behind}초 늦춰 보는 중` : '실시간으로 받는 중') : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
   let clientNote: string | null = null;
   if (stateSlot) {
@@ -494,6 +504,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     if (d!.prev) clientNote = `${d!.sig ? '추천이 갱신됐어요' : '조금 전에 보여 드린 추천은 지금 표시하지 않아요'} (이전: ${d!.prev.top})`;
   }
   const ending = fold ? null : endingShown;
+  // every published pitch of the at-bat on the main zone, G1 marks from the result. The ring belongs to the at-bat's NEWEST pitch only:
+  // when that pitch has no coordinate or is being confirmed it is not drawn, and no older mark inherits its ring.
+  const newestKey = paPitches[paPitches.length - 1]?.key ?? null;
+  const thrown = nextPhase && !fold ? paPitches.filter(p => !unconfirmed(p) && p.actual?.x != null && p.actual?.z != null)
+    .map(p => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number, kind: resultKind(p.actual!.description), latest: p.key === newestKey })) : [];
   // A2: a reference card rides only on the pending pitch's unsupported state; it is never drawn as a recommendation
   const reference = !maskPublished && stateSlot && latest && nextPhase && !shownRec && disp!.state === 'unsupported' ? detail.reference ?? null : null;
   const fix = stateSlot ? disp!.correction : null;
@@ -505,185 +520,177 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     : { state: disp!.state, label: disp!.label, message: disp!.message ?? (shownRec || disp!.state !== 'recommended' ? null : '추천을 준비하고 있어요.') };
   // candidates kept from the last answer while disconnected: still visible, dimmed, labelled as last received
   const held = stateSlot && shownRec && eff!.state === 'disconnected';
-  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown)) && !lateNow && !maskPublished;
   const scored = situation ?? null;
   // between innings the card carries no score: the as-of linescore (runs up to the last published play) keeps it on screen
   const breakScore = (k: 'away' | 'home') => breakNow ? detail.linescore_asof?.[k].r ?? lastPitch?.situation[`${k}_score`] ?? null : null;
-  const awayScore = latest && game.away_score !== null ? game.away_score : scored?.away_score ?? breakScore('away');
-  const homeScore = latest && game.home_score !== null ? game.home_score : scored?.home_score ?? breakScore('home');
+  // a finished game's header always carries its final result (figure 11), whichever past pitch is selected below
+  const atEnd = latest || game.status === 'final';
+  const awayScore = atEnd && game.away_score !== null ? game.away_score : scored?.away_score ?? breakScore('away');
+  const homeScore = atEnd && game.home_score !== null ? game.home_score : scored?.home_score ?? breakScore('home');
 
   // Historical detail is keyed independently; selecting it never pauses live polling.
   const pick = (index: number) => { picked.current = true; const p = byIndex.get(index); if (p) { setSel({ kind: 'pitch', key: p.key }); openSheet('detail'); } };
+  // ③ the recommendation entries (cells, 자세히, bottom 추천) open the CURRENT recommendation on a live game: a past pitch opened
+  // from the at-bat list before must not stay selected behind them. A finished game keeps its browsed pitch (that is its current view).
+  const openRec = () => { if (live) { picked.current = false; setSel({ kind: 'latest' }); } openSheet('detail'); };
   const goLatest = () => { picked.current = false; setSel({ kind: 'latest' }); setAuto(true); void load(false, true); };
   // A past pitch of a live game: the recommendation the ledger recorded BEFORE that pitch, next to what was thrown. Never a score.
   const pastUnconfirmed = !nextPhase && unconfirmed(shownPitch);
   const liveRecord = !nextPhase && (detail.live_source === true || rec?.provenance === 'captured_live');
   const recTitle = nextPhase ? `다음 공 추천${nextNumber ? ` · ${nextNumber}구` : ''}` : liveRecord ? '투구 전에 기록된 추천' : '이 공 던지기 전 추천';
-  const recHeading = liveRecord ? (pastUnconfirmed ? `${recTitle}: 확인 중` : rec?.status === 'ready' ? recTitle : `${recTitle} 없음`) : `${recTitle} (${rec ? provenanceText(rec) : '추천 없음'})`;
   const absentText = maskPublished ? '새 내용을 확인하고 있어요.' : pastUnconfirmed ? '확인 중이에요.' : nextPhase ? '추천 기록이 없어요.' : ABSENT_PAST;
   const actualTitle = nextPhase ? `직전 투구${lastPitch ? ` · ${inningText(lastPitch.situation)} ${lastPitch.pitch_number}구` : ''}` : `실제 투구${pitch ? ` · ${pitch.pitch_number}구` : ''}`;
   const top = situation?.half === 'Top';
   const info = (p: Person | null) => p ? detail.players?.[String(p.id)] : undefined;
   const openPa = () => openSheet('pa');
-  const cands = shownRec ? rec!.candidates : [];
-  const venue = game.venue ? `${game.venue} · ` : '';
-  const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
+  // fail closed: no candidate reaches the row, the drawing or any label unless this state may show it (an unconfirmed past pitch shows none)
+  const mainRec = stateSlot ? (shownRec ? rec : null) : pastUnconfirmed ? null : rec;
+  const cands = shownRec && mainRec ? mainRec.candidates : [];
+  const venue = game.venue ?? '경기장 정보 없음';
+  const when = `${shortGameDate(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const phase = detail.current?.phase ?? detail.phase ?? null;
   const emptyRec = maskPublished ? '확인 중' : nextPhase ? (phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
-  const actualWait = maskPublished ? '확인 중' : phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
-  const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => { setSel({ kind: 'latest' }); openSheet('detail'); }} lead={held ? '마지막으로 받은 ' : liveRecord ? '투구 전에 기록된 ' : ''} pair={!nextPhase} absentText={absentText} />;
+  const list = <RecList rec={mainRec} emptyText={stateSlot ? eff!.message ?? eff!.label : emptyRec} onOpen={openRec} lead={held ? '마지막으로 받은 ' : ''} absentText={absentText} />;
+  const recHead = stateSlot ? `${held ? '마지막으로 받은 추천' : '추천'}${nextNumber ? ` · ${nextNumber}구` : ''}` : nextPhase ? `추천${nextNumber ? ` · ${nextNumber}구` : ''}`
+    : `${recTitle}${shownPitch ? ` · ${shownPitch.pitch_number}구` : ''}`;
+  // a past pitch (finished game): the thrown pitch named in one line under the row; folded / being confirmed say so and nothing more
+  const actualLine = !shownPitch || !actual ? <span className="sv-muted">실제 투구 기록 없음</span>
+    : fold ? <><span className="sv-al-label">실제 투구 · {shownPitch.pitch_number}구</span><button className="sv-fold" onClick={openSync} aria-haspopup="dialog">{FOLD_TEXT}</button></>
+    : pastUnconfirmed ? <><span className="sv-al-label">실제 투구 · {shownPitch.pitch_number}구</span><span className="sv-muted">확인 중 · 이 공을 다시 확인하고 있어요.</span></>
+    : <><span className="sv-al-label">실제 투구 · {shownPitch.pitch_number}구 · {shownPitch.batter.name ?? '타자 미확인'}</span>
+      <G1Dot kind={resultKind(actual.description)} n={shownPitch.pitch_number} /><b className="sv-actual-name">{actual.pitch_label}</b>
+      {actual.speed_mph !== null && <small>{speedText(actual.speed_mph, unit)}</small>}<span>· {ending ?? actual.result_label}</span>
+      {shownPitch.receipt?.corrected && <span className="sv-tag" role="note" aria-label="기록이 정정된 공">정정됨</span>}</>;
   const top1 = !nextPhase && !pastUnconfirmed && rec?.status === 'ready' ? rec.candidates[0] ?? null : null;
   const pairText = top1 && actual && !fold ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
   // New as-of player context is optional; absent fields stay unknown rather than guessed from an incomplete pitch list.
   const context = latest ? detail.current_context : pitch?.context;
-  const fmt = (v: number | null | undefined) => typeof v === 'number' ? v : '–';
   const bt = context?.batter;
   const pt = context?.pitcher;
-  const batterToday = { text: `${fmt(bt?.at_bats)}타수 · ${fmt(bt?.hits)}안타 · ${fmt(bt?.on_base)}출루`, spoken: `이 시점까지 ${fmt(bt?.at_bats)}타수 ${fmt(bt?.hits)}안타 ${fmt(bt?.on_base)}출루` };
-  const pitcherToday = { text: `${fmt(pt?.pitches)}구 · ${fmt(pt?.strikeouts)}삼진 · ${fmt(pt?.earned_runs)}자책`, spoken: `이 시점까지 ${fmt(pt?.pitches)}구 ${fmt(pt?.strikeouts)}삼진 ${fmt(pt?.earned_runs)}자책` };
-  const upcoming = context?.next_batters ?? [];
   const isDemo = detail.session !== null;
-  const statusLabel = isDemo && detail.session_status === 'ended' ? '시연 종료' : isDemo && detail.session_status === 'ready' && latest ? '시연 대기' : live ? (!latest || !auto ? '최신으로 ↗' : isDemo ? (detail.session_status === 'paused' ? '일시정지' : '시연 중') : 'LIVE') : game.status === 'final' ? '종료' : game.status === 'scheduled' ? '예정' : '대기';
-  const playerSheetSide = sheet === 'player-away' ? 'away' : 'home';
-  const playerRole = (playerSheetSide === 'away') === top ? 'b' : 'p';
+  // Header status button (UI 10/26 ⑥): ONE marker tells the whole state; its sentence opens in a bubble. Order: connection trouble,
+  // then a late feed, then a changed recommendation, then the pending pitch's own state. A finished game has no marker.
+  const recvTime = lastOk !== null ? ` · ${kstTime(new Date(lastOk).toISOString())} 수신` : '';
+  const chip: { label: string; tone: Tone; state: string; lines: string[] } | null = (() => {
+    if (stateSlot) {
+      const e = eff!, lines = [e.message, note].filter((x): x is string => !!x);
+      if (e.state === 'disconnected') return { label: e.label, tone: 'lost', state: e.state, lines: [...lines, `${e.label}${recvTime}`] };
+      if (e.state === 'feed_delayed') return { label: e.label, tone: 'late', state: e.state, lines: lagText ? [...lines, lagText] : lines };
+      if (note) return { label: '추천 바뀜', tone: 'fixed', state: e.state, lines };
+      if (e.state === 'unsupported' || e.state === 'unavailable') return { label: e.label, tone: 'none', state: e.state, lines };
+      if (e.state === 'pregame') return { label: e.label, tone: 'pregame', state: e.state, lines };
+      // design 09: an inning break of a game in play still reads 라이브 (row 3 says 공수 교대)
+      if (e.state === 'recommended' || (e.state === 'waiting' && breakNow)) return { label: '라이브', tone: 'live', state: e.state, lines: lines.length ? lines : [`실시간으로 받는 중${recvTime}`] };
+      // unconfirmed, waiting, ledger_unavailable: the neutral 확인 중 look with the server's own words
+      return { label: e.label, tone: 'checking', state: e.state, lines };
+    }
+    if (game.status === 'final') return null;
+    // no display state (archive, demo, older server): the transport story as before the contract
+    if (error || feedDown || clientStale || disp?.state === 'disconnected') return { label: '연결 끊김', tone: 'lost', state: 'disconnected', lines: [error?.text ?? CLIENT_LOST.message] };
+    if (maskPublished || publishChecking) return { label: '확인 중', tone: 'checking', state: 'unconfirmed', lines: [PUBLISH_CHECKING.message] };
+    if (isDemo && detail.session_status === 'ended') return { label: '시연 종료', tone: 'checking', state: 'demo', lines: ['지난 경기 시연이 끝났어요.'] };
+    if (isDemo && detail.session_status === 'ready') return { label: '시연 대기', tone: 'checking', state: 'demo', lines: ['지난 경기 시연이 곧 시작돼요.'] };
+    if (isDemo && detail.session_status === 'paused') return { label: '일시정지', tone: 'checking', state: 'demo', lines: ['지난 경기 시연이 멈춰 있어요.'] };
+    if (live && (!auto || behind > 0 || publishStale || !!lagText || disp?.state === 'feed_delayed'))
+      return { label: '딜레이', tone: 'late', state: 'delayed', lines: [publishStale ? PUBLISH_LATE.message : lagText ?? (behind > 0 ? `${behind}초 늦춰 보여 드리고 있어요.` : '새 내용이 늦어지고 있어요.')] };
+    if (live) return isDemo ? { label: '시연 중', tone: 'checking', state: 'demo', lines: ['지난 경기를 다시 보여 드리고 있어요.'] } : { label: '라이브', tone: 'live', state: 'live', lines: [`실시간으로 받는 중${recvTime}`] };
+    return game.status === 'scheduled' ? { label: '경기 전', tone: 'pregame', state: 'pregame', lines: ['경기 시작 전이에요.'] } : { label: '대기', tone: 'checking', state: 'waiting', lines: ['지금은 경기가 진행 중이 아니에요.'] };
+  })();
+  const canRetry = !!(error || stale || publishStale);
+  const playerRole = sheet === 'player-p' ? 'p' : 'b';
   const sheetPerson = playerRole === 'b' ? batterP : pitcherP;
   const sheetInfo = info(sheetPerson);
-  const canShowWe = !maskPublished && !error && !stale && !publishChecking && !lateNow && phase === 'pre_pitch' && disp?.state === 'recommended' && disp.shown && detail.win_expectancy?.status === 'available';
-  const weText = canShowWe ? `${Math.round(detail.win_expectancy!.home_probability! * 100)}%` : '—';
+  // the guarded current probability (undecided sheet, content unchanged): reached from the 기록 sheet until its place is designed
+  const canShowWe = latest && !maskPublished && !error && !stale && !publishChecking && !lateNow && phase === 'pre_pitch' && disp?.state === 'recommended' && disp.shown && detail.win_expectancy?.status === 'available';
+  const homeProbability = canShowWe && typeof detail.win_expectancy?.home_probability === 'number' && Number.isFinite(detail.win_expectancy.home_probability)
+    && detail.win_expectancy.home_probability >= 0 && detail.win_expectancy.home_probability <= 1 ? detail.win_expectancy.home_probability : null;
+  const shownLine = latest || game.status === 'final' ? detail.linescore_asof : pitch?.line;
+  const abbr = (k: 'away' | 'home') => game[`${k}_abbr`] || short(game[`${k}_team`]);
+  // a finished game's own header (figure 11) only while the screen is at the end; a selected past pitch keeps its as-of header
+  const isFinal = game.status === 'final';
+  const pregameHead = !isFinal && !situation && !ended && (game.status === 'scheduled' || disp?.state === 'pregame') && pitches.length === 0;
+  const curInning = isFinal ? null : (situation ?? ended)?.inning ?? null;
+  // the half after the one that just ended, and its first batter only when the server names it (never guessed)
+  const nextHalf = ended ? (ended.half === 'Top' ? `${ended.inning}회말` : `${ended.inning + 1}회초`) : '';
+  const batterLine = <>오늘 {part(bt?.at_bats, '타수')} {part(bt?.hits, '안타')}</>;
+  const pitcherLine = <>오늘 {typeof pt?.pitches === 'number' ? <><b>{pt.pitches}</b>구</> : '—'}</>;
 
-  return <><div className={`sv-page sv-game${disp ? ' has-display' : ''}${sheet ? ' detail-open' : ''}`}>
-    <header className="sv-top sv-head">
-      <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
-      <h1 className="sv-head-main" aria-label={`${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}${dateHeading(game.kst_date)} ${kstTime(game.start)} 시작`}>
-        <span className="sv-head-score" aria-hidden="true"><span className="sv-tn">{short(game.away_team)}</span><strong style={{ color: scoreColor(game.away_team) }}>{awayScore ?? '–'}</strong><i>vs</i><strong style={{ color: scoreColor(game.home_team) }}>{homeScore ?? '–'}</strong><span className="sv-tn">{short(game.home_team)}</span></span>
-        <small aria-hidden="true">{game.series_description && <span>{game.series_description}{game.series_game_number ? ` · ${game.series_game_number}차전` : ''}</span>}{game.venue && <span>{game.venue}</span>}<span>{when} KST</span></small>
-      </h1>
-      <button className={`sv-live ${liveDot ? 'on' : ''}`} onClick={live ? goLatest : undefined} disabled={!live}
-        aria-label={`${isDemo ? '지난 경기 시연. ' : ''}${statusLabel}${live ? ', 최신 공으로 이동하고 자동 갱신 켜기' : ''}`}>
-        <i aria-hidden="true" style={{ visibility: liveDot ? 'visible' : 'hidden' }} />{statusLabel}</button>
-    </header>
-    {/* Connection problems remain explicit alerts; history state is in the header. */}
-    {/* The status line is a plain box; only its words are a live region. The time stamp and the retry control sit outside it so a
-        screen reader is not re-triggered every minute or every poll. */}
-    {disp || (__PZ_STATIC__ && (healthFeedFailed || publishStale || publishChecking)) ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : publishStale ? 'publish-late' : publishChecking ? 'checking' : lagText ? 'late' : 'ok'} data-publish-clock={publishStale ? lag?.clock ?? 'elapsed' : undefined}>
-      <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : publishStale && !clientStale ? ` ${PUBLISH_LATE.message}` : ''}</span></span>
-      {lastOk && !(viewer && line.kind !== 'ok') && <span className="sv-line-time" aria-hidden="true">· {hhmm(lastOk)} 수신</span>}
-      {line.kind !== 'ok' && <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy} aria-label="지금 다시 불러오기">{busy ? '…' : '다시'}</button>}
-      {viewer && <button className="sv-link-btn sv-sync-open" onClick={openSync} aria-haspopup="dialog"
-        aria-label={`중계 맞추기. 지금 ${behind > 0 ? `${behind}초 늦춰 보는 중` : '늦추지 않고 보는 중'}${setting.synced ? '' : ', 아직 맞추지 않았어요'}`}>{setting.synced ? '맞추기' : '중계 맞추기'}</button>}
-    </div> : (stale || error) && <p className="sv-notice warn" role="alert" title={error?.text}>
-      {error ? '⚠ 연결 끊김' : '⏱ 갱신 늦어짐'}{lastOk ? ` · ${hhmm(lastOk)} 수신` : ''}<span className="sr-only">{error ? ` ${error.text}` : ''}{lastOk ? ` (${clockText(lastOk)})` : ''}</span>
-        <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy}>{busy ? '…' : '다시'}</button>
-    </p>}
-
-    <section className="sv-board" aria-label="경기 상황">
-      <div className="sv-board-row">
-        {situation ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label={`${inningText(situation)}, 타석 선택`}>{situation.inning}회{situation.half === 'Top' ? '초' : '말'} ▾<small>타석 선택</small></button>
-          : ended ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label={`${inningText(ended)} 종료, 지난 타석 선택`}>{ended.inning}회{ended.half === 'Top' ? '초' : '말'} 종료 ▾<small>타석 선택</small></button> : <span />}
-        {breakNow && <span className="sv-board-idle">공수 교대</span>}
-        {situation && <Count s={situation} />}
-        {situation && <Bases mask={situation.bases} />}
+  return <SheetFrame.Provider value="c"><div className={`sv-page sv-game${disp ? ' has-display' : ''}`}>
+    <header className="sv-hd">
+      <div className="sv-hd-1">
+        <a className="sv-back" href={backHref()} aria-label="경기 목록으로"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></a>
+        <h1 className="sv-hd-score" aria-label={pregameHead ? `${short(game.away_team)} 대 ${short(game.home_team)}, ${kstTime(game.start)} 시작 (한국 시간)` : `${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}, ${when} 한국 시간`}>
+          {pregameHead ? <span aria-hidden="true"><span className="t">{abbr('away')}</span><i>vs</i><span className="t">{abbr('home')}</span></span>
+            : <span aria-hidden="true"><span className="t">{abbr('away')}</span><strong>{awayScore ?? '–'}</strong><i>:</i><strong>{homeScore ?? '–'}</strong><span className="t">{abbr('home')}</span></span>}
+        </h1>
+        {chip && <button className="sv-hd-status" data-tone={chip.tone} data-state={chip.state} aria-expanded={pop} aria-controls="sv-status-pop" onClick={() => setPop(o => !o)}
+          aria-label={`${isDemo ? '지난 경기 시연. ' : ''}상태: ${chip.label}. 설명 보기`}><i aria-hidden="true" /><span aria-live="polite">{chip.label}</span></button>}
       </div>
-    </section>
+      <div className="sv-hd-2">
+        {pregameHead ? <span className="sv-inning static">{kstTime(game.start)} 시작</span>
+          : isFinal ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label="경기 종료, 타석 선택">경기 종료</button>
+          : situation ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label={`${inningText(situation)}, 타석 선택`}>{situation.inning}회{situation.half === 'Top' ? '초' : '말'} ▾</button>
+          : ended ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label={`${inningText(ended)} 종료, 지난 타석 선택`}>{ended.inning}회{ended.half === 'Top' ? '초' : '말'} 종료</button> : <span className="sv-inning static">—</span>}
+        {!pregameHead && <LineScore ls={shownLine} away={abbr('away')} home={abbr('home')} awayR={awayScore} homeR={homeScore} current={curInning} onOpen={() => openSheet('box')} />}
+      </div>
+    </header>
+    {chip && pop && <StatusPop chip={chip} onClose={() => setPop(false)} onRetry={canRetry ? () => void load(true, true) : null} busy={busy} />}
+    {breakNow ? <section className="sv-mu line" aria-label="경기 상황"><p>공수 교대 · 다음 {nextHalf} 첫 타자 <b>—</b></p></section>
+      : !pregameHead && !isFinal && (situation || idle) ? <section className="sv-mu" aria-label="경기 상황">{idle && !situation ? <p className="sv-mu-idle">타자·투수 정보 없음</p> : <>
+        <Who role="b" person={batterP} hand={batterP?.side} team={top ? game.away_team : game.home_team} today={batterLine} onOpen={() => openSheet('player-b')} />
+        {situation ? <CountBox s={situation} /> : <div className="sv-mu-count" />}
+        <Who role="p" person={pitcherP} hand={pitcherP?.hand} team={top ? game.home_team : game.away_team} today={pitcherLine} onOpen={() => openSheet('player-p')} />
+      </>}</section> : null}
 
     <main className="sv-live-layout">
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
-      <h2 className="sr-only">{stateSlot && !shownRec ? `다음 공: ${eff!.label}` : held ? `마지막으로 받은 추천 (${rec ? provenanceText(rec) : '추천 없음'}). 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.` : `${recHeading}.${shownRec ? ' 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.' : ''}`}</h2>
-      {idle ? <div className="sv-duel idle"><span>{viewer?.buffering ? '내 중계 시점이 되면 보여 드려요' : breakNow ? '다음 타자를 기다리고 있어요' : game.status === 'final' ? '' : '경기가 시작되면 타자와 투수를 보여 드려요'}</span></div>
-      : <div className="sv-duel" role="group" aria-label={`타자 ${batterP?.name ?? '선수 미확인'} 대 투수 ${pitcherP?.name ?? '선수 미확인'}`}>
-        <span title={batterP?.name ?? undefined}><b>타자: {batterP?.name ?? '선수 미확인'}</b></span>
-        <i aria-hidden="true">vs</i>
-        <span title={pitcherP?.name ?? undefined}><b>투수: {pitcherP?.name ?? '선수 미확인'}</b></span>
-      </div>}
-      <div className="sv-recommend-heading"><h2>추천 구종 · 대략 위치</h2><small>{nextNumber ? `${nextNumber}구` : "최근 기록"}</small></div>
-      {/* Pitcher's view, with the batter on the correct screen side. The zone owns the centre;
-          recommendations now live below it, leaving its outside-coordinate margin unobstructed. */}
+      <h2 className="sr-only">{stateSlot && !shownRec ? `다음 공: ${eff!.label}` : held ? '마지막으로 받은 추천' : '추천'}</h2>
+      {/* Pitcher's view, with the batter on the correct screen side; the zone owns the centre. */}
       <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}${held ? ' held' : ''}`}>
         {side && <div className={`sv-batband ${side === 'R' ? 'at-right' : 'at-left'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
-          <Zone bounds={detail.zone_bounds} candidates={cands} actuals={nextPhase && !fold ? paPitches.filter(p => !unconfirmed(p) && p.actual?.x != null && p.actual?.z != null).slice(allPitches ? 0 : -3).map(p => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number })) : []}
-            actual={!nextPhase && !fold && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
+          <Zone bounds={detail.zone_bounds} candidates={cands} actuals={thrown}
+            actual={!nextPhase && !fold && !pastUnconfirmed && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
+            actualKind={resultKind(actual?.description)} actualNumber={!nextPhase && shownPitch ? shownPitch.pitch_number : null}
             setupX={!nextPhase && !fold ? actual?.setup_x ?? null : null} />
         </div>
       </div>
-      <p className="sv-zone-legend"><span>▣ 추천</span><span>● 실제 투구</span><span>투수 시점 · 회색은 존 밖</span></p>
-      {stateSlot ? <div className={`sv-pitch-summary sv-state${shownRec ? ' has-rec' : ''}${held ? ' held' : ''}`} data-state={eff!.state} data-pitch={disp!.pitch_key ?? undefined}>
-        {/* ONE state at a time, in a slot of constant height: chip (words + mark), then the candidates and/or one calm sentence. */}
-        <div className="sv-state-head">
-          <span className="sv-chip" data-state={eff!.state}>{STATE_MARK[eff!.state] && <i aria-hidden="true">{STATE_MARK[eff!.state]}</i>}{eff!.label}</span>
-          {nextPhase && <span className="sv-summary-label">{held ? `마지막으로 받은 추천${nextNumber ? ` · ${nextNumber}구` : ''}` : eff!.state === 'recommended' ? (nextNumber ? `${nextNumber}구` : '') : shownRec ? recTitle : breakNow ? '' : `다음 공${nextNumber ? ` · ${nextNumber}구` : ''}`}</span>}
-          <button className="sv-state-more" onClick={() => { setSel({ kind: 'latest' }); openSheet('detail'); }} aria-haspopup="dialog" aria-label="추천 상태 자세히 보기">자세히</button>
-        </div>
-        <div className="sv-state-body">
-          {shownRec && <div className="sv-rec-summary">{list}</div>}
-          <div className="sv-state-text">
-            {/* one always-present polite live region for the sentence and the change note (so a note that appears is announced).
-                Beside a candidate list the note has priority; the sentence then stays for screen readers (chip + status line carry it). */}
-            <div className="sv-state-live" role="status">
-              <p className={`sv-state-msg${shownRec && note ? ' sr-only' : ''}${note || reference ? ' with-note' : ''}`}>{eff!.message}</p>
-              <p className="sv-state-note" data-kind={note ? (fix ? fix.kind : 'client') : undefined}>{note}</p>
-            </div>
-            {reference && eff!.state === 'unsupported' && !note && <ReferenceTeaser card={reference} onOpen={() => openSheet('reference')} />}
-            {!eff!.message && !note && nextPhase && (fold
-              ? <p className="sv-state-idle"><span className="sv-summary-label">실제 투구·결과</span><button className="sv-fold" onClick={openSync} aria-haspopup="dialog">{FOLD_TEXT}</button></p>
-              : <p className="sv-state-idle"><span className="sv-summary-label">실제 투구</span><span className="sv-muted">{actualWait}</span></p>)}
-          </div>
-        </div>
-      </div> : <div className="sv-pitch-summary">
-        <div className="sv-rec-summary"><span className="sv-summary-label">{recTitle}</span>{list}</div>
-        <div className={`sv-actual-summary${nextPhase ? ' waiting' : ''}`}><span className="sv-summary-label">{nextPhase ? '실제 투구' : actualTitle}</span>{nextPhase ? <p className="sv-muted" role="status">{actualWait}</p> : fold && actual ? <button className="sv-fold" onClick={openSync} aria-haspopup="dialog">{FOLD_TEXT}</button> : actual && unconfirmed(shownPitch) ? <>
-        <p className="sv-actual-caption pending">확인 중</p>
-        <p className="sv-muted">이 공을 다시 확인하고 있어요.</p>
-      </> : actual ? <>
-        <p className="sv-actual-caption"><i className="sv-key-actual" /><b>{actual.pitch_label}</b>{actual.zone_label && <span className="sv-actual-zone"> · {actual.zone_label}</span>}
-          {shownPitch?.receipt?.corrected && <span className="sv-tag" role="note" aria-label="기록이 정정된 공">정정됨</span>}</p>
-        <p className="sv-result">{actual.speed_mph !== null && <small className="sv-actual-speed"><b>{unit === 'kmh' ? Math.round(actual.speed_mph * 1.609344) : actual.speed_mph.toFixed(1)}</b>{unit === 'kmh' ? 'km/h' : 'mph'}</small>}{ending ?? actual.result_label}</p>
-      </> : <p className="sv-muted">실제 투구 기록 없음</p>}</div>
-      </div>}
-
-      <div className="sv-recommend-heading"><h3 className="sv-section-label">이번 타석</h3>{paPitches.length > 3 && <button className="sv-link-btn" onClick={() => setAllPitches(!allPitches)}>{allPitches ? '최근 3구' : '전체 보기'}</button>}</div>
-      <div className={`sv-strip-shell${edges.left ? ' fade-left' : ''}${edges.right ? ' fade-right' : ''}`}>
-      <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구, 좌우로 스크롤">
-        {paPitches.map(p => { const on = selectedPitch?.key === p.key; const a = p.actual; const un = unconfirmed(p); const fixed = !un && p.receipt?.corrected === true;
-          const sp = a?.speed_mph != null ? (unit === 'kmh' ? Math.round(a.speed_mph * 1.609344) : a.speed_mph.toFixed(1)) : '';
-          if (fold) return <button key={p.index} className={`sv-card folded ${on ? 'on' : ''}`} aria-pressed={on} onClick={openSync} aria-haspopup="dialog" aria-label={`${p.pitch_number}구, ${FOLD_TEXT}`}>
-            <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={null} />
-            <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}구</span><span>맞춘 뒤 표시</span></span></button>;
-          return <button key={p.index} className={`sv-card ${on ? 'on' : ''}${un ? ' unconfirmed' : ''}`} aria-pressed={on} onClick={() => pick(p.index)}
-            aria-label={un ? `${p.pitch_number}구 확인 중` : `${p.pitch_number}구 ${a?.pitch_label || '구종 미상'}${a?.speed_mph != null ? ` ${speedText(a.speed_mph, unit)}` : ''} ${a?.result_label ?? ''}${fixed ? ', 기록이 정정된 공' : ''}`}>
-            <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={!un && a && a.x !== null && a.z !== null ? { x: a.x, z: a.z } : null} />
-            {fixed && <i className="sv-card-tag" aria-hidden="true">정정됨</i>}
-            {un ? <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}. 확인 중</span><span>–</span></span>
-              : <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}. {a?.pitch_label || '구종 미상'}</span><span>{sp || '–'} <small>{unit === 'kmh' ? 'km/h' : 'mph'}</small> · {a?.result_label || '기록 없음'}</span></span>}</button>; })}
-        {nextPhase && nextNumber && paKey === detail.current?.pa_key && <button className="sv-card pending on" aria-pressed="true" onClick={goLatest} aria-label={`다음 공 ${nextNumber}구, 아직 안 던짐`}>
-          <span className="sv-card-q" aria-hidden="true">?</span><span className="sv-card-cap" aria-hidden="true">{nextNumber}. 다음</span></button>}
-        {/* no card to show (before the first pitch, between innings): the strip keeps its height so nothing below it moves */}
-        {idle && paPitches.length === 0 && <span className="sv-card sv-card-idle" aria-hidden="true" />}
-      </div>
-      </div>
-    </section>
-
-    <section className="sv-context" aria-label="선수와 다음 타자">
-      <div className="sv-players">
-        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={() => openSheet('player-away')} today={top ? batterToday : pitcherToday} idle={idle} />
-        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={() => openSheet('player-home')} today={top ? pitcherToday : batterToday} idle={idle} />
-      </div>
-      <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : idle ? '–' : '–번 · 타자 미확인'}</span>)}</div>
-    </section>
-
-    <section className="sv-game-context" aria-label="경기 기록">
-      <h2>경기 흐름</h2><button className="sv-panel-link" onClick={() => openSheet('win')}>홈팀 승리확률 <span>{weText} ›</span></button>
-      <button className="sv-panel-link" onClick={() => openSheet('box')}>이닝별 점수표 <span>›</span></button>
-      <dl className="sv-score-compact"><dt>{short(game.away_team)}</dt><dd>{awayScore ?? '—'}</dd><dt>{short(game.home_team)}</dt><dd>{homeScore ?? '—'}</dd></dl>
-      <button className="sv-panel-link" onClick={() => openSheet('history')}>기록 · 라인업 · 박스 <span>›</span></button>
-      {!maskPublished && <ol className="sv-recent-pas">{detail.pas.slice(-4).reverse().map(p => <li key={p.pa_key}><button onClick={() => { if (byIndex.has(p.first)) pick(p.first); else { setEmptyPa(p); openSheet('pa-empty'); } }}><b>{p.batter}</b><span>{fold ? FOLD_TEXT : p.result}</span></button></li>)}</ol>}
-      <button className="sv-panel-link" onClick={() => openSheet('mix')}>{pitcherP?.name ?? '투수'} · 오늘 구종 <span>›</span></button>
-      <p className="sv-muted">{pitcherToday.text}</p>
+      <ZoneLegend side={side} />
+      {/* ③ one ruled row of three; the state's sentence and change note live in the header bubble and in this polite region */}
+      <section className={`sv-rec-sec sv-pitch-summary${stateSlot ? ' sv-state' : ''}${held ? ' held' : ''}`} data-state={stateSlot ? eff!.state : undefined} data-pitch={stateSlot ? disp!.pitch_key ?? undefined : undefined} aria-label="추천">
+        <div className="sv-rec-head"><h2>{recHead}</h2>
+          <button className="sv-state-more" onClick={openRec} aria-haspopup="dialog" aria-label="추천 자세히 보기">자세히</button></div>
+        {list}
+        {stateSlot && <div className="sv-state-live sr-only" role="status"><p className="sv-state-msg">{eff!.message}</p><p className="sv-state-note" data-kind={note ? (fix ? fix.kind : 'client') : undefined}>{note}</p></div>}
+        {reference && eff!.state === 'unsupported' && !note && <ReferenceTeaser card={reference} onOpen={() => openSheet('reference')} />}
+        {!nextPhase && <p className="sv-actual-line">{actualLine}</p>}
+      </section>
+      {/* ④ the at-bat in one line; opened in place as a list, newest first, with the pending pitch (or the result) on top */}
+      {paKey && !breakNow && !pregameHead && <section className="sv-atbat" aria-label="이번 타석">
+        <div className="sv-atbat-head"><h2>이번 타석 · {paPitches.length}구 던짐</h2>
+          <button className="sv-atbat-toggle" aria-expanded={abOpen} aria-controls="sv-atbat-list" onClick={() => setAbOpen(o => !o)}>{abOpen ? '접기 ▴' : '펼치기 ▾'}</button></div>
+        {abOpen && <ol className="sv-atbat-list" id="sv-atbat-list">
+          {nextPhase && nextNumber && paKey === detail.current?.pa_key && <li className="next"><span className="sv-rk next" aria-hidden="true">{nextNumber}</span><b>{nextNumber}구 · 다음 공</b></li>}
+          {!nextPhase && ending && <li className="result"><b>{ending}</b></li>}
+          {[...paPitches].reverse().map(p => { const on = selectedPitch?.key === p.key; const a = p.actual; const un = unconfirmed(p); const fixed = !un && p.receipt?.corrected === true;
+            if (fold) return <li key={p.key}><button className="sv-pitch-row folded" aria-pressed={on} onClick={openSync} aria-haspopup="dialog" aria-label={`${p.pitch_number}구, ${FOLD_TEXT}`}>
+              <G1Dot kind="unknown" n={p.pitch_number} /><span className="sv-pr-what">{FOLD_TEXT}</span></button></li>;
+            return <li key={p.key}><button className={`sv-pitch-row${un ? ' unconfirmed' : ''}`} aria-pressed={on} onClick={() => pick(p.index)} aria-haspopup="dialog"
+              aria-label={un ? `${p.pitch_number}구 확인 중` : `${p.pitch_number}구 ${a?.pitch_label || '구종 미상'}${a?.speed_mph != null ? ` ${speedText(a.speed_mph, unit)}` : ''} ${a?.result_label ?? ''}${fixed ? ', 기록이 정정된 공' : ''}`}>
+              <G1Dot kind={un ? 'unknown' : resultKind(a?.description)} n={p.pitch_number} />
+              {un ? <span className="sv-pr-what" aria-hidden="true">확인 중</span> : <span className="sv-pr-what" aria-hidden="true"><b>{a?.pitch_label || '구종 미상'}</b>{a?.speed_mph != null && <small>{speedText(a.speed_mph, unit)}</small>}</span>}
+              {fixed && <i className="sv-card-tag" aria-hidden="true">정정됨</i>}
+              <span className="sv-pr-res" aria-hidden="true">{un ? '–' : a?.result_label || '기록 없음'}</span></button></li>; })}
+        </ol>}
+      </section>}
     </section>
     </main>
-    <details className="sv-previous"><summary>직전 타석 · 분석과 기록</summary><p className="sv-muted">성분별 책임 분해는 아직 연결되지 않았어요. 기록된 타석 결과를 확인할 수 있어요.</p><button className="sv-btn" onClick={() => openSheet('history')}>타석 기록 보기</button></details>
-    <button className="sv-mobile-we sv-panel-link" onClick={() => openSheet('win')}>홈팀 승리확률 · {weText} <span>›</span></button>
-    <nav className="sv-bottom-nav" aria-label="라이브 상세"><button onClick={() => { setSel({ kind: 'latest' }); openSheet('detail'); }}>추천</button><button onClick={() => openSheet(top ? 'player-away' : 'player-home')}>선수</button><button onClick={() => openSheet('mix')}>구종</button><button onClick={() => openSheet('history')}>기록</button></nav>
+    <nav className="sv-bottom-nav" aria-label="라이브 상세">
+      <button onClick={openRec} aria-haspopup="dialog"><NavIcon d={ICONS.rec} />추천</button>
+      <button onClick={() => openSheet('player-b')} aria-haspopup="dialog"><NavIcon d={ICONS.player} />선수</button>
+      <button onClick={() => openSheet('mix')} aria-haspopup="dialog"><NavIcon d={ICONS.mix} />구종</button>
+      <button onClick={() => openSheet('history')} aria-haspopup="dialog"><NavIcon d={ICONS.record} />기록</button>
+      {viewer && <button className="sv-sync-open" onClick={openSync} aria-haspopup="dialog" aria-label={`중계 맞추기. 지금 ${behind > 0 ? `${behind}초 늦춰 보는 중` : '늦추지 않고 보는 중'}${setting.synced ? '' : ', 아직 맞추지 않았어요'}`}>{setting.synced ? '맞추기' : '중계 맞추기'}</button>}</nav>
 
     {!maskPublished && sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')} foldText={fold ? FOLD_TEXT : null}
       onPick={p => {
@@ -695,32 +702,63 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     </Sheet>}
     {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
     {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
-    {!maskPublished && sheet === 'detail' && !selectedPitch && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
+    {!maskPublished && sheet === 'detail' && !selectedPitch && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : held ? `마지막으로 받은 추천${nextNumber ? ` · ${nextNumber}구` : ''}` : recTitle}
       pair={pairText} absentText={absentText}
       actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} actualFolded={fold && !nextPhase && actual !== null ? FOLD_TEXT : null}
       actualExtra={!nextPhase && !fold && shownPitch?.expectation && shownPitch.actual?.event ? <ExpectationLine e={shownPitch.expectation} /> : null} notes={detail.notes} speed={mph => speedText(mph, unit)}
       recNote={stateSlot ? [eff!.message, note].filter(Boolean).join(' ') || null : pastUnconfirmed ? '이 공을 확인하는 동안에는 추천을 함께 보여 드리지 않아요.' : null} actualPending={!nextPhase && unconfirmed(shownPitch)} actualCorrected={!nextPhase && shownPitch?.receipt?.corrected === true}
-      extra={<div className="sv-row"><button className="sv-btn" onClick={() => setSheet('info')}>기준과 한계 보기</button>
-        <button className="sv-btn" onClick={() => { const u = unit === 'kmh' ? 'mph' : 'kmh'; setUnit(u); try { localStorage.setItem(UNIT_KEY, u); } catch { /* ignore */ } }}
+      extra={<div className="sv-row"><button className="sv-link-text" onClick={() => setSheet('info')}>기준과 한계 보기</button>
+        <button className="sv-link-text" onClick={() => { const u = unit === 'kmh' ? 'mph' : 'kmh'; setUnit(u); try { localStorage.setItem(UNIT_KEY, u); } catch { /* ignore */ } }}
           aria-label={`속도 단위 바꾸기, 지금 ${unit === 'kmh' ? 'km/h' : 'mph'}`}>속도 단위: {unit === 'kmh' ? 'km/h' : 'mph'}</button></div>} />}
-    {!maskPublished && sheet === 'detail' && selectedPitch && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet}
-      rec={selectedPitch.rec} recTitle="이 공을 던지기 전 기록" actual={selectedPitch.actual} actualTitle={`${inningText(selectedPitch.situation)} · ${selectedPitch.pitch_number}구 · ${selectedPitch.batter.name ?? '타자'}`}
-      paResult={selectedPitch.actual?.event ? detail.pas.find(p => p.pa_key === selectedPitch.pa_key && p.complete)?.result ?? null : null} notes={[]} speed={mph => speedText(mph, unit)}
-      actualFolded={fold ? FOLD_TEXT : null} actualPending={unconfirmed(selectedPitch)} actualCorrected={selectedPitch.receipt?.corrected === true}
-      extra={<div className="sv-row">{pitches.filter(p => p.pa_key === selectedPitch.pa_key).map(p => <button className="sv-btn" key={p.key} aria-pressed={p.key === selectedPitch.key} onClick={() => pick(p.index)}>{p.pitch_number}구</button>)}</div>} />}
-    {sheet === 'win' && <Sheet title="현재 상황의 승리확률 · 모델 추정" onClose={closeSheet}><h3>{short(game.home_team)} {canShowWe ? weText : '승리확률 정보 없음'}</h3><p className="sv-muted">타석 시작 상황으로 학습한 모델이며 볼·스트라이크 카운트는 반영하지 않아요.</p><p className="sv-muted">시계열·LI·WPA·경기 전 예상은 아직 연결되지 않았어요.</p></Sheet>}
-    {!maskPublished && sheet === 'history' && <RecordSheet detail={detail} fold={fold} onClose={closeSheet} onPick={pick} />}
-    {!maskPublished && sheet === 'mix' && <PitchMixSheet detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} onClose={closeSheet} />}
-    {(sheet === 'player-away' || sheet === 'player-home') && <Sheet title={sheetPerson?.name ?? '선수 정보'} onClose={closeSheet}>
-      <div className="sv-row"><button className="sv-btn" onClick={() => setSheet(top ? 'player-away' : 'player-home')}>타자</button><button className="sv-btn" onClick={() => setSheet(top ? 'player-home' : 'player-away')}>투수</button></div>
-      <dl className="sv-dl"><dt>팀</dt><dd>{short(playerSheetSide === 'away' ? game.away_team : game.home_team)} · {playerRole === 'b' ? '타자' : '투수'}</dd>
-        <dt>등번호</dt><dd>#{sheetInfo?.jersey ?? '–'}</dd><dt>시즌 기록</dt><dd>{playerRole === 'b' ? `AVG ${stat3(sheetInfo?.avg)} · OPS ${stat3(sheetInfo?.ops)}` : `ERA ${era(sheetInfo?.era)}`}</dd>
-        <dt>오늘 기록</dt><dd>{playerRole === 'b' ? batterToday.text : pitcherToday.text}</dd></dl>
-      <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 –로 표시합니다.</p>
+    {!maskPublished && sheet === 'detail' && selectedPitch && (() => { const at = pitches.indexOf(selectedPitch);
+      return <PitchSheet pitch={selectedPitch} bounds={detail.zone_bounds} onClose={closeSheet} speed={mph => speedText(mph, unit)}
+        onPrev={at > 0 ? () => pick(pitches[at - 1].index) : null} onNext={at >= 0 && at < pitches.length - 1 ? () => pick(pitches[at + 1].index) : null}
+        paResult={!fold && selectedPitch.actual?.event ? detail.pas.find(p => p.pa_key === selectedPitch.pa_key && p.complete)?.result ?? null : null}
+        folded={fold ? FOLD_TEXT : null} pending={unconfirmed(selectedPitch)} corrected={selectedPitch.receipt?.corrected === true}
+        actualExtra={!fold && selectedPitch.expectation && selectedPitch.actual?.event ? <ExpectationLine e={selectedPitch.expectation} /> : null} />; })()}
+    {!maskPublished && sheet === 'history' && <RecordSheet detail={detail} fold={fold} onClose={closeSheet} onPick={pick}
+      headExtra={<button className="sv-sheet-link" onClick={() => setSheet('win')} aria-haspopup="dialog">승리확률</button>} />}
+    {sheet === 'win' && <Sheet title="현재 상황의 승리확률 · 모델 추정" onClose={closeSheet}>{homeProbability === null
+      ? <p className="sv-muted" role="status">현재 승리확률 정보 없음</p>
+      : <div className="sv-we-bars" role="img" aria-label={`현재 원정팀 ${short(game.away_team)} 승리확률 ${Math.round((1 - homeProbability) * 100)}퍼센트, 홈팀 ${short(game.home_team)} 승리확률 ${Math.round(homeProbability * 100)}퍼센트`}>
+        {([['away', game.away_team, 1 - homeProbability], ['home', game.home_team, homeProbability]] as const).map(([sideName, team, value]) => <div className="sv-we-bar" key={sideName} aria-hidden="true"><span>{short(team)}</span><div><i style={{ width: `${value * 100}%`, background: teamColor(team) }} /></div><b>{Math.round(value * 100)}%</b></div>)}</div>}
+      <p className="sv-muted">타석 시작 상황으로 학습한 모델 추정이며 볼·스트라이크 카운트는 반영하지 않아요.</p></Sheet>}
+    {!maskPublished && sheet === 'mix' && <PitchMixSheet detail={detail} pitcherId={pitcherP?.id ?? null} pitcherName={pitcherP?.name ?? null} fold={fold} onClose={closeSheet} />}
+    {(sheet === 'player-b' || sheet === 'player-p') && <Sheet title={sheetPerson?.name ?? '선수 정보'} onClose={closeSheet} half={playerRole === 'p' ? 'max(56dvh, min(420px, calc(100dvh - 56px)))' : null}>
+      <div className="sv-tabs" role="tablist" aria-label="선수">{(['b', 'p'] as const).map(r => <button key={r} role="tab" aria-selected={playerRole === r} onClick={() => setSheet(r === 'b' ? 'player-b' : 'player-p')}>{r === 'b' ? '타자' : '투수'}</button>)}</div>
+      <div role="tabpanel">
+      <p className="sv-player-title"><b>{sheetPerson?.name ?? '—'}</b> <span>{short((playerRole === 'b') === top ? game.away_team : game.home_team)}{handText(playerRole === 'b' ? batterP?.side : pitcherP?.hand, playerRole) ? ` · ${handText(playerRole === 'b' ? batterP?.side : pitcherP?.hand, playerRole)}` : ''}</span></p>
+      <dl className="sv-dl sv-facts"><dt>등번호</dt><dd>{sheetInfo?.jersey ? `#${sheetInfo.jersey}` : '—'}</dd>
+        <dt>시즌</dt><dd>{playerRole === 'b' ? `AVG ${stat3(sheetInfo?.avg)} · OPS ${stat3(sheetInfo?.ops)}` : `ERA ${era(sheetInfo?.era)}`}</dd>
+        <dt>오늘</dt><dd>{playerRole === 'b' ? [part(bt?.at_bats, '타수'), part(bt?.hits, '안타'), part(bt?.on_base, '출루')].join(' · ') : [part(pt?.pitches, '구'), part(pt?.strikeouts, '삼진'), part(pt?.earned_runs, '자책')].join(' · ')}</dd></dl>
+      {playerRole === 'p' && !maskPublished && <MixTable detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} heading />}
+      <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 —로 표시합니다.</p>
+      </div>
     </Sheet>}
     {sheet === 'info' && <InfoSheet onClose={closeSheet} notes={detail.notes} />}
     {sheet === 'reference' && reference && <ReferenceSheet card={reference} state={eff ? `${eff.label}${eff.message ? ` · ${eff.message}` : ''}` : null} onClose={closeSheet} />}
-  </div>{syncSheet}</>;
+  </div>{syncSheet}</SheetFrame.Provider>;
+}
+
+/** The status bubble (UI 10/26 ⑥, design 08): the marker's word as a title and the state's own sentence(s). Escape, a tap outside or
+ *  the marker itself close it; focus returns to the marker. The same sentences are also in the screen's polite live region. */
+function StatusPop({ chip, onClose, onRetry, busy }: { chip: { label: string; tone: Tone; lines: string[] }; onClose: () => void; onRetry: (() => void) | null; busy: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => {
+    const opener = document.querySelector<HTMLElement>('.sv-hd-status');
+    box.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); closeRef.current(); } };
+    const onDown = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !opener?.contains(t)) closeRef.current(); };
+    window.addEventListener('keydown', onKey); window.addEventListener('pointerdown', onDown);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown); if (opener?.isConnected) opener.focus(); };
+  }, []);
+  return <><div className="sv-pop-dim" aria-hidden="true" />
+    <div className="sv-pop" id="sv-status-pop" role="dialog" aria-labelledby="sv-pop-title" tabIndex={-1} ref={box} data-tone={chip.tone}>
+      <h2 id="sv-pop-title"><i aria-hidden="true" />{chip.label}</h2>
+      {chip.lines.map(l => <p key={l}>{l}</p>)}
+      {onRetry && <button className="sv-pop-retry" onClick={onRetry} disabled={busy}>다시 확인</button>}
+    </div></>;
 }
 
 const backHref = () => { if (__PZ_STATIC__) return publicListHref(); const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
@@ -730,12 +768,4 @@ function TopBar({ right, title, label }: { right?: ReactNode; title?: string; la
     {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href={__PZ_STATIC__ ? publicListHref() : '/watch'}>Pitcheezy<span>.</span></a>}
     <span className="sv-top-right">{right}</span>
   </header>;
-}
-
-/** Darken only low-contrast team colours for score text; team identity hue remains. */
-function scoreColor(team: string) {
-  const hex = teamColor(team); const rgb = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16));
-  const lum = (v: number[]) => v.map(x => x / 255).map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4).reduce((a,x,i) => a+x*[.2126,.7152,.0722][i],0);
-  while ((.928 + .05) / (lum(rgb) + .05) < 4.5) for (let i=0;i<3;i++) rgb[i] = Math.floor(rgb[i] * .94);
-  return '#' + rgb.map(x=>x.toString(16).padStart(2,'0')).join('');
 }

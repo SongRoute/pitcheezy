@@ -184,3 +184,10 @@ export const pitcherSide = (label: string) => label.replace(/왼쪽|오른쪽/g,
 /** Raw catcher-view words → pitcher-view display words, once at the adapter (or raw server correction). */
 export const plainZone = (label: string) => pitcherSide(label).replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 ');
 export const policyShare = (p: number | null) => p === null ? '—' : `${Math.round(p * 100)}%`;
+/** G1 mark of a thrown pitch, from the Statcast `description` only (UI 10/26 ②). No description → 'unknown' (never guessed). */
+export type ResultKind = 'ball' | 'strike' | 'inplay' | 'unknown';
+const BALLS = new Set(['ball', 'blocked_ball', 'pitchout', 'hit_by_pitch', 'intent_ball', 'automatic_ball']);
+export const resultKind = (description: string | null | undefined): ResultKind =>
+  !description ? 'unknown' : BALLS.has(description) ? 'ball' : description.startsWith('hit_into_play') ? 'inplay' : 'strike';
+/** Family name for narrow screens ('Seiya Suzuki' → 'Suzuki', 'Vladimir Guerrero Jr.' → 'Guerrero Jr.'). */
+export const surname = (name: string) => { const w = name.trim().split(/\s+/); const n = w.length > 2 && /^(Jr\.?|Sr\.?|I{2,3}|IV)$/.test(w[w.length - 1]) ? 2 : 1; return w.length > n ? w.slice(-n).join(' ') : name; };
