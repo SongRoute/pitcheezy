@@ -8,6 +8,7 @@
 
 - 작업·소유권은 [큐 #37](https://github.com/SongRoute/pitcheezy/issues/37)의 전체 최신 댓글과 [절차](../work-queue.md)로 확인한다. 기존 연구자의 파일·결과 범위를 문서 정리로 반환 처리하지 않는다.
 - 예측 연구는 [실험 매트릭스](../../ML_EXPERIMENT_MATRIX.md), [연구 인계](../../handoffs/ML-experiments-next-session.md), [결정 D184~D197](../../decisions.md)을 함께 읽는다. 인계의 날짜별 실행 중 문장은 과거 관측이다.
+- 다음 후보와 일정은 [11월 모델 개선 설계](model-improvement-2026-11.md), 구체적인 등록 조건은 [B2/B3 등록 초안](november-b2-b3-registration-draft.md)에서 확인한다. 설계·초안은 실험 실행 완료가 아니다.
 - G15 연구 대조군과 서비스 G0를 구분한다. P48 B1의 [arm C 동결 목록](prospective-2027/arm-C-B1-freeze-list.md)은 예측기 후보 기록이며 정책 식별자 완성·서비스 교체가 아니다(D188). 봉인 결과와 기존 비교군을 덮지 않는다.
 
 ## 실행 전에 보존할 조건
