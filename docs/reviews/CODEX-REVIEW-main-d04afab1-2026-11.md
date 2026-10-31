@@ -72,3 +72,15 @@ PYTHONPATH=src:.:apps/observer/backend /Users/song/Projects/pitcheezy/.venv-obse
 빌드 기록 원본 대조: 보존 ZIP 867,682 bytes, SHA-256 `af10293d5134219b7f750d00786366b93b0134c895519b939fd99a356d77a4bc` 일치. out4 849843의 투구 262·ready 246·unsupported 16을 재집계했다. 이 대조는 ZIP 내부 모든 파일과 out4의 바이트 동일성 또는 운영 재생 성공을 새로 증명하지 않는다.
 
 미측정: iPhone Safari, 팀원 Cloudflare/QR, 실모니터 동기화, 849843 전체 live-replay, 경로별 안내 호스트 계약. 포팅 전 ws-gaps/ws-moments/static 4절 이후 통과를 주장하지 않는다. 제품 변경이 없는 검토 문서이므로 테스트 고치기나 별도 P2 구현은 다음 작업 범위다.
+
+## 5. 후속 스모크 포팅에서 보강한 증거
+
+같은 d04afab1 제품 소스에 테스트만 포팅한 별도 브랜치 `codex/smoke-ui-1026-1101`(`790f1fbe`)에서 다음 회귀를 확인했다. 이 절은 최초 검토 뒤 얻은 추가 증거이며 제품 수정은 없다. 지정 전시본 판정은 PASS_WITH_NOTES로 유지하되 **관련 스모크 전체 green 판정은 불가**하다.
+
+| 심각도·위치 | 재현·실제 결과 | 최소 수정·판정 |
+|---|---|---|
+| P2 — `apps/observer/web/src/service/GameScreen.tsx:599-601` | web에서 `PZ_ONLY=final-checks node tests/static-publish-smoke.mjs`. 종료 경기에서 health `feed_ok=false`로 바꿔도 상태표시가 사라진 채 유지됨. final 조기 반환이 명시적 장애 분기보다 앞섬 | 정상 종료의 상태 생략보다 명시적 장애 판정을 먼저 처리. 미해결 |
+| P2 — `apps/observer/web/src/service/GameScreen.tsx:397,435-436,452,606-609` | `PZ_ONLY=pregame-checks node tests/static-publish-smoke.mjs`. 기존 pitches가 남은 pregame 합성 fixture에서 예정 시작 이후 health/check가 오래돼도 ‘경기 전’ 유지. 첫 공 기본 선택으로 latest=false, publishStale 경고는 live 조건에서만 표시 | 예정 시작 전 면제는 유지하면서 pregame의 발행 지연도 표시. 미해결. 정상 무투구 pregame 전체에서 재현된 것으로 일반화하지 않음 |
+| P3 — `apps/observer/web/src/service/Sheets.tsx:171-172` | `node tests/ws-gaps-smoke.mjs` #11. 익스텐션 원본 6.286451349488038 ft 그대로 표시; 기존 검증은 소수점 한 자리 6.3 ft와 정수 spin 요구 | ActualFacts의 공통 숫자 표시에서 필드별 자릿수 적용. 미해결, 데이터 값 자체 오류와 구분 |
+
+실제 결과: static 전체 첫 실행 374 pass / 14 fail → 빈 후보 셀·접힌 목록 selector를 고친 뒤 영향 태그 7개 재검 122 pass / 2 fail(위 P2 2건). WS gaps 13 pass / 1 fail / 2 skip(시리즈 헤더 미포팅), WS moments 40 pass / 0 fail. 최초 selector 실패 12건과 잔여 제품 실패를 구분하며 합산한 가상의 통과 수를 만들지 않는다. 제품 실패를 skip하거나 기대를 낮추지 않았다.
