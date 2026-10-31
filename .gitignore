@@ -33,3 +33,4 @@ node_modules/
 
 # Graphify local graph, AST cache and rendered reports (about 27 MB at first build)
 graphify-out/
+docs/capstone/out/*.zip
