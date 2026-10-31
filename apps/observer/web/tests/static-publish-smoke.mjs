@@ -237,8 +237,10 @@ const dataAsks = (asks) => asks.filter((a) => a.includes('/v1/'));
 const clean = (asks) => asks.every((a) => !a.includes('/api/'));
 /** requests for data files never carry a query at all (no demo binding, no cursor) */
 const bare = (asks) => dataAsks(asks).every((a) => !a.includes('?'));
-const kind = (page) => page.locator('.sv-notice.line').getAttribute('data-kind');
-const waitKind = (page, k, timeout = 9000) => page.locator(`.sv-notice.line[data-kind="${k}"]`).waitFor({ timeout }).then(() => true, () => false);
+// UI-1026: the change note lives in the sr-only .sv-state-note (data-kind); the older .sv-notice.line is kept as a fallback
+const KIND_SEL = '.sv-state-note[data-kind], .sv-notice.line[data-kind]';
+const kind = (page) => page.locator(KIND_SEL).first().getAttribute('data-kind');
+const waitKind = (page, k, timeout = 9000) => page.locator(`.sv-state-note[data-kind="${k}"], .sv-notice.line[data-kind="${k}"]`).first().waitFor({ state: 'attached', timeout }).then(() => true, () => false);
 const waitPitch = (page, key, timeout = 9000) => page.locator(`.sv-state[data-pitch="${key}"]`).waitFor({ timeout }).then(() => true, () => false);
 
 // ---------- 1. files on disk under a hosting prefix: dates → games → game ----------
