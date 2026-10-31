@@ -149,7 +149,7 @@ async function open({ width = 390, height = 664, dist = distRegression, protocol
     // every status-line kind and chip text the screen ever shows (a flash between two reads is caught too)
     window.__kinds = []; window.__chips = [];
     const note = () => { const k = document.querySelector('.sv-notice.line')?.getAttribute('data-kind'); if (k && window.__kinds.at(-1) !== k) window.__kinds.push(k);
-      const c = document.querySelector('.sv-chip')?.textContent; if (c && window.__chips.at(-1) !== c) window.__chips.push(c); };
+      const c = document.querySelector('.sv-hd-status')?.textContent; if (c && window.__chips.at(-1) !== c) window.__chips.push(c); };
     new MutationObserver(note).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   }, [hidden, skewMs]);
   await page.addInitScript(() => { window.__slot = []; window.addEventListener('pitcheezy:host-slot', (e) => window.__slot.push({ screen: e.detail.screen, gamePk: e.detail.gamePk, id: e.detail.element?.id })); });
@@ -219,8 +219,8 @@ const keyOnFirstScreen = (page) => page.evaluate(async () => {
   const nav = document.querySelector('.sv-bottom-nav'), nr = nav?.getBoundingClientRect();
   const fold = nr && nr.height && getComputedStyle(nav).position === 'fixed' ? nr.top : innerHeight;
   const box = (sel) => { const e = document.querySelector(sel); const r = e?.getBoundingClientRect(); return r && r.width && r.height ? r : null; };
-  for (const sel of ['.sv-top', '.sv-zone']) if (!box(sel)) bad.push(`${sel} missing`);
-  for (const sel of ['.sv-top', '.sv-notice.line', '.sv-board', '.sv-duel']) { const r = box(sel); if (r && r.bottom > fold + 1) bad.push(`${sel} bottom ${Math.round(r.bottom)} > ${Math.round(fold)}`); }
+  for (const sel of ['.sv-hd-1', '.sv-zone']) if (!box(sel)) bad.push(`${sel} missing`);  // UI-1026 header is .sv-hd-1
+  for (const sel of ['.sv-hd-1', '.sv-notice.line', '.sv-board', '.sv-duel', '.sv-mu']) { const r = box(sel); if (r && r.bottom > fold + 1) bad.push(`${sel} bottom ${Math.round(r.bottom)} > ${Math.round(fold)}`); }
   const zone = box('.sv-zone'); if (zone && zone.top >= fold) bad.push(`.sv-zone top ${Math.round(zone.top)} >= ${Math.round(fold)}`);
   const strip = box('.sv-strip-shell'); if (innerHeight >= 800 && strip && strip.bottom > fold + 1) bad.push(`.sv-strip-shell bottom ${Math.round(strip.bottom)} > ${Math.round(fold)}`);
   window.scrollTo(0, root.scrollHeight); await new Promise((r) => requestAnimationFrame(() => r()));
@@ -259,7 +259,7 @@ await block(async () => {
   await page.locator('.sv-zone').first().waitFor();
   ok(new URL(page.url()).pathname === '/pub/' && new URL(page.url()).search === '?game=849843', 'files: the game opens under the same prefix');
   const game = await page.locator('body').innerText();
-  ok(/컵스/.test(game) && /샌디에이고/.test(game) && /종료/.test(game), 'files: finished game 849843 drawn from v1/game/849843.json');
+  ok(/컵스|CHC/.test(game) && /샌디에이고|SD/.test(game) && /종료|최종/.test(game), 'files: finished game 849843 drawn from v1/game/849843.json');
   ok(await page.locator('.sv-rec-row').count() > 0, 'files: the recorded pre-pitch recommendation of the first pitch is shown');
   ok(await keyOnFirstScreen(page), 'files: finished game keeps its key info on the first screen at 375x553');
   ok(await page.locator('.sv-notice').count() === 0, 'files: a settled final file (sequence 3, health at 120) shows no connection or late notice');
@@ -283,7 +283,7 @@ for (const [width, height] of [[375, 553], [320, 568], [360, 640], [390, 664], [
   await page.goto(`http://pz.test/pub/?game=${LIVE}&demo=abc123`);
   await page.locator('.sv-rec-row').first().waitFor();
   const tag = `live ${width}x${height}`;
-  ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-chip').innerText() === '다음 공 추천', `${tag}: three candidates under the server's 다음 공 추천`);
+  ok(await page.locator('.sv-rec-row').count() === 3 && /추천/.test(await page.locator('.sv-rec-head').innerText())  /* UI-1026: 추천 · N구 */, `${tag}: three candidates under the server's 다음 공 추천 (rows ${await page.locator('.sv-rec-row').count()}, head ${JSON.stringify(await page.locator('.sv-rec-head').innerText().catch(() => null))})`);
   ok(await kind(page) === 'ok', `${tag}: status line calm (fresh by the hosting clock)`);
   ok(await keyOnFirstScreen(page), `${tag}: key info on the first screen, no sideways scroll`);
   await sleep(2600);
@@ -348,7 +348,7 @@ await block(async () => {
   ok(await waitKind(page, 'publish-late'), 'late/host: 95 s without a publish → the line turns to 갱신 지연');
   ok(/갱신 지연/.test(await page.locator('.sv-notice.line .sv-line-text').innerText()), 'late/host: the line says 갱신 지연 in words');
   ok(await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'host', 'late/host: judged on the hosting clock, not the device clock');
-  ok(await page.locator('.sv-chip').innerText().then((t) => /갱신 지연/.test(t)), 'late/host: the slot chip says 갱신 지연');
+  ok(await page.locator('.sv-hd-status').innerText().then((t) => /갱신 지연/.test(t)), 'late/host: the header status marker says 갱신 지연');
   ok(/마지막으로 받은 내용/.test(await page.locator('.sv-state-live').innerText()) || /마지막으로 받은/.test(await page.locator('.sv-state').innerText()), 'late/host: says it is the last received state');
   ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-state.held').count() === 1, 'late/host: the last candidates stay, dimmed as held');
   ok(await page.locator('.sv-strip .sv-card').count() > 0 && /컵스|샌디에이고/.test(await page.locator('.sv-head-main').innerText()), 'late/host: score and pitch cards stay on screen');
@@ -357,7 +357,7 @@ await block(async () => {
   if (shots) await page.screenshot({ path: path.join(shots, 'static-late-375.png') });
   seq = 21; at = t0 + 94000;
   ok(await waitKind(page, 'ok'), 'late/host: a new publish clears the notice by polling alone');
-  ok(await page.locator('.sv-chip').innerText() === '다음 공 추천' && await page.locator('.sv-state.held').count() === 0, 'late/host: chip and candidates back to normal');
+  ok(/추천/.test(await page.locator('.sv-rec-head').innerText())  /* UI-1026: 추천 · N구 */ && await page.locator('.sv-state.held').count() === 0, 'late/host: chip and candidates back to normal');
   ok(clean(asks) && bare(asks), 'late/host: no /api/');
   ok(errors.length === 0, `late/host: no page errors ${errors.join(' | ')}`);
   await context.close();

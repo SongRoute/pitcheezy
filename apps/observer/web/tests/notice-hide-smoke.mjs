@@ -95,7 +95,7 @@ async function open(mode, width, height) {
 }
 
 // what must not stay on screen while a notice stands (all of it was received before the notice)
-const LIVE_PARTS = ['.sv-zone .sv-rec', '.sv-rec-summary', '.sv-reclist', '.sv-pitch-summary', '.sv-zone', '.sv-card', '.sv-duel', '.sv-board', '.sv-head-score', '.sv-sheet', '.sv-recent-pas', '.sv-notice.line'];
+const LIVE_PARTS = ['.sv-zone .sv-rec', '.sv-rec-summary', '.sv-reclist', '.sv-rec-sec', '.sv-pitch-row', '.sv-atbat-toggle', '.sv-atbat-list', '.sv-pitch-summary', '.sv-zone', '.sv-card', '.sv-duel', '.sv-board', '.sv-head-score', '.sv-sheet', '.sv-recent-pas', '.sv-notice.line'];
 const counts = (page) => page.evaluate((sels) => Object.fromEntries(sels.map((s) => [s, document.querySelectorAll(s).length])), LIVE_PARTS);
 const lum = (c) => { const v = c.match(/[\d.]+/g).slice(0, 3).map(Number).map((x) => x / 255).map((x) => x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
 const alertLook = (page) => page.evaluate(() => {
@@ -126,10 +126,11 @@ async function noticeShown(page, tag, which, width, height, errors) {
 async function gameShown(page, tag, step) {
   await waited(`${tag} ${step}: recommendation cards and zone recommendation marks shown`, async () => {
     await page.locator('.sv-zone .sv-rec').first().waitFor({ timeout: 25000 });
-    await page.locator('.sv-rec-summary').first().waitFor({ timeout: 25000 });
+    await page.locator('.sv-reclist:not(.empty)').first().waitFor({ timeout: 25000 });  // UI-1026: the recommendation row (three cells)
   });
   const c = await counts(page);
-  ok(c['.sv-zone .sv-rec'] > 0 && c['.sv-rec-summary'] > 0 && c['.sv-card'] > 0, `${tag} ${step}: zone marks ${c['.sv-zone .sv-rec']}, rec cards ${c['.sv-rec-summary']}, pitch cards ${c['.sv-card']}`);
+  // UI-1026 folds the at-bat list behind a toggle; the pitch list counts as shown when its toggle or its rows are on screen
+  ok(c['.sv-zone .sv-rec'] > 0 && c['.sv-reclist'] > 0 && c['.sv-pitch-row'] + c['.sv-atbat-toggle'] > 0, `${tag} ${step}: zone marks ${c['.sv-zone .sv-rec']}, rec rows ${c['.sv-reclist']}, pitch list ${c['.sv-pitch-row']}+${c['.sv-atbat-toggle']}`);
   ok(await page.locator('.sv-alert').count() === 0, `${tag} ${step}: no notice`);
   ok(!(await page.evaluate(() => document.body.innerText)).includes('이전:'), `${tag} ${step}: no change note naming a recommendation from before the notice`);
   ok(await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth + 1), `${tag} ${step}: no side scroll`);
@@ -144,7 +145,7 @@ for (const mode of ['public', 'api']) for (const [width, height] of [[390, 844],
   await page.evaluate(() => { window.__sameDocument = true; });
   if (shots) await page.screenshot({ path: path.join(shots, `${tag}-0-before.png`) });
   // a sheet opened before the notice is closed by it (it carried received content)
-  await page.locator('.sv-state-more').first().click();
+  await page.locator('.sv-rec-sec .sv-state-more').first().click();  // UI-1026: 추천 자세히 보기 opens the recommendation sheet
   ok(await page.locator('.sv-sheet').count() === 1, `${tag}: detail sheet open before the notice`);
   host.mode = 'maintenance';
   await noticeShown(page, tag, 'maintenance', width, height, errors);

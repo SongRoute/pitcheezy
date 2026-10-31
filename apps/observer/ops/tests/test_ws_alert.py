@@ -450,6 +450,32 @@ def test_ops_contract_states(w):
     assert 'ops_state:refused' in w.keys(w.run(T0 + 30))
 
 
+def test_ops_armb_off_while_running_is_critical_and_closes_when_on(w):
+    # WS game 2 (2026-10-25): the supervisor started the publisher with armb auto-off (memory under the floor); 341 pitches
+    # were published with no recommendation and nothing was announced. The publisher block carries armb, so say it.
+    w.healthy(T0)
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_status(T0, publisher={'pid': 2, 'running': True, 'armb': False,
+                                                              'upload_enabled': False})))
+    events = w.run(T0)
+    assert w.keys(events) == {'ops_armb_off'}
+    assert [e['severity'] for e in events if e['key'] == 'ops_armb_off'] == ['critical']
+    assert 'ARM-B' in w.fake.sent[-1]['body']
+    # same segment, still off: announced once (dedup), not repeated every loop
+    w.health(T0 + 15)
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 15, publisher={'pid': 2, 'running': True, 'armb': False})))
+    assert w.run(T0 + 15) == []
+    # a new segment with armb on closes it
+    w.health(T0 + 30)
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 30, publisher={'pid': 3, 'running': True, 'armb': True})))
+    events = w.run(T0 + 30)
+    assert w.keys(events) == set() and w.keys(events, 'recover') == {'ops_armb_off'}
+    # not running (prestart/waiting) or armb unknown: quiet
+    w.health(T0 + 45)
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 45, 'prestart', publisher={'running': False, 'armb': False})))
+    assert 'ops_armb_off' not in w.keys(w.run(T0 + 45))
+
+
 def test_ops_contract_stale_heartbeat_and_alert_strings(w):
     w.healthy(T0)
     w.cfg['paths']['ops_status'] = str(w.ops_path)
