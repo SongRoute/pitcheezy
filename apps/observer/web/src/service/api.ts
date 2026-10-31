@@ -59,7 +59,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
  *  ends like an unreachable server instead of leaving the request (and every later poll) waiting for ever.
  *  A missing file keeps its HTTP status (404); an answer that is not JSON (half-written file, a host's HTML fallback page) is treated
  *  like an unreachable server (status 0) so the screen keeps its last state and asks again. */
-async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promise<{ body: T; stamp: Omit<PublishStamp, 'seenAt'> & { seq: number }; etag: string | null } | null> {
+async function getPublished<T>(file: PublishedFile, signal?: AbortSignal, requireBody = false): Promise<{ body: T; stamp: Omit<PublishStamp, 'seenAt'> & { seq: number }; etag: string | null } | null> {
   const path = publishedPath(file);
   if (path === null) throw new FetchError('자료를 불러오지 못했어요.', 404);   // not a real date / game number: nothing is asked
   const url = publishUrl(path), last = applied.get(url);
@@ -70,7 +70,7 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
   if (signal?.aborted) timeout.abort();
   try {
     let response: Response;
-    try { response = await fetch(url, { cache: 'no-cache', headers: last?.etag ? { 'If-None-Match': last.etag } : undefined, signal: timeout.signal }); }
+    try { response = await fetch(url, { cache: 'no-cache', headers: !requireBody && last?.etag ? { 'If-None-Match': last.etag } : undefined, signal: timeout.signal }); }
     catch (e) {
       if (signal?.aborted) throw e;
       throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
@@ -80,7 +80,7 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
     if (Number.isFinite(date)) observeHostTime(date + (Number.isFinite(age) && age > 0 ? age * 1000 : 0));
     if (response.status === 304) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-      if (!last?.etag) throw new FetchError('서버 응답을 읽지 못했어요.', 0); // no validated body to reuse
+      if (requireBody || !last?.etag) throw new FetchError('서버 응답을 읽지 못했어요.', 0); // a notice requires a fresh accepted body, not pre-notice cache
       if (last.stamp.publishedAt) observePublishTime(Date.parse(last.stamp.publishedAt));
       return null; // reuse the already validated/normalized body; neither JSON parse nor shape runs again
     }
@@ -104,18 +104,22 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
  *  applied (a cache serving an older copy, or an older answer arriving after a newer one) is discarded and the applied value stays.
  *  A sequence is the publish cycle that last wrote that file, so it is compared per file only, never across files. */
 const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown; etag: string | null; readAt: number }>();
-async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | undefined, shape: (body: T) => R): Promise<{ value: R; stamp: PublishStamp }> {
-  const got = await getPublished<T>(file, signal);
+async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | undefined, shape: (body: T) => R, requireBody = false): Promise<{ value: R; stamp: PublishStamp; verifiedAt: number }> {
+  const got = await getPublished<T>(file, signal, requireBody);
   const key = publishUrl(publishedPath(file)!), last = applied.get(key);
-  if (got === null) { last!.readAt = performance.now(); return { value: last!.value as R, stamp: last!.stamp }; }
-  if (last && got.stamp.seq < last.stamp.seq) return { value: last.value as R, stamp: last.stamp };
+  if (got === null) { last!.readAt = performance.now(); return { value: last!.value as R, stamp: last!.stamp, verifiedAt: last!.readAt }; }
+  if (last && got.stamp.seq < last.stamp.seq) {
+    if (requireBody) throw new FetchError('서버 응답을 읽지 못했어요.', 0); // cannot lift a notice with an older body
+    return { value: last.value as R, stamp: last.stamp, verifiedAt: last.readAt };
+  }
   let value: R;
   // a body that does not have the expected shape is an unreadable answer; the raw exception never reaches the screen
   try { value = shape(got.body); } catch (e) { throw e instanceof FetchError ? e : new FetchError('서버 응답을 읽지 못했어요.', 0); }
   // the same sequence seen again keeps the moment it was first seen
   const stamp = { ...got.stamp, seenAt: last && last.stamp.seq === got.stamp.seq ? last.stamp.seenAt : performance.now() };
-  applied.set(key, { stamp, value, etag: got.etag, readAt: performance.now() });
-  return { value, stamp };
+  const verifiedAt = performance.now();
+  applied.set(key, { stamp, value, etag: got.etag, readAt: verifiedAt });
+  return { value, stamp, verifiedAt };
 }
 /** Health additions are optional: today's publisher still supplies only the stamp and failure lists. */
 export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishHealth> {
@@ -126,14 +130,14 @@ export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishH
   return { ...got.stamp, ...got.value };
 }
 /** `v1/game/<pk>.json`: always the whole game (no cursor, no merge). */
-export async function fetchPublishedDetail(game: number, signal?: AbortSignal): Promise<{ detail: Detail; stamp: PublishStamp }> {
+export async function fetchPublishedDetail(game: number, signal?: AbortSignal, requireBody = false): Promise<{ detail: Detail; stamp: PublishStamp; verifiedAt: number }> {
   const got = await readPublished<Raw, Detail>({ kind: 'game', gamePk: game }, signal, body => {
     const detail = normalizeDetail(body);
     // fail closed: a file that holds another game is never drawn under this game's address
     if (detail.game.game_pk !== game) throw new FetchError('자료를 불러오지 못했어요.', 404);
     return detail;
-  });
-  return { detail: got.value, stamp: got.stamp };
+  }, requireBody);
+  return { detail: got.value, stamp: got.stamp, verifiedAt: got.verifiedAt };
 }
 /** `v1/games/<date>.json`. No file for a date = nothing published for it (a date outside the archive and the followed window). */
 export async function fetchPublishedGames(date: string, signal?: AbortSignal): Promise<GameList> {

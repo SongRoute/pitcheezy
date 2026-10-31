@@ -11,7 +11,7 @@ import { Sheet } from './Sheets';
 const upTo = (pitches: PitchRow[], asOfIndex: number | null) => asOfIndex === null ? pitches : pitches.filter(p => p.index <= asOfIndex);
 const asOfWords = (detail: Detail, asOfIndex: number | null) => {
   const p = asOfIndex === null ? null : detail.pitches.find(x => x.index === asOfIndex);
-  return p ? `${inningText(p.situation)} ${p.pitch_number}구` : null;
+  return p ? `${inningText(p.situation)} · ${p.batter.name ?? '타자 미상'} · ${p.pitch_number}구` : null;
 };
 /** Plate appearances up to the selected pitch (all of them for the latest); the one that holds that pitch is still open unless the
  *  pitch ended it, and then counts only the pitches thrown so far. */
@@ -19,10 +19,10 @@ export function pasAsOf(detail: Detail, asOfIndex: number | null): Pa[] {
   if (asOfIndex === null) return detail.pas;
   const shown = upTo(detail.pitches, asOfIndex);
   // a plate appearance with no pitch at all (an intentional walk and the like) has no pitch index: it belongs before the selected pitch
-  // when its at-bat number is earlier than the selected pitch's
+  // when its at-bat number is earlier than the selected pitch's. Without an end index, only an earlier PA is known to have ended.
   const atBat = detail.pitches.find(p => p.index === asOfIndex)?.at_bat_number ?? null;
   return detail.pas.filter(p => typeof p.first === 'number' ? p.first <= asOfIndex : atBat !== null && p.at_bat_number < atBat)
-    .map(p => typeof p.last === 'number' && p.last > asOfIndex ? { ...p, complete: false, result: '타석 진행 중', pitch_count: shown.filter(x => x.pa_key === p.pa_key).length } : p);
+    .map(p => (typeof p.last === 'number' ? p.last > asOfIndex : atBat === null || p.at_bat_number >= atBat) ? { ...p, complete: false, result: '타석 진행 중', pitch_count: shown.filter(x => x.pa_key === p.pa_key).length } : p);
 }
 
 export function RecordSheet({ detail, fold, onClose, onPick, headExtra, asOfIndex = null }: { detail: Detail; fold: boolean; onClose: () => void; onPick: (index: number) => void; asOfIndex?: number | null; headExtra?: ReactNode }) {
@@ -47,7 +47,7 @@ export function RecordSheet({ detail, fold, onClose, onPick, headExtra, asOfInde
       <table className="sv-table"><thead><tr><th>투수</th><th>투구</th><th>삼진</th><th>자책</th></tr></thead><tbody>{context.boxscore[side].pitchers.map(p => <tr key={p.id}><td>{p.name}</td><td>{p.pitches ?? '—'}</td><td>{p.strikeouts ?? '—'}</td><td>{p.earned_runs ?? '—'}</td></tr>)}</tbody></table></> : <p className="sv-muted">박스 기록 정보 없음</p>}</section>)}</>}
     {tab === '분석' && <div className="sv-unmeasured"><h3>분석 <span className="sv-tag">준비 중</span></h3><p>성분별 책임 분해·기대실점·타구 예상 결과는 아직 연결되지 않았어요.</p></div>}
     <p className="sv-muted">공개된 시점까지의 기록이며 이후 정정될 수 있어요. 출루는 안타·볼넷·몸에 맞는 공을 합한 값이에요.</p>
-    {(corrected > 0 || held > 0) && <p className="sv-muted sv-corrections">{asOf ? '고른 공까지 ' : ''}정정된 기록 {corrected}구(투구 카드에 ‘정정됨’ 표시 {tagged}구{corrected > tagged ? `, 보류 중이라 표시하지 않은 ${corrected - tagged}구` : ''}){held ? ` · 공식 피드가 다시 보낸 내용을 보류한 공 ${held}구(마지막으로 받아들인 기록을 보여 드려요; 정정된 공과 겹칠 수 있어요)` : ''}</p>}
+    {(corrected > 0 || held > 0) && <p className="sv-muted sv-corrections">{asOf ? '고른 공까지 ' : ''}정정된 기록 {corrected}구(투구 카드에 ‘정정됨’ 표시 {tagged}구{corrected > tagged ? `, 카드에 표시하지 않은 ${corrected - tagged}구` : ''}){held ? ` · 공식 피드가 다시 보낸 내용을 보류한 공 ${held}구(마지막으로 받아들인 기록을 보여 드려요; 정정된 공과 겹칠 수 있어요)` : ''}</p>}
   </Sheet>;
 }
 /** Today's pitch mix of one pitcher from the received records only (unconfirmed rows and rows without a type are left out). */
