@@ -85,6 +85,10 @@ async function coreChecks() {
   ok(api.gameCheckLag(h, { ...check, checked_at: iso(FILE_AT + 1) }, { ms: FILE_AT, clock: 'host' }).lagMs === Infinity, 'core: future check cannot be healthy');
   const oldFile = { ...h, publishedAt: iso(FILE_AT - 80000) };
   ok(api.publishLag(oldFile, h, { ms: FILE_AT, clock: 'host' }).lagMs === 80000, 'core: legacy file-age rule preserved');
+  // UI-1026 removed data-publish-clock from the page; verify the same provenance contract directly, while browser scenarios verify the warnings.
+  ok(api.publishLag(oldFile, h, { ms: FILE_AT, clock: 'host' }).clock === 'publisher', 'core: file behind health uses publisher clock');
+  ok(api.publishLag(h, h, { ms: FILE_AT + 95000, clock: 'host' }).clock === 'host', 'core: hosting Date uses host clock');
+  ok(api.publishLag(h, null, { ms: FILE_AT + 95000, clock: 'elapsed' }).clock === 'elapsed', 'core: no server Date uses elapsed clock');
   let reply, parses = 0; const requests = [];
   const realFetch = globalThis.fetch, realWindow = globalThis.window;
   globalThis.window = { setTimeout, clearTimeout };
@@ -127,8 +131,8 @@ const browser = await chromium.launch();
 const distRegression = variant('regression', { VITE_PUBLISH_POLL_MS: '2000' });
 
 /** One scenario: a wait that times out fails that scenario by name and the run goes on to the next one. */
-const ONLY = process.env.PZ_ONLY ?? null;   // run one tagged scenario (used to replay a scenario on an older build)
-async function block(fn, tag = null) { if (ONLY && tag !== ONLY) return; try { await fn(); } catch (e) { ok(false, `scenario aborted: ${String(e).split('\n')[0]} @ ${(e.stack ?? '').split('\n').find((l) => l.includes('static-publish-smoke'))?.trim() ?? ''}`); for (const c of browser.contexts()) await c.close().catch(() => {}); } }
+const ONLY = process.env.PZ_ONLY ?? null;   // comma-separated scenario tags (also used to replay a scenario on an older build)
+async function block(fn, tag = null) { if (ONLY && !ONLY.split(',').includes(tag)) return; try { await fn(); } catch (e) { ok(false, `scenario aborted: ${String(e).split('\n')[0]} @ ${(e.stack ?? '').split('\n').find((l) => l.includes('static-publish-smoke'))?.trim() ?? ''}`); for (const c of browser.contexts()) await c.close().catch(() => {}); } }
 /** `answer(file, n)` → { json, status, date, abort, hang } for `v1/<file>` (n = how many times that file was asked), or undefined to
  *  serve the fixture file from disk with a hosting `Date` one second after the fixture's publish time. Every request is logged. */
 async function open({ width = 390, height = 664, dist = distRegression, protocol = false, clock = false, answer = () => undefined, api = null, hidden = false, skewMs = 0 } = {}) {
@@ -148,7 +152,9 @@ async function open({ width = 390, height = 664, dist = distRegression, protocol
     Date.now = () => realNow() + window.__skew; performance.now = () => realPerf() - window.__perfLag;
     // every status-line kind and chip text the screen ever shows (a flash between two reads is caught too)
     window.__kinds = []; window.__chips = [];
-    const note = () => { const k = document.querySelector('.sv-notice.line')?.getAttribute('data-kind'); if (k && window.__kinds.at(-1) !== k) window.__kinds.push(k);
+    const note = () => { const chip = document.querySelector('.sv-hd-status'), text = chip?.textContent ?? '';
+      const k = text.includes('갱신 지연') ? 'publish-late' : chip?.dataset.state === 'disconnected' ? 'client' : chip?.dataset.state === 'unconfirmed' ? 'checking' : chip && ['recommended', 'pregame', 'live'].includes(chip.dataset.state) ? 'ok' : null;
+      if (k && window.__kinds.at(-1) !== k) window.__kinds.push(k);
       const c = document.querySelector('.sv-hd-status')?.textContent; if (c && window.__chips.at(-1) !== c) window.__chips.push(c); };
     new MutationObserver(note).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   }, [hidden, skewMs]);
@@ -208,9 +214,9 @@ async function withServer(dist, handle, fn) {
 }
 /** Game-screen fit. Until 2026-10-13 this asked for one screen with no scroll at all. The approved redesign (docs/decisions.md 2026-10-13,
  *  UI-CONNECTION-2026-10-13.md) lets the phone screen scroll vertically under a fixed bottom tab bar. What the old check protected
- *  still has to hold: no sideways scroll; at first paint (scrollY 0) the header (score, LIVE / state), the status line (late /
- *  disconnected alerts), the count board and the matchup lie fully above the tab bar and the zone (where the recommendation is drawn)
- *  starts above it; on a tall phone (>= 800 px) the whole core down to the pitch cards does (as ws-responsive-smoke); scrolled to the
+ *  still has to hold: no sideways scroll; at first paint (scrollY 0) the UI-1026 header (score and state) and matchup/count row
+ *  lie fully above the tab bar and the zone (where the recommendation is drawn) starts above it; on a tall phone (>= 800 px)
+ *  the whole core down to the folded at-bat toggle does; scrolled to the
  *  end, nothing is left under the tab bar. Returns '' when it fits, else what does not (printed with the check). */
 const keyOnFirstScreen = (page) => page.evaluate(async () => {
   const bad = [], root = document.scrollingElement;
@@ -220,9 +226,9 @@ const keyOnFirstScreen = (page) => page.evaluate(async () => {
   const fold = nr && nr.height && getComputedStyle(nav).position === 'fixed' ? nr.top : innerHeight;
   const box = (sel) => { const e = document.querySelector(sel); const r = e?.getBoundingClientRect(); return r && r.width && r.height ? r : null; };
   for (const sel of ['.sv-hd-1', '.sv-zone']) if (!box(sel)) bad.push(`${sel} missing`);  // UI-1026 header is .sv-hd-1
-  for (const sel of ['.sv-hd-1', '.sv-notice.line', '.sv-board', '.sv-duel', '.sv-mu']) { const r = box(sel); if (r && r.bottom > fold + 1) bad.push(`${sel} bottom ${Math.round(r.bottom)} > ${Math.round(fold)}`); }
+  for (const sel of ['.sv-hd-1', '.sv-mu']) { const r = box(sel); if (r && r.bottom > fold + 1) bad.push(`${sel} bottom ${Math.round(r.bottom)} > ${Math.round(fold)}`); }
   const zone = box('.sv-zone'); if (zone && zone.top >= fold) bad.push(`.sv-zone top ${Math.round(zone.top)} >= ${Math.round(fold)}`);
-  const strip = box('.sv-strip-shell'); if (innerHeight >= 800 && strip && strip.bottom > fold + 1) bad.push(`.sv-strip-shell bottom ${Math.round(strip.bottom)} > ${Math.round(fold)}`);
+  const strip = box('.sv-atbat-head'); if (innerHeight >= 800 && strip && strip.bottom > fold + 1) bad.push(`.sv-atbat-head bottom ${Math.round(strip.bottom)} > ${Math.round(fold)}`);
   window.scrollTo(0, root.scrollHeight); await new Promise((r) => requestAnimationFrame(() => r()));
   const fold2 = nav && nav.getBoundingClientRect().height ? nav.getBoundingClientRect().top : innerHeight;
   let low = 0, who = '';
@@ -237,10 +243,17 @@ const dataAsks = (asks) => asks.filter((a) => a.includes('/v1/'));
 const clean = (asks) => asks.every((a) => !a.includes('/api/'));
 /** requests for data files never carry a query at all (no demo binding, no cursor) */
 const bare = (asks) => dataAsks(asks).every((a) => !a.includes('?'));
-// UI-1026: the change note lives in the sr-only .sv-state-note (data-kind); the older .sv-notice.line is kept as a fallback
-const KIND_SEL = '.sv-state-note[data-kind], .sv-notice.line[data-kind]';
-const kind = (page) => page.locator(KIND_SEL).first().getAttribute('data-kind');
-const waitKind = (page, k, timeout = 9000) => page.locator(`.sv-state-note[data-kind="${k}"], .sv-notice.line[data-kind="${k}"]`).first().waitFor({ state: 'attached', timeout }).then(() => true, () => false);
+// Status is in the visible header; data-kind on the sr-only note denotes recommendation changes, not transport status.
+function screenKind(wanted) {
+  const chip = document.querySelector('.sv-hd-status'), text = chip?.textContent ?? '';
+  const k = text.includes('갱신 지연') ? 'publish-late' : chip?.dataset.state === 'disconnected' ? 'client'
+    : chip?.dataset.state === 'unconfirmed' ? 'checking' : chip && ['recommended', 'pregame', 'live'].includes(chip.dataset.state) ? 'ok' : null;
+  return wanted === undefined ? k : k === wanted;
+}
+const kind = (page) => page.evaluate(screenKind);
+const waitKind = (page, k, timeout = 9000) => page.waitForFunction(screenKind, k, { timeout }).then(() => true, () => false);
+const openAtBat = async (page) => { const toggle = page.locator('.sv-atbat-toggle'); if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click(); };
+const statusWords = async (page) => { const chip = page.locator('.sv-hd-status'); if (await chip.getAttribute('aria-expanded') !== 'true') await chip.click(); const words = await page.locator('.sv-pop').innerText(); await chip.click(); return words; };
 const waitPitch = (page, key, timeout = 9000) => page.locator(`.sv-state[data-pitch="${key}"]`).waitFor({ timeout }).then(() => true, () => false);
 
 // ---------- 1. files on disk under a hosting prefix: dates → games → game ----------
@@ -262,9 +275,9 @@ await block(async () => {
   ok(new URL(page.url()).pathname === '/pub/' && new URL(page.url()).search === '?game=849843', 'files: the game opens under the same prefix');
   const game = await page.locator('body').innerText();
   ok(/컵스|CHC/.test(game) && /샌디에이고|SD/.test(game) && /종료|최종/.test(game), 'files: finished game 849843 drawn from v1/game/849843.json');
-  ok(await page.locator('.sv-rec-row').count() > 0, 'files: the recorded pre-pitch recommendation of the first pitch is shown');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() > 0, 'files: the recorded pre-pitch recommendation of the first pitch is shown');
   ok(await keyOnFirstScreen(page), 'files: finished game keeps its key info on the first screen at 375x553');
-  ok(await page.locator('.sv-notice').count() === 0, 'files: a settled final file (sequence 3, health at 120) shows no connection or late notice');
+  ok(await page.locator('.sv-hd-status').count() === 0, 'files: a settled final file (sequence 3, health at 120) shows no connection or late notice');
   const slot = await page.evaluate(() => window.__slot);
   ok(slot.length >= 1 && slot.at(-1).screen === 'game' && slot.at(-1).gamePk === 849843 && slot.at(-1).id === 'pitcheezy-host-slot', 'slot: pitcheezy:host-slot event names the screen and game');
   ok(await page.locator('.sv-back').getAttribute('href') === './', 'files: back link stays inside the prefix');
@@ -280,12 +293,12 @@ await block(async () => {
 });
 
 // ---------- 2. live game from disk at every width; demo binding and operator route ignored ----------
-for (const [width, height] of [[375, 553], [320, 568], [360, 640], [390, 664], [390, 844]]) {
+for (const [width, height] of [[375, 553], [320, 568], [360, 640], [390, 664], [390, 844]]) await block(async () => {
   const { context, page, asks, errors } = await open({ width, height });
   await page.goto(`http://pz.test/pub/?game=${LIVE}&demo=abc123`);
-  await page.locator('.sv-rec-row').first().waitFor();
+  await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').first().waitFor();
   const tag = `live ${width}x${height}`;
-  ok(await page.locator('.sv-rec-row').count() === 3 && /추천/.test(await page.locator('.sv-rec-head').innerText())  /* UI-1026: 추천 · N구 */, `${tag}: three candidates under the server's 다음 공 추천 (rows ${await page.locator('.sv-rec-row').count()}, head ${JSON.stringify(await page.locator('.sv-rec-head').innerText().catch(() => null))})`);
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 3 && /추천/.test(await page.locator('.sv-rec-head').innerText())  /* UI-1026: 추천 · N구 */, `${tag}: three candidates under the server's 다음 공 추천 (rows ${await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count()}, head ${JSON.stringify(await page.locator('.sv-rec-head').innerText().catch(() => null))})`);
   ok(await kind(page) === 'ok', `${tag}: status line calm (fresh by the hosting clock)`);
   ok(await keyOnFirstScreen(page), `${tag}: key info on the first screen, no sideways scroll`);
   await sleep(2600);
@@ -295,7 +308,7 @@ for (const [width, height] of [[375, 553], [320, 568], [360, 640], [390, 664], [
   if (shots && width === 375) await page.screenshot({ path: path.join(shots, 'static-live-375.png') });
   ok(errors.length === 0, `${tag}: no page errors ${errors.join(' | ')}`);
   await context.close();
-}
+}, 'live-widths');
 await block(async () => {
   const { context, page, asks } = await open({});
   await page.goto('http://pz.test/demo-operator');
@@ -319,7 +332,8 @@ await block(async () => {
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2'), 'seq: sequence 10 applied');
-  const cards10 = await page.locator('.sv-strip .sv-card').count();
+  await openAtBat(page);
+  const cards10 = await page.locator('.sv-pitch-row').count();
   step = 1;
   ok(await waitPitch(page, '849843:12:2'), 'seq: higher sequence 11 applied');
   step = 2; served = [];
@@ -348,13 +362,14 @@ await block(async () => {
   ok(await kind(page) === 'ok', 'late/host: 29 s behind (threshold 30 s, provisional) → still calm');
   hostNow = t0 + 95000;
   ok(await waitKind(page, 'publish-late'), 'late/host: 95 s without a publish → the line turns to 갱신 지연');
-  ok(/갱신 지연/.test(await page.locator('.sv-notice.line .sv-line-text').innerText()), 'late/host: the line says 갱신 지연 in words');
-  ok(await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'host', 'late/host: judged on the hosting clock, not the device clock');
+  ok(/갱신 지연/.test(await statusWords(page)), 'late/host: the line says 갱신 지연 in words');
+  ok(await kind(page) === 'publish-late', 'late/host: host clock input triggers the warning (clock provenance checked in core)');
   ok(await page.locator('.sv-hd-status').innerText().then((t) => /갱신 지연/.test(t)), 'late/host: the header status marker says 갱신 지연');
-  ok(/마지막으로 받은 내용/.test(await page.locator('.sv-state-live').innerText()) || /마지막으로 받은/.test(await page.locator('.sv-state').innerText()), 'late/host: says it is the last received state');
-  ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-state.held').count() === 1, 'late/host: the last candidates stay, dimmed as held');
-  ok(await page.locator('.sv-strip .sv-card').count() > 0 && /컵스|샌디에이고/.test(await page.locator('.sv-head-main').innerText()), 'late/host: score and pitch cards stay on screen');
-  ok(await page.locator('.sv-live.on').count() === 0, 'late/host: no LIVE dot while late');
+  ok(/마지막으로 받은 내용/.test(await page.locator('.sv-state-live').textContent()) || /마지막으로 받은/.test(await page.locator('.sv-state').innerText()), 'late/host: says it is the last received state');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 3 && await page.locator('.sv-state.held').count() === 1, 'late/host: the last candidates stay, dimmed as held');
+  await openAtBat(page);
+  ok(await page.locator('.sv-pitch-row').count() > 0 && /CHC|SD/.test(await page.locator('.sv-hd-score').innerText()), 'late/host: score and pitch cards stay on screen');
+  ok(await page.locator('.sv-hd-status[data-tone="live"]').count() === 0, 'late/host: no LIVE dot while late');
   ok(await keyOnFirstScreen(page), 'late/host: key info on the first screen at 375x553 while late');
   if (shots) await page.screenshot({ path: path.join(shots, 'static-late-375.png') });
   seq = 21; at = t0 + 94000;
@@ -363,7 +378,7 @@ await block(async () => {
   ok(clean(asks) && bare(asks), 'late/host: no /api/');
   ok(errors.length === 0, `late/host: no page errors ${errors.join(' | ')}`);
   await context.close();
-});
+}, 'late-host');
 // (b) publisher clock only: health.json moved on, this game file did not
 await block(async () => {
   const t0 = FILE_AT; let healthAt = t0, healthSeq = 30, fileAt = t0, fileSeq = 30;
@@ -374,7 +389,7 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'late/publisher: calm at the start');
   healthAt = t0 + 80000; healthSeq = 60;
-  ok(await waitKind(page, 'publish-late') && await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'publisher', 'late/publisher: game file 80 s behind health.json → 갱신 지연 from two publisher times');
+  ok(await waitKind(page, 'publish-late'), 'late/publisher: game file 80 s behind health.json → 갱신 지연 from two publisher times');
   fileAt = t0 + 80000; fileSeq = 60;
   ok(await waitKind(page, 'ok'), 'late/publisher: clears when the game file is published again');
   ok(errors.length === 0, `late/publisher: no page errors ${errors.join(' | ')}`);
@@ -392,7 +407,7 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'late/elapsed: calm without health.json and without a Date header');
   behind = 120000;
-  ok(await waitKind(page, 'publish-late') && await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'elapsed', 'late/elapsed: judged from the newest publish time seen + elapsed time (data-publish-clock=elapsed), never the device clock');
+  ok(await waitKind(page, 'publish-late'), 'late/elapsed: judged from the newest publish time seen + elapsed time (clock provenance checked in core), never the device clock');
   behind = 2000;
   ok(await waitKind(page, 'ok'), 'late/elapsed: clears');
   ok(errors.length === 0, `late/elapsed: no page errors ${errors.join(' | ')}`);
@@ -442,11 +457,11 @@ await block(async () => {
     if (file === `game/${LIVE}.json`) return { json: top(pre, 2, t0), date: healthAt + 1000 };
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
-  await page.locator('.sv-chip').waitFor();
-  ok(await page.locator('.sv-chip').innerText() === '경기 전' && await kind(page) === 'ok', 'pregame: calm 경기 전');
+  await page.locator('.sv-hd-status').waitFor();
+  ok(await page.locator('.sv-hd-status').innerText() === '경기 전' && await kind(page) === 'ok', 'pregame: calm 경기 전');
   healthAt = t0 + 4 * 3600000;   // hours past the scheduled start (02:00Z): a rain delay; the publisher is alive, this file just has nothing new
   await sleep(23000);
-  ok(await kind(page) === 'ok' && await page.locator('.sv-chip').innerText() === '경기 전' && !(await page.evaluate(() => window.__kinds)).includes('publish-late'), 'pregame: start time long past, health.json fresh, own file old → still calm (a delay is not a late publish)');
+  ok(await kind(page) === 'ok' && await page.locator('.sv-hd-status').innerText() === '경기 전' && !(await page.evaluate(() => window.__kinds)).includes('publish-late'), 'pregame: start time long past, health.json fresh, own file old → still calm (a delay is not a late publish)');
   ok(errors.length === 0, `pregame: no page errors ${errors.join(' | ')}`);
   await context.close();
 });
@@ -467,12 +482,13 @@ await block(async () => {
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'lost: loaded');
-  const cards = await page.locator('.sv-strip .sv-card').count();
-  const head = await page.locator('.sv-head-main').innerText();
+  await openAtBat(page);
+  const cards = await page.locator('.sv-pitch-row').count();
+  const head = await page.locator('.sv-hd-score').innerText();
   const kept = async (tag) => {
-    ok(/연결 끊김/.test(await page.locator('.sv-notice.line').innerText()) && /연결 끊김/.test(await page.locator('.sv-chip').innerText()), `${tag}: line and chip say 연결 끊김`);
-    ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-state.held').count() === 1, `${tag}: last candidates kept, dimmed`);
-    ok(await page.locator('.sv-strip .sv-card').count() === cards && await page.locator('.sv-head-main').innerText() === head, `${tag}: pitch cards and score kept (screen not blanked)`);
+    ok(/연결 끊김/.test(await statusWords(page)) && /연결 끊김/.test(await page.locator('.sv-hd-status').innerText()), `${tag}: line and chip say 연결 끊김`);
+    ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 3 && await page.locator('.sv-state.held').count() === 1, `${tag}: last candidates kept, dimmed`);
+    ok(await page.locator('.sv-pitch-row').count() === cards && await page.locator('.sv-hd-score').innerText() === head, `${tag}: pitch cards and score kept (screen not blanked)`);
     ok(await keyOnFirstScreen(page), `${tag}: key info on the first screen at 375x553`);
   };
   for (const m of ['404', 'down', 'html']) {
@@ -523,17 +539,18 @@ await block(async () => {
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2'), 'closed: loaded');
-  ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0, 'closed: recommendation_shown=false → no candidate rows and no target marks');
-  ok(/확인 중$/.test(await page.locator('.sv-chip').innerText()), 'closed: the slot says 확인 중');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0, 'closed: recommendation_shown=false → no candidate rows and no target marks');
+  ok(/확인 중$/.test(await page.locator('.sv-hd-status').innerText()), 'closed: the slot says 확인 중');
   ok(await keyOnFirstScreen(page), 'closed: key info on the first screen at 375x553');
-  const un = page.locator('.sv-strip .sv-card.unconfirmed');
+  await openAtBat(page);
+  const un = page.locator('.sv-pitch-row.unconfirmed');
   ok(await un.count() === 1 && /확인 중/.test(await un.innerText()), 'closed: the unconfirmed pitch card says 확인 중, no pitch type or speed');
   // Since the 2026-10-13 redesign a past pitch of a live game opens in a detail sheet and the live stage behind it stays; the
   // fail-closed rule is checked on both: neither shows a recommendation, a target mark, a pitch location, a type or a speed.
   await un.click();
   const sheet = page.getByRole('dialog'); await sheet.waitFor();
   const sheetText = await sheet.innerText();
-  ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0 && await page.locator('.sv-zone .sv-actual').count() === 0
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0 && await page.locator('.sv-zone .sv-actual').count() === 0
     && await sheet.locator('.sv-table, .sv-detail-zone, .sv-rec, .sv-actual').count() === 0 && !/km\/h|mph|정책 선택 비중/.test(sheetText),
     'closed: selecting it shows no recommendation and no pitch location (detail sheet and the stage behind it)');
   ok(/이 공을 다시 확인하고 있어요/.test(sheetText), 'closed: its detail says it is being checked (확인 중)');
@@ -543,11 +560,11 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   await page.locator('.sv-state').waitFor();
   await sleep(300);
-  ok(await page.locator('.sv-rec-row').count() === 0 && /확인 중$/.test(await page.locator('.sv-chip').innerText()), 'closed: a live file without display_state shows no recommendation (확인 중)');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && /확인 중$/.test(await page.locator('.sv-hd-status').innerText()), 'closed: a live file without display_state shows no recommendation (확인 중)');
   ok(clean(asks) && bare(asks), 'closed: no /api/');
   ok(errors.length === 0, `closed: no page errors ${errors.join(' | ')}`);
   await context.close();
-});
+}, 'fail-closed');
 
 // ---------- 7. the two older placements of the publish extras are still read ----------
 await block(async () => {
@@ -617,7 +634,7 @@ await block(async () => {
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'stall: loaded from the throwaway server');
   mode = 'stall';
   ok(await waitKind(page, 'client', 25000), 'stall: a body that stops after the headers ends in the disconnected alert (timeout covers the body)');
-  ok(await page.locator('.sv-rec-row').count() === 3, 'stall: the last state stays on screen');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 3, 'stall: the last state stays on screen');
   mode = 'ok';
   ok(await waitKind(page, 'ok', 25000), 'stall: later polls are not blocked; the screen recovers by itself');
   ok(stalled >= 1, `stall: (fixture) ${stalled} stalled answers were served`);
@@ -686,7 +703,7 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'cached: calm at first (1 s behind by the hosting clock)');
   ok(await waitKind(page, 'publish-late', 16000), 'cached: the same cached answer repeating → elapsed time accumulates and 갱신 지연 appears');
-  ok(['host', 'elapsed'].includes(await page.locator('.sv-notice.line').getAttribute('data-publish-clock')), 'cached: judged without the device clock');
+  ok(await kind(page) === 'publish-late', 'cached: stale repeated server answers warn (clock provenance checked in core)');
   fresh = true;
   ok(await waitKind(page, 'ok'), 'cached: clears when a new publish arrives');
   ok(errors.length === 0, `cached: no page errors ${errors.join(' | ')}`);
@@ -702,7 +719,7 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'mixed headers: calm');
   hostNow = t0 + 95000;
-  ok(await waitKind(page, 'publish-late') && await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'host', 'mixed headers: any readable server time wins over the device clock (which is an hour slow here)');
+  ok(await waitKind(page, 'publish-late'), 'mixed headers: any readable server time wins over the device clock (which is an hour slow here)');
   ok(errors.length === 0, `mixed headers: no page errors ${errors.join(' | ')}`);
   await context.close();
 });
@@ -742,7 +759,7 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'skew stop: calm');
   stop = true;
-  ok(await waitKind(page, 'publish-late', 16000) && await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'elapsed', 'skew stop: publishing stops → 갱신 지연 from time elapsed since the newest publish was seen, device clock (10 min slow) not used');
+  ok(await waitKind(page, 'publish-late', 16000), 'skew stop: publishing stops → 갱신 지연 from time elapsed since the newest publish was seen, device clock (10 min slow) not used');
   stop = false;
   ok(await waitKind(page, 'ok'), 'skew stop: clears');
   await context.close();
@@ -773,7 +790,7 @@ await block(async () => {
   await page.evaluate(() => window.dispatchEvent(new Event('online'))); await sleep(800);
   ok(counts.get(`game/${LIVE}.json`) === n, 'hidden: an online event does not start a request while hidden');
   mode = 'ok'; await setHidden(page, false);
-  ok(await page.locator('.sv-rec-row').first().waitFor({ timeout: 6000 }).then(() => true, () => false), 'hidden: visible again → asked at once and the game appears');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').first().waitFor({ timeout: 6000 }).then(() => true, () => false), 'hidden: visible again → asked at once and the game appears');
   await context.close();
 });
 // ---------- R9. health.json requests never overlap; a late failure of an older one cannot undo a newer answer ----------
@@ -810,8 +827,8 @@ await block(async () => {
     if (file === `game/${LIVE}.json`) return { json: top(pre(start), 700, t0), date: t0 + 3600000 };
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
-  await page.locator('.sv-chip').waitFor(); await sleep(11500);
-  ok(counts.get(`game/${LIVE}.json`) >= 2 && await kind(page) === 'ok' && await page.locator('.sv-chip').innerText() === '경기 전', 'idle day: a pregame file hours before the start, publisher idle → polled, but no 갱신 지연');
+  await page.locator('.sv-hd-status').waitFor(); await sleep(11500);
+  ok(counts.get(`game/${LIVE}.json`) >= 2 && await kind(page) === 'ok' && await page.locator('.sv-hd-status').innerText() === '경기 전', 'idle day: a pregame file hours before the start, publisher idle → polled, but no 갱신 지연');
   start = t0 + 1800000;   // the start time has passed by the hosting clock and still nothing new
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitKind(page, 'publish-late', 14000), 'idle day: past the scheduled start with no publish → 갱신 지연');
@@ -847,9 +864,10 @@ await block(async () => {
   ok(await waitPitch(page, '849843:11:2'), 'race: loaded');
   mode = 'html';
   ok(await waitKind(page, 'client'), 'non-JSON: an HTML page answered with 200 for the game file → disconnected alert');
-  ok(await page.locator('.sv-rec-row').count() === 3, 'non-JSON: the last state stays');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 3, 'non-JSON: the last state stays');
+  await page.locator('.sv-hd-status').click();
   mode = 'race'; await sleep(2300);                       // a poll is now waiting for the slow sequence 901
-  ok(await page.locator('.sv-notice.line .sv-link-btn').isDisabled(), 'race: one game request at a time — manual refresh is disabled while an answer is on its way, so two answers cannot cross');
+  ok(await page.locator('.sv-pop-retry').isDisabled(), 'race: one game request at a time — manual refresh is disabled while an answer is on its way, so two answers cannot cross');
   ok(await waitPitch(page, '849843:12:2', 12000), 'race: the slow answer (901) is applied when it lands, then the next one (902)');
   ok(errors.length === 0, `race: no page errors ${errors.join(' | ')}`);
   await context.close();
@@ -942,7 +960,7 @@ await block(async () => {
   await page.evaluate(() => { window.__kinds = []; window.__chips = []; });
   slow = 1500;                                                    // the first answers after coming back take a moment
   await setHidden(page, false); await sleep(600);
-  ok(await kind(page) === 'checking' && /확인 중/.test(await page.locator('.sv-notice.line').innerText()), 'resume: back in view → the line says 확인 중 while the first read is on its way');
+  ok(await kind(page) === 'checking' && /확인 중/.test(await statusWords(page)), 'resume: back in view → the line says 확인 중 while the first read is on its way');
   slow = 0; await sleep(4000);
   const kinds = await page.evaluate(() => window.__kinds), chips = await page.evaluate(() => window.__chips);
   ok(!kinds.includes('publish-late') && !chips.some((c) => /갱신 지연/.test(c)), `resume: 갱신 지연 never shown from the old data (line: ${kinds.join(',')}; chip: ${chips.join(',')})`);
@@ -976,7 +994,7 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'in play: calm');
   healthAt = t0 + 80000;
-  ok(await waitKind(page, 'publish-late') && await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'publisher', 'in play: health.json fresh, this game file 80 s behind, status in progress → 갱신 지연');
+  ok(await waitKind(page, 'publish-late'), 'in play: health.json fresh, this game file 80 s behind, status in progress → 갱신 지연');
   await context.close();
 }, 'in-play');
 
@@ -1037,7 +1055,7 @@ await block(async () => {
   ok(await page.locator('.sv-list .sv-card').first().waitFor({ timeout: 6000 }).then(() => true, () => false) && await page.locator('.sv-list .sv-card').count() === 2, 'bad start: the list still shows both games');
   ok((await page.locator('.sv-list').innerText()).split('시간 미정').length === 3, 'bad start: each unreadable start time reads 시간 미정');
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
-  ok(await waitPitch(page, '849843:11:2', 6000) && /시간 미정/.test(await page.locator('.sv-head-main').innerText()), 'bad start: the game screen is drawn, start time 시간 미정');
+  ok(await waitPitch(page, '849843:11:2', 6000) && /시간 미정/.test(await page.locator('.sv-hd-score').getAttribute('aria-label')), 'bad start: the game screen is drawn, start time 시간 미정');
   ok(errors.length === 0, `bad start: no page errors ${errors.join(' | ')}`);
   which = 'broken';
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
@@ -1075,7 +1093,7 @@ await block(async () => {
   } });
   let mid = false;
   await page.goto('http://pz.test/pub/?game=558');
-  ok(await page.locator('.sv-unavailable').waitFor({ timeout: 6000 }).then(() => true, () => false) && await page.locator('.sv-rec-row').count() === 0, 'wrong game: a file for another game is not drawn on first load (지금 볼 수 없어요)');
+  ok(await page.locator('.sv-unavailable').waitFor({ timeout: 6000 }).then(() => true, () => false) && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0, 'wrong game: a file for another game is not drawn on first load (지금 볼 수 없어요)');
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2'), 'wrong game: the right file loads');
   mid = true; await sleep(5000);
@@ -1116,7 +1134,7 @@ await block(async () => {
     ok(await page.locator('.sv-state').getAttribute('data-pitch') === '849843:11:2', `sequence type: a file whose sequence is a ${m} is not applied (it cannot be ordered)`);
   }
   await page.goto('http://pz.test/pub/?game=559'); await sleep(2500);
-  ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone').count() === 0, 'sequence type: on first load such a file is not drawn either');
+  ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && await page.locator('.sv-zone').count() === 0, 'sequence type: on first load such a file is not drawn either');
   await context.close();
 }, 'sequence-type');
 // ---------- T5. ?game= is decimal digits only ----------
@@ -1149,20 +1167,21 @@ await block(async () => {
   // behind it keeps following the latest (LIVE stays on), so the file keeps being read at the live cadence. What this scenario
   // protects is unchanged: the open past pitch is redrawn from every new file, blanked when the server turns it back to 확인 중,
   // and the view stays on that pitch (no jump to another one).
-  const cards = page.locator('.sv-strip .sv-card:not(.pending)');
-  await cards.last().click();                                       // the viewer opens the last thrown pitch
+  await openAtBat(page);
+  const cards = page.locator('.sv-pitch-row');
+  await cards.first().click();                                       // the viewer opens the last thrown pitch
   const sheet = page.getByRole('dialog'); await sheet.waitFor();
   const label = fx.live.pitches.at(-1).actual.pitch_label, title = await sheet.locator('h2').innerText();
   ok(await sheet.locator('.sv-detail-zone .sv-actual').count() === 1 && (await sheet.innerText()).includes(label) && /km\/h|mph/.test(await sheet.innerText()),
     `pinned: the past pitch shows its type and location (${label}, in its detail sheet)`);
-  ok(await page.locator('.sv-live.on').count() === 1 && await page.locator('.sv-pitch-summary .sv-rec-row').count() === 3, 'pinned: the live stage behind the sheet keeps the latest recommendation and LIVE');
+  ok(await page.locator('.sv-hd-status[data-tone="live"]').count() === 1 && await page.locator('.sv-pitch-summary .sv-reclist:not(.empty) .sv-rec-cell').count() === 3, 'pinned: the live stage behind the sheet keeps the latest recommendation and LIVE');
   const n0 = counts.get(`game/${LIVE}.json`); await sleep(4000);
   const pinnedReads = counts.get(`game/${LIVE}.json`) - n0;
   ok(pinnedReads >= 2 && pinnedReads <= 4, `pinned: the game file is still read while a past pitch is open (${pinnedReads} reads in 4 s; live poll 2 s)`);
   mode = 'unsure';
   ok(await sheet.getByText('이 공을 다시 확인하고 있어요', { exact: false }).waitFor({ timeout: 6000 }).then(() => true, () => false), 'pinned: the server turns that pitch back to 확인 중 → the open view says 확인 중');
   ok(await sheet.locator('.sv-detail-zone, .sv-actual, .sv-table, .sv-rec').count() === 0 && !(await sheet.innerText()).includes(label) && !/km\/h|mph/.test(await sheet.innerText())
-    && await page.locator('.sv-strip .sv-card.unconfirmed').count() === 1 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0, 'pinned: its location, type and paired recommendation are gone (fail closed, sheet and stage)');
+    && await page.locator('.sv-pitch-row.unconfirmed').count() === 1 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0, 'pinned: its location, type and paired recommendation are gone (fail closed, sheet and stage)');
   ok(await sheet.count() === 1 && await sheet.locator('h2').innerText() === title, `pinned: the view stays on that pitch (no jump to another one: ${title})`);
   mode = 'final'; await sleep(4000);
   const n1 = counts.get(`game/${LIVE}.json`); await sleep(5000);
@@ -1178,7 +1197,8 @@ await block(async () => {
   const { context, page, errors } = await open({ width: 375, height: 553, answer: (file) => file === 'game/560.json' ? { json: top(b, 5, FILE_AT, true) } : undefined });
   await page.goto('http://pz.test/pub/?game=560');
   await page.locator('.sv-zone').first().waitFor();
-  const before = { inning: await page.locator('.sv-inning').innerText(), cards: await page.locator('.sv-strip .sv-card').count(), duel: await page.locator('.sv-duel').innerText() };
+  await openAtBat(page);
+  const before = { inning: await page.locator('.sv-inning').innerText(), cards: await page.locator('.sv-pitch-row').count(), duel: await page.locator('.sv-actual-line').innerText() };
   await page.locator('.sv-inning').click(); await page.locator('.sv-sheet select').selectOption(`${model.inning}:${model.half}`);
   await page.locator('.sv-pa-item', { hasText: 'Zero Pitch' }).click();
   const sheet = page.getByRole('dialog');
@@ -1186,7 +1206,7 @@ await block(async () => {
   ok(/Zero Pitch/.test(await sheet.innerText()) && /고의4구/.test(await sheet.innerText()), "no-pitch PA: that plate appearance's own batter and result");
   ok(!/undefined|null|NaN/.test(await sheet.innerText()), 'no-pitch PA: no leaked value');
   await sheet.getByRole('button', { name: '닫기' }).click();
-  ok(await page.locator('.sv-inning').innerText() === before.inning && await page.locator('.sv-strip .sv-card').count() === before.cards && await page.locator('.sv-duel').innerText() === before.duel, 'no-pitch PA: the screen behind does not jump to another plate appearance');
+  ok(await page.locator('.sv-inning').innerText() === before.inning && await page.locator('.sv-pitch-row').count() === before.cards && await page.locator('.sv-actual-line').innerText() === before.duel, 'no-pitch PA: the screen behind does not jump to another plate appearance');
   ok(await keyOnFirstScreen(page) && errors.length === 0, `no-pitch PA: key info on the first screen at 375x553, no page errors ${errors.join(' | ')}`);
   await context.close();
 }, 'no-pitch-pa');
@@ -1279,14 +1299,14 @@ await block(async () => {
   state.fileSequence = 3; await advance(page, 10000);
   ok(count(h, `game/${LIVE}.json`) === 2, 'checks: body already ahead means no redundant fetch');
   state.fileSequence = 4; state.bodySequence = 2; await advance(page, 10000);
-  ok(await kind(page) === 'checking' && await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
+  ok(await kind(page) === 'checking' && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
     'checks: announced but backwards body → 확인 중, no old recommendation or actual marker');
   ok(await page.locator('.sv-state').getAttribute('data-pitch') === '849843:12:2', 'checks: backwards body cannot replace applied state');
   state.fileMode = 'abort'; const n = count(h, `game/${LIVE}.json`);
   await advance(page, 20000);
   ok(await kind(page) === 'checking' && count(h, `game/${LIVE}.json`) === n + 2, 'checks: failed target retried every P and stays neutral below T');
   await advance(page, 15000);
-  ok(await kind(page) === 'publish-late' && /갱신 지연/.test(await page.locator('.sv-chip').innerText()) && await page.locator('.sv-rec-row').count() === 0,
+  ok(await kind(page) === 'publish-late' && /갱신 지연/.test(await page.locator('.sv-hd-status').innerText()) && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0,
     'checks: pending longer than T → 갱신 지연, old recommendation remains hidden');
   state.fileMode = 'ok'; state.bodySequence = 4; state.key = '849843:13:1'; await advance(page, 10000);
   ok(await waitPitch(page, state.key) && await kind(page) === 'ok', 'checks: same target succeeds later and restores current content');
@@ -1297,17 +1317,17 @@ await block(async () => {
   state.healthAt = null; await advance(page, 10000);
   ok(await kind(page) === 'ok', 'checks: fresh health and check recover');
   const f = count(h, `game/${LIVE}.json`); state.feedOk = false; await advance(page, 10000);
-  ok(await kind(page) === 'feed' && /연결 끊김/.test(await page.locator('.sv-chip').innerText()), 'checks: feed_ok:false immediately uses disconnected copy');
+  ok(await kind(page) === 'client' && /연결 끊김/.test(await page.locator('.sv-hd-status').innerText()), 'checks: feed_ok:false immediately uses disconnected copy');
   await advance(page, 10000);
-  ok(await kind(page) === 'feed' && count(h, `game/${LIVE}.json`) === f, 'checks: fresh health does not clear feed failure or fetch an unchanged file');
+  ok(await kind(page) === 'client' && count(h, `game/${LIVE}.json`) === f, 'checks: fresh health does not clear feed failure or fetch an unchanged file');
   state.feedOk = true; state.failures = [LIVE]; await advance(page, 10000);
-  ok(await kind(page) === 'feed', 'checks: feed_failing_games overrides feed_ok:true');
+  ok(await kind(page) === 'client', 'checks: feed_failing_games overrides feed_ok:true');
   state.failures = [{ game_pk: LIVE, status: 503 }]; await advance(page, 10000);
-  ok(await kind(page) === 'feed', 'checks: object entries in feed_failing_games also fail this game');
+  ok(await kind(page) === 'client', 'checks: object entries in feed_failing_games also fail this game');
   state.failures = [LIVE + 1]; await advance(page, 10000);
   ok(await kind(page) === 'ok', 'checks: another game failure does not affect this game');
   state.fileSequence = null; await advance(page, 10000);
-  ok(await page.locator('.sv-unavailable').count() === 1 && await page.locator('.sv-rec-row').count() === 0 && count(h, `game/${LIVE}.json`) === f,
+  ok(await page.locator('.sv-unavailable').count() === 1 && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && count(h, `game/${LIVE}.json`) === f,
     'checks: withdrawal clears the game without fetching its old file');
   state.fileSequence = 5; state.bodySequence = 5; await advance(page, 10000);
   ok(await waitPitch(page, state.key), 'checks: withdrawn game returns automatically when republished');
@@ -1318,19 +1338,20 @@ await block(async () => {
 await block(async () => {
   const h = await protocolScreen({ final: true }); const { page, state } = h;
   state.healthAt = FILE_AT; state.checkedAt = FILE_AT; await advance(page, 120000);
-  ok(await page.locator('.sv-notice').count() === 0 && count(h, `game/${LIVE}.json`) === 1, 'final checks: no time warnings or unchanged-body downloads');
-  const selected = page.locator('.sv-strip .sv-card[aria-pressed="true"]');
+  ok(await page.locator('.sv-hd-status').count() === 0 && count(h, `game/${LIVE}.json`) === 1, 'final checks: no time warnings or unchanged-body downloads');
+  await openAtBat(page);
+  const selected = page.locator('.sv-pitch-row[aria-pressed="true"]');
   const selectedLabel = await selected.getAttribute('aria-label');
-  const score = page.locator('.sv-head-score strong').first();
-  ok(await score.innerText() === '0', 'final checks: the default first pitch shows its historical score');
+  const score = page.locator('.sv-hd-score strong').first();
+  ok(await score.innerText() === '1', 'final checks: the header shows the final score while the first pitch stays selected');
   state.fileSequence = 2; state.bodySequence = 2; await advance(page, 10000);
-  ok(count(h, `game/${LIVE}.json`) === 2 && await score.innerText() === '0', 'final checks: a changed final total does not overwrite the selected pitch score');
-  // Correct the selected pitch itself, not only the final total: the screen deliberately shows that pitch as of its time.
+  ok(count(h, `game/${LIVE}.json`) === 2 && await score.innerText() === '2' && await selected.getAttribute('aria-label') === selectedLabel, 'final checks: the final total updates without changing the selected pitch');
+  // UI-1026 keeps the final total in the header even while the selected pitch's historical context changes.
   state.fileSequence = 3; state.bodySequence = 3; state.pitchScore = 2; await advance(page, 10000);
-  ok(count(h, `game/${LIVE}.json`) === 3 && await score.innerText() === '2' && await selected.getAttribute('aria-label') === selectedLabel,
-    'final checks: higher file_sequence applies late score correction without changing the selected pitch');
+  ok(count(h, `game/${LIVE}.json`) === 3 && await score.innerText() === '3' && await selected.getAttribute('aria-label') === selectedLabel,
+    'final checks: higher file_sequence keeps final header and selected pitch independently');
   state.feedOk = false; await advance(page, 10000);
-  ok(await kind(page) === 'feed', 'final checks: explicit failure remains visible');
+  ok(await kind(page) === 'client', 'final checks: explicit failure remains visible');
   state.fileSequence = null; await advance(page, 10000);
   ok(await page.locator('.sv-unavailable').count() === 1, 'final checks: withdrawal still clears the screen');
   await h.context.close();
@@ -1341,7 +1362,7 @@ await block(async () => {
   for (const bad of [null, {}, [], { checked_at: 'bad', sequence_checked: 10, file_sequence: 1, feed_ok: true },
     { checked_at: iso(FILE_AT), sequence_checked: 10, file_sequence: 1, feed_ok: null }]) {
     state.malformed = bad; const n = count(h, `game/${LIVE}.json`); await advance(page, 10000);
-    ok(count(h, `game/${LIVE}.json`) === n + 1 && await kind(page) !== 'ok' && await page.locator('.sv-rec-row').count() === 0,
+    ok(count(h, `game/${LIVE}.json`) === n + 1 && await kind(page) !== 'ok' && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0,
       `malformed check: full read, never healthy (${JSON.stringify(bad)})`);
   }
   state.checks = false; await advance(page, 10000);
@@ -1351,12 +1372,13 @@ await block(async () => {
 
 await block(async () => {
   const h = await protocolScreen(); const { page } = h;
-  await page.locator('.sv-strip .sv-card:not(.pending)').last().click();
+  await openAtBat(page);
+  await page.locator('.sv-pitch-row').first().click();
   const g = count(h, `game/${LIVE}.json`), initial = count(h, 'health.json');
   await advance(page, 10000);
   ok(count(h, 'health.json') === initial + 1 && count(h, `game/${LIVE}.json`) === g, 'pinned checks: health uses P while the file stays unchanged');
   h.state.fileSequence = 2; h.state.fileMode = '404'; await advance(page, 10000);
-  ok(await kind(page) === 'checking' && await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
+  ok(await kind(page) === 'checking' && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
     'pinned checks: a pending correction hides paired recommendation and actual pitch');
   await setHidden(page, true); const hidden = dataAsks(h.asks).length; await advance(page, 20000);
   ok(dataAsks(h.asks).length === hidden, 'pinned checks: hidden tab sends nothing');
@@ -1389,7 +1411,7 @@ await block(async () => {
   state.healthAt = null; state.checkedAt = null; await advance(page, 10000);
   ok(await kind(page) === 'ok', 'pregame checks: fresh verification clears warning without rewriting the old file');
   state.pregame = false; state.fileSequence = 3; state.bodySequence = 3; await advance(page, 10000);
-  ok(await page.locator('.sv-live').innerText() === 'LIVE', 'pregame checks: transition to live is fetched');
+  ok(await page.locator('.sv-hd-status').innerText() === '라이브', 'pregame checks: transition to live is fetched');
   state.checkedAt = FILE_AT; await advance(page, 10000);
   ok(await kind(page) === 'publish-late', 'live checks: in-play time rule applies after transition');
   await h.context.close();
