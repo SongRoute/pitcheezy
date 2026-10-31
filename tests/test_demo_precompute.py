@@ -187,6 +187,52 @@ def timed_final():
     return final, base.timestamp()
 
 
+def test_live_replay_files_have_orderable_monotonic_provider_stamps(tmp_path):
+    import copy
+    import gzip
+    import json
+    from datetime import datetime
+    from types import SimpleNamespace
+    from observer_app import display_state
+    from observer_app.live_feed import ReplayTransport
+    from observer_app.live_store import LiveSnapshotStore
+
+    final, base = timed_final()
+    original = copy.deepcopy(final)
+    (tmp_path / 'feeds').mkdir()
+    with gzip.open(tmp_path / 'feeds/1_final.json.gz', 'wt') as handle:
+        json.dump(final, handle)
+    result = demo.write_replay(1, tmp_path / 'replay', root=tmp_path)
+    assert result['snapshots'] == 6
+    transport = ReplayTransport(result['dir'])
+    store = LiveSnapshotStore(tmp_path / 'store.sqlite3')
+    source = SimpleNamespace(store=store, source='replay')
+    stamps = []
+    for n in range(result['snapshots']):
+        feed = transport('https://example.invalid/game/1/feed/live', 10)
+        stamp = feed['metaData']['timeStamp']
+        parsed = datetime.strptime(stamp, '%Y%m%d_%H%M%S')
+        assert parsed.strftime('%Y%m%d_%H%M%S') == stamp
+        assert not stamps or stamps[-1] < stamp
+        stamps.append(stamp)
+        _, entry = store.ingest(1, feed, fetched=base + n * 20, source='replay')
+        assert entry is not None and entry['provider_order'] == 'ordered'
+        facts = display_state.feed_facts(source, 1, entry, display_state.config(), now=base + n * 20)
+        gated = display_state.gate('ready', 'Live', facts, None, feed)
+        assert gated is None
+        assert display_state.decide(gated=gated, view=None, facts=facts)['reason'] != 'unorderable_provider_stamp'
+    partial = list(demo.replay_snapshots(final, start=2, count=2))
+    assert [feed['metaData']['timeStamp'] for _, feed in partial] == stamps[2:4]
+    # The other caller uses the same ordering, including its terminal Final snapshot.
+    now = [5000.0]
+    timed = demo.TimedReplay(final, t0=now[0], wall=lambda: now[0])
+    assert timed('/feed/live', 10)['metaData']['timeStamp'] == stamps[0]
+    now[0] += 1000
+    done = timed('/feed/live', 10)
+    assert datetime.strptime(done['metaData']['timeStamp'], '%Y%m%d_%H%M%S') > parsed
+    assert final == original
+
+
 def test_timed_replay_serves_each_pitch_at_its_recorded_time():
     final, base = timed_final()
     now = [5000.0]

@@ -19,7 +19,7 @@ feature, pin or model. Outputs go only to a NEW directory under DEMO-WS-2026.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import gzip
 import hashlib
 import re
@@ -981,6 +981,8 @@ def replay_snapshots(final, *, start=0, count=None):
     # The final matchup names the LAST pitcher of a PA; before a mid-PA change the feed showed the earlier one.
     pitchers = {(int(r.at_bat_number), int(r.pitch_number)): (int(r.pitcher), r.p_throws)
                 for r in statcast_rows(final).itertuples()}
+    # Synthetic provider order, not an observed event/receipt time. Keep absolute n for partial replays.
+    stamp_origin = datetime.fromisoformat(final['gameData']['datetime']['officialDate'])
     numbered = lambda events: [e for e in events if e.get('isPitch') or (e.get('type') == 'no_pitch' and (e['details'].get('call') or {}).get('code'))]
     for n, (p, cut) in enumerate(cuts[start:start + count if count else None], start):
         feed = copy.deepcopy(final)
@@ -1008,7 +1010,7 @@ def replay_snapshots(final, *, start=0, count=None):
                                          'outs': int(row['outs_when_up']), 'offense': offense,
                                          'defense': {'pitcher': {'id': int(row['pitcher'])}},
                                          'teams': {'home': {'runs': int(row['home_score'])}, 'away': {'runs': int(row['away_score'])}}}
-        feed.setdefault('metaData', {})['timeStamp'] = f'rehearsal_{n:04d}'
+        feed.setdefault('metaData', {})['timeStamp'] = (stamp_origin + timedelta(seconds=n)).strftime('%Y%m%d_%H%M%S')
         yield n, feed
 
 
@@ -1087,7 +1089,8 @@ class TimedReplay:
             return {'dates': []}
         index = max(self.start, bisect.bisect_right(self.ready, self._virtual()))
         if index >= len(self.ends):
-            return {**self.final, 'metaData': {**self.final.get('metaData', {}), 'timeStamp': 'rehearsal_final',
+            stamp = datetime.fromisoformat(self.final['gameData']['datetime']['officialDate']) + timedelta(seconds=len(self.ends))
+            return {**self.final, 'metaData': {**self.final.get('metaData', {}), 'timeStamp': stamp.strftime('%Y%m%d_%H%M%S'),
                                                 'eventWall': self._to_wall(self.ends[-1])}}
         if self._current is None or self._current[0] != index:
             if self._current is None or self._current[0] + 1 != index:  # a clock that started mid-game jumps straight there
