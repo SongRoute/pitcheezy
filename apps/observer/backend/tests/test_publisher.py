@@ -580,6 +580,30 @@ def test_schema_inference_and_validation_basics():
     assert publish_schema.infer([]) == {}
 
 
+def test_schema_inference_and_widening_share_type_normalization():
+    for samples, added, expected in (
+        ([1, 2], ('integer',), 'integer'),
+        ([1, 2.5], ('number',), 'number'),
+        ([2.5, 1], ('integer',), 'number'),
+        ([False, 1], ('integer',), ['integer', 'boolean']),
+        ([None, 'x'], ('string',), ['string', 'null']),
+        ([None, False, 1, 2.5, 'x', [], {}],
+         ('boolean', 'integer', 'number', 'string', 'array', 'object'),
+         ['object', 'array', 'string', 'number', 'boolean', 'null']),
+    ):
+        assert publish_schema.infer(iter(samples))['type'] == expected
+        assert publish_schema.infer(reversed(samples + samples))['type'] == expected
+        widened = publish_schema.infer(samples[:1])
+        publish_schema.widen(widened, (), iter(added))
+        assert widened['type'] == expected
+        publish_schema.widen(widened, (), added)  # repeated widening is idempotent
+        assert widened['type'] == expected
+    assert publish_schema.infer([]) == {}
+    empty = {}
+    publish_schema.widen(empty, (), ())
+    assert empty == {'type': []}  # preserve the existing empty widening representation
+
+
 # ---------- review fixes (2026-10-11) ----------
 def polls(world):
     return sum('/feed/live' in url for url in world.upstream.calls)

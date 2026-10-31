@@ -44,12 +44,8 @@ def infer(samples):
     samples = list(samples)
     if not samples:
         return {}
-    types = {_type(value) for value in samples}
-    if 'number' in types:
-        types.discard('integer')  # JSON Schema: every integer is a number
-    order = ('object', 'array', 'string', 'number', 'integer', 'boolean', 'null')
-    names = [name for name in order if name in types]
-    schema = {'type': names[0] if len(names) == 1 else names}
+    schema = {}
+    _add_types(schema, (_type(value) for value in samples))
     objects = [value for value in samples if isinstance(value, dict)]
     arrays = [value for value in samples if isinstance(value, list)]
     if objects:
@@ -212,7 +208,7 @@ def _add_types(schema, types):
     have = [schema['type']] if isinstance(schema.get('type'), str) else list(schema.get('type') or [])
     merged = {*have, *types}
     if 'number' in merged:
-        merged.discard('integer')
+        merged.discard('integer')  # JSON Schema: every integer is a number
     names = [name for name in _ORDER if name in merged]
     schema['type'] = names[0] if len(names) == 1 else names
 
