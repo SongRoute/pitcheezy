@@ -137,6 +137,6 @@ A5000 5장은 허용 상한이지 예약이 아니다. 이번 B2는 GPU가 필�
 | G-CODE | 새 B2 혼합, B3 POST/온도 optimizer options, Holm 4개 IUT·R 192개 보정 wrapper 미구현 | 기존 helper 재사용, synthetic tiny check: a=1=B1, label permutation 거부, T=1 identity, member/seed 평균 순서, unknown group, 미실행 p=1, split 보정 검증 |
 | G-BASE | G15/P48 저장 지표 재현과 B1/periodic 계수 복원 미실행 | 새 read-only 재현 보고; 기준 불일치 때 후보 채점 안 하는 로그 |
 | G-BUDGET | 제안 상한의 운영 적합성·optimizer maxeval/허용오차·실행 시작/종료 창 미확정 | 독립 검토 후 정확한 숫자·장치·lock·출력 quota 고정. 원화/시간 성능은 측정 전 미측정 |
-| G-GO | 현재 승인은 문서·근거 감사; 실자료 확률 읽기·inference·채점 실행 미개시 | 위 게이트와 실행 범위를 충족하는 후속 지시/등록. G0/서비스 교체와 별개 |
+| G-GO | 이번 단계는 문서·metadata까지 수행; 실자료 확률 읽기·inference·채점 미개시. G-OWN/PIN/DATA/CODE/BASE/BUDGET 등 실행 게이트 미충족 | 기존 권한 범위에서 실제 게이트를 닫고 고정 등록·독립 검토가 완료된 범위만 실행. 별도 사용자 재승인을 일률적으로 요구하지 않으며 G0/서비스 교체와는 별개 |
 
 권장 다음 단계는 **이 초안 독립 검토 → 소유자 manifest·분모 확인 → 합성 구현 → 등록**이다. B3 CAL-T 파일이 없다는 이유로 즉시 GPU를 쓰거나, 미측정 R을 집계보고서에서 추정하지 않는다. 실제 실행 전 충분히 구체화되지 않은 항목은 위 표에 남겨 두며 기계용 JSON의 `enabled=true`를 대신 만들지 않는다.
