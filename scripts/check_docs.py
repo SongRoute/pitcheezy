@@ -71,6 +71,20 @@ def target(root: Path, source: str, url: str):
     return relative.as_posix(), path.exists()
 
 
+def _resolved_links(root: Path, source: str, text: str):
+    """Resolve once; consumers decide which errors to report and how to display them."""
+    for label, url in links(text):
+        resolved, error = None, None
+        if url is None:
+            error = 'undefined reference'
+        else:
+            try:
+                resolved = target(root, source, url)
+            except ValueError:
+                error = 'malformed destination'
+        yield label, url, resolved, error
+
+
 def check(root: Path, paths: list[str], exceptions: dict[str, str]):
     errors = []
     checked_links = 0
@@ -84,16 +98,10 @@ def check(root: Path, paths: list[str], exceptions: dict[str, str]):
         lengths[name] = len(text)
         if len(text) > 3000 and not exceptions.get(name, '').strip():
             errors.append(f'{name}: {len(text)} characters exceeds 3000; split or record a preservation reason')
-        for label, url in links(text):
-            if url is None:
-                errors.append(f'{name}: undefined reference [{label}]')
-                continue
-            try:
-                resolved = target(root, name, url)
-            except ValueError:
-                errors.append(f'{name}: malformed destination {url}')
-                continue
-            if resolved:
+        for label, url, resolved, error in _resolved_links(root, name, text):
+            if error:
+                errors.append(f'{name}: {error} ' + (f'[{label}]' if url is None else url))
+            elif resolved:
                 checked_links += 1
                 if not resolved[1]:
                     errors.append(f'{name}: missing target {url}')
@@ -112,15 +120,10 @@ def graph(root: Path):
             continue
         text = path.read_text(encoding='utf-8')
         nodes.append({'path': name, 'characters': len(text)})
-        for label, url in links(text):
-            if url is None:
-                continue
-            try:
-                resolved = target(root, name, url)
-            except ValueError:
-                errors.append({'source': name, 'destination': url, 'error': 'malformed destination'})
-                continue
-            if resolved:
+        for label, url, resolved, error in _resolved_links(root, name, text):
+            if error == 'malformed destination':
+                errors.append({'source': name, 'destination': url, 'error': error})
+            elif resolved:
                 edges.append({'from': name, 'to': resolved[0], 'label': label, 'exists': resolved[1]})
     return {'schema': 'pitcheezy-doc-links-v1', 'source': 'tracked Markdown links; navigation only',
             'limitations': ['no HTML/shortcut-reference/anchor/HTTP checks', 'host-absolute/outside-repo paths excluded'],
