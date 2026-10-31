@@ -1,78 +1,28 @@
 # 공동 자원과 실행 대기열
 
-**2026-10-11 ~12:55 KST 체크포인트 2 포인터 (문서 기록일 뿐 프로세스·GPU 조회·접촉 없음):** 캡처 67930/67931/67932와 reader 2915/2916은 ~11:45 KST 정상 종료했다. 아직 보호하는 운영 PID는 94628·94642(기록기, 8766)와 99202(8771). 8772는 RC 리허설 포트. GPU job은 아직 없고 5장 허가는 그대로다.
+상위: [운영 진입점](overview.md) · 실제 배치: [운영 인벤토리](operations-inventory.md) · 과거 관측: [자원 이력](resources-history.md)
 
-**2026-10-11 ~11:00 KST 현재 포인터 (Claude PM 인수, Song 결정; 문서 기록일 뿐 GPU·프로세스는 조회·접촉하지 않았다. 아래 모든 블록은 이력으로 보존하고 충돌하는 문장은 이 블록이 대체한다):**
+이 문서는 규칙이다. 현재 PID·GPU 점유·가용 메모리·포트는 실행 직전에 확인한다. 오래된 관측이나 lock 파일의 존재/부재를 현재 유휴·예약으로 해석하지 않는다. 이번 문서 정비는 자원 조회·실험·운영 변경이 아니다.
 
-- **A5000:** GPU 5장 모두 사용 허가(2026-10-11 Song). 남의 프로세스·GPU는 건드리지 않고, 실행 직전 `gpu st`로 점유를 확인한다. 실행은 `gpu run`으로만. 만료 시점은 정해지지 않았다(미정; 대여 서버라 반납될 수 있음). 2026-10-10 한정 만료와 옛 3장/GPU3 규칙은 이력이다.
-- **맥 우선순위:** 기록기와 수집이 계속 우선한다(메모리 우선, 신호 금지). 보호 PID 67930·67931·67932·2915·2916·94628·94642에 신호를 보내지 않는다.
-- 외부 CLI 작업자 배타 1슬롯은 폐기됐다([overview](overview.md)).
+## 실행 전 확인
 
-**2026-10-11 05:31 KST 현재 소유 포인터 (Step 4 post-capture 실제 arming; 요청 모델 `claude-opus-5-5` 외부 arming 작업자가 기록. GPU·공통 lock은 조회·접촉하지 않았다. 아래 04:46 KST 블록의 waiter "armed 아님" 문장만 이 블록이 대체하고, 그 블록의 나머지와 그 밑은 이력으로 보존한다):** 맥에서 경기 849831 유한 post-capture waiter가 **armed·`WAITING_CAPTURE`**다. 소유 job [step4-postcapture-actual-arming-001](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-postcapture-actual-arming-001/), 수용 등록 [POSTCAPTURE_READ_REGISTRATION.accepted.json](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-postcapture-actual-arming-001/POSTCAPTURE_READ_REGISTRATION.accepted.json) SHA-256 `db7d4c49e08bbbf2a46196cc85e526d7093f0c87326d5547a67eed901c7ca263`, 별개 검토 [REVIEW_RECEIPT.json](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-postcapture-c1c2-distinct-review-001/REVIEW_RECEIPT.json). reader PID 2915(nice 10)·native caffeinate helper 자식 PID 2916(PPID 2915), 둘 다 OS 시작 2026-10-11T05:31:01+09:00; 유한 wait cutoff 2026-10-11T06:03:00Z(15:03 KST), 그 뒤 payload 단계 최대 3600초. 첫 heartbeat 2026-10-10T20:31:01.271Z `WAITING_CAPTURE`·payload 읽기 0. WAIT 예산은 sampled RSS 256 MiB 정지(ps 관측 약 24 MiB, 05:31 KST)·출력 16 MiB이고, 시스템 여유 메모리는 미측정이다. 기존 맥 기록기와 수집 67930/67931/67932가 계속 우선하며 신호를 보내지 않았다. 공통 `.heavy.lock`은 미래 terminal payload 단계에서만 비차단 획득하고, 그때 디스크/자원 적합을 다시 확인한다(8 GiB 출력을 미리 예약하지 않음). **실제 전체 경기 수신/replay는 대기**, 정책·모델 채택 없음.
+- 작업의 자료/실행 권한, 등록·독립 검토·고정 source/config/seed·예산·새 출력 경로를 확인한다.
+- 정확한 장치·프로세스·소유자·공통 lock과 메모리·디스크 여유를 확인한다. 같은 장치·운영 자원은 파일 소유권과 별도로 점유한다.
+- 맥 기록기·수집이 우선이다. 다른 프로세스에 신호를 보내거나 기존 fit을 강제 중단하지 않는다. 작업의 유한 중단·정리 절차는 자기 자식과 자기 출력만 다룬다.
+- 단순 문서·합성 검사를 실자료 추론·학습·운영 교체로 넓히지 않는다. 실행 중인 source를 수정하거나 기존 실패/봉인 산출물을 덮지 않는다.
 
-**2026-10-11 04:46 KST 무렵 현재 포인터 갱신 (Step 4 post-capture source-author lease의 외부 `claude-opus-5-5` 작성자가 Root 지시문을 옮겨 적음; GPU·lock은 조회하지 않았다. 바로 아래 02:13 KST 블록과 그 밑은 이력으로 보존하고, 충돌하는 문장은 이 블록이 대체한다):**
+## A5000
 
-- **A5000:** 2026-10-10 한정 GPU 허가는 만료됐다. 옛 3장 상한으로의 자동 복귀도, 현재 예약된 GPU도 없다.
-- **맥 우선순위:** 기존 맥 기록기와 Step 4 수집 `svc06-step4-capture-849831`이 우선한다. post-capture waiter는 **armed 아님**이며 이 lease의 실행은 지정 venv Python의 job 소유 소형 합성 테스트뿐이다(GPU·공통 `.heavy.lock`·네트워크 0).
-- **Song 좁은 허가 2건(경로/runtime)은 범위 그대로다.** 보호된 source나 실제 payload로 확장되지 않는다.
-- **소유자/heartbeat 관측은 기록된 시각의 이력이다.** 새 메타데이터 확인 없이는 현재로 쓰지 않는다(이 lease의 메타데이터 관측: supervisor heartbeat 2026-10-10T19:45:53Z, `SUPERVISING`·child `WAITING_PREGAME`).
+2026-10-11 허가는 최대 5장이고 만료는 미정이었다. [10/31 재확인 기록](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6536549232)도 그 시점의 5장 유휴와 허용 상한을 기록한다. 어느 것도 현재 예약이 아니다.
 
-**2026-10-11 02:13 KST 현재 포인터 갱신 (Step 5 수리 lease의 외부 `claude-opus-5-5` 작성자가 기록; GPU·lock은 조회하지 않았고 프로세스는 `ps`로 세 PID만 읽었다. 바로 아래 doc-only checkpoint 포인터와 그 밑은 이력으로 보존하고, 충돌하는 문장은 이 블록이 대체한다):**
+실행 직전 `gpu st`와 UUID·소유 프로세스를 확인하고 공통 장치별 배타 lock을 획득한 뒤 `gpu run`으로 실행한다. 기본 장치당 1fit, 총 최대 5fit이며 같은 장치 2fit·단일 fit의 다중 GPU 실행은 별도 검토 없이 도입하지 않는다. ID/seed·예산 충돌을 피하고 중요한 결과는 `gpu pull`로 회수한다. 자원 허가는 자료·실험·정책 승격 허가를 대신하지 않는다.
 
-- **Song 추가권한 2건 허가("추가권한 허가할게", Root 전달 약 00:30 KST):** 지정된 연구 공통 lock 부모/CLI 경로, 지정된 Step 5 `/Users/song/Projects/pitcheezy/.venv/bin/python` 소형 합성 테스트 명령. 이 두 범위 밖의 권한(GPU, 봉인/OPE, 운영, 거부된 Step2 pins·helper)은 늘지 않았다.
-- **외부 CLI 슬롯 1개:** 연구 Opus PID 77276 종료(exit 0) 뒤 Root가 이 Step 5 수리 작성자에게 단독 임대했다. 이 lease의 실행은 지정 venv Python의 CPU 소형 합성 테스트(`os.nice(10)`, BLAS 1 thread, 모든 임시 파일은 job 소유 디렉터리)뿐이고 GPU·fit·모델 바이트·공통 `.heavy.lock` 사용은 0이다.
-- **A5000:** 변동 없음. 예약·배정된 GPU 없음, 새 권한 없이는 사용하지 않는다.
-- **맥 실행 소유:** Step 4 수집 `svc06-step4-capture-849831`의 supervisor 67930·child 67931·caffeinate 67932가 2026-10-11 02:13:42 KST `ps` 관측에서 생존(표본 RSS 6,928·19,424·1,648 KiB). 등록 창 08:30–15:00 KST와 수집 우선 규칙은 그대로다. 이후 생존 여부는 이 문서에서 UNKNOWN이다.
-- **맥 메모리 사고(연구):** 2026 scale-001이 01:52:06 KST 시작 뒤 92.459초에 표본 RSS 5,143,625,728B > 4 GiB cap으로 중지됐다(재시도 0, [사고 기록](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-step2-scale-execute-001/MANAGEMENT-INCIDENT.md)). 다음 scale 시도는 메모리 예산·monitor argv 오탐 원인 검토 뒤 새 등록이 필요하다.
+## Mac·운영
 
-**2026-10-11 현재 포인터 (doc-only checkpoint, Root 단일 CLI lease의 외부 `claude-opus-5-5` 문서 작성자; 문서 기록 시각 미측정; 이 작성자는 GPU·프로세스·lock을 조회하지 않았다. 아래 2026-10-10 02:55 KST 포인터 이하는 이력으로 보존):**
+MPS는 기존 공통 `.heavy.lock`과 기록기 우선·메모리 제한을 따른다. GPU와 MPS 각 1fit 병렬 허용 이력은 별도 작업 권한·소유 확인을 면제하지 않는다. CPU 자동 대체는 하지 않고 MPS 결과를 CUDA 재현이라고 쓰지 않는다. 실행별 등록에 정확한 lock 경로·메모리/시간/출력 상한·감독을 적는다.
 
-- A5000: 2026-10-10 한정 5장 해석(2026-10-10 23:59:59 KST까지)은 **만료**됐다. 자동 연장도 옛 3장 상한으로의 자동 복귀도 없으며, **현재 예약되거나 배정된 GPU는 없다.** 이후 사용에는 그때의 권한·UUID·소유자·프로세스·lock을 새로 확인한다. 이 문서 작업에서 GPU 사용은 0이다.
-- 맥 실행 소유: Step 4 감독 수집 `svc06-step4-capture-849831`(supervisor PID 67930, child 67931, caffeinate 67932; handoff 시점 값, [HANDOFF](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-final-clock-review/HANDOFF.json))은 서비스 PM job `20261010-ws-service-006` 소유이고 `step4-capture-849831/`의 단일 작성자다. 다른 작업은 이 프로세스에 신호를 보내거나 run 디렉터리에 쓰지 않으며, 맥 CPU·메모리는 이 수집이 우선한다. 등록 창은 2026-10-11 08:30–15:00 KST(stop grace 약 120초)다. RSS 4 GiB·disk 7 GiB는 표본/poll 후 stop이고 절대 상한이 아니다. 현재 생존 여부는 이 문서에서 UNKNOWN이다.
-- 대기 중인 **서로 다른** 보안 범위 질문 2건(Song 결정 대기, 어느 것도 적용·해결되지 않음): ① Step 2 — 공통 `.heavy.lock` 경로를 CLI 세션 허용 범위에 넣는 보안 설정([PROCESS-HOLD](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-step2-review-001/MANAGEMENT-PROCESS-HOLD.md); 거부된 파일을 symlink·복사·Python으로 우회하지 않는다). ② Step 5 — 거부된 테스트 runtime 명령의 실행 범위([RUNTIME-HOLD](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-source-rework/MANAGEMENT-RUNTIME-HOLD.md); 새 allowlist로 같은 명령을 재시도하지 않는다). 2026 자료 권한은 유효하며 이 두 질문과 별개다.
-- 상세: [통합 state](integration/state.md) · [연구 state](research/state.md) · [서비스 state](service/state.md).
+운영 8766, 과거 시연 8771 등은 역할 이력이지 빈 포트 목록이 아니다. 포트·DB·tmux·SSD·시연 세션은 소유 확인 없이 변경하지 않는다. 시연·운영 보호는 시각 경과만으로 해제하지 않고 실제 종료·자원 반환을 확인한다. 배포·복구는 해당 [서비스 상태](service/state.md)와 런북을 따른다.
 
-**현재 포인터 (문서 기록 2026-10-10 02:55 KST, SVC06 combined checkpoint 작성자; 아래 01:30:54 KST 블록의 같은 주제 문구보다 우선, 상세는 [연구 state](research/state.md)·[서비스 state](service/state.md)):**
+## 대기와 위임
 
-- A5000: Song 원문 "오늘하루정도는 gpu 5장 모두 사용가능함. 중요도가 낮더라도 자원이 많이 필요한 학습같은건 미리 돌리면서 다른 작업 이어가줄래?"(메시지 시각 미측정, 2026-10-10 00시 KST 무렵). Root 해석: 최대 5장, 2026-10-10 23:59:59 KST까지. **그 뒤 자동 연장도, 옛 3장 상한으로의 자동 복귀도 없다**(아래 01:30 블록의 "3장 상한 문구가 다시 적용된다"를 정정). 이후 사용은 그때의 권한·UUID·소유자·프로세스·lock을 다시 확인한다.
-- EXP-P47-002(16-fit, ≤2025 development): 16개 모두 done·scored 1회([SCORE-RECEIPT](/Users/song/Projects/pitcheezy-pm-jobs/20261010-gpu5-day-001/terminal-score-continuation/SCORE-RECEIPT.json), `SCORED_ONCE_TERMINAL`). Root 판정은 NLL만 제한 PASS이며 Brier·exact10k·subgroup은 대기다. 아래 01:23 관측(6 done·5 running)은 이력이다. 2026 A/B/C CPU full001 파일럿 1회(classifier 9 + temperature 9)와는 별개다.
-- 연구 bridge(이 줄은 이후 bridge-clean-doc-correction 작업자가 정정): 마스크 추출 1회는 검토 범위 안에서 완료됐다([HANDOFF](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-population-next-001/bridge-extract/HANDOFF.md)). PID 37261 수치 검증은 경계 사고(Grep 거부 뒤 Bash Python `open()`)로 Root가 수치 수용을 PROCESS_HOLD로 철회한 이력이다. 현재는 별개 clean verifier PID 38196(exit 0) 기준 Root **ACCEPT_BOUNDED**다(결정 시각 미측정, [EXECUTION-REPORT](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-population-next-001/bridge-clean-execute/EXECUTION-REPORT.md), 한계는 [연구 state](research/state.md)). 실제 배정 근거는 [MANAGEMENT-PREFLIGHT](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-population-next-001/bridge-extract/MANAGEMENT-PREFLIGHT.json)(공통 `.heavy.lock`)다. 아래 "bridge 실행 미착수"는 이력이다.
-
-**2026-10-10 최신(Song 지시, Root 전달·해석; 문서 기록 2026-10-10 01:30:54 KST, Root 단일 CLI lease의 외부 `claude-opus-5-5` 문서 작성자):** 아래 2026-10-09 A5000 3장 상한보다 이 기간에만 우선한다.
-
-- A5000: Song 원문은 "오늘하루정도는 gpu 5장 모두 사용가능함. 중요도가 낮더라도 자원이 많이 필요한 학습같은건 미리 돌리면서 다른 작업 이어가줄래?"이다. 메시지 시각은 측정되지 않았다(2026-10-10 00시 KST 무렵). Root 해석으로는 newsrv A5000 **최대 5장을 2026-10-10 23:59:59 KST(14:59:59Z)까지** 쓸 수 있다. 이 만료 시각은 Root 해석이며 메시지 시각이 아니다. 기간 밖에는 새 지시가 없는 한 아래 3장 상한 문구가 다시 적용된다. 이 승인은 소유권 증거나 fit 결과 receipt가 아니다. 실행 직전 UUID·프로세스·소유자 확인과 장치별 lock은 그대로 필요하다.
-- 현재 GPU 작업: EXP-P47-002 attempt-001(16-fit 연구, ≤2025 development 자료)이다. 2026 A/B/C 9-fit CPU 파일럿과는 별개다. [EXECUTION-RECEIPT](/Users/song/Projects/pitcheezy-pm-jobs/20261010-gpu5-day-001/execute/EXECUTION-RECEIPT.json)의 01:18:16 KST post-check 기준으로 UUID마다 worker가 1개씩 실행 중이었다: u0 idx3 `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9`, u1 idx0 `GPU-edb6bc12-c9aa-d79b-d3e7-9bc28118e4d4`, u2 idx1 `GPU-0cc63040-5522-7fea-20d8-93b9196ce019`, u3 idx2 `GPU-18e648d0-b68e-9321-9c77-69da241aad85`, u4 idx4 `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`. u0의 첫 task는 rc 0으로 done이었다. 실행 시각은 u0 01:13:23 KST, u1–u4 01:17:52–01:18:07 KST다. TERMINAL.json은 아직 없다([HANDOFF](/Users/song/Projects/pitcheezy-pm-jobs/20261010-gpu5-day-001/execute/HANDOFF.md)). 시각 정정은 [SUPERVISION-ERRATUM](/Users/song/Projects/pitcheezy-pm-jobs/20261010-gpu5-day-001/execute/SUPERVISION-ERRATUM.md)에 있다: outer TERM/KILL 최종은 u4 03:23:08/03:25:08 KST다. Root가 전달한 관측은 2026-10-10 01:23:31–39 KST 기준 6 done·5 running/16, CUDA lock 5개 사용 중, Traceback 없음이다. 이는 시점 관측일 뿐 현재 상태가 아니다. 이 기록 시각까지 그보다 새 관리 receipt 파일은 없다. 완료 수·scoring 결과는 UNKNOWN이다.
-- 연구 bridge-001(Mac CPU 1회): 독립 rebind 검토 PASS다([REVIEW.json](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-bridge2024-rebind/REVIEW.json), [BRIDGE-REVIEW-PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-bridge2024-run/BRIDGE-REVIEW-PASS.json), 발급 2026-10-09T16:26:36Z). 실행은 **미착수**다.
-
-**2026-10-09 최신(Song 지시, Root 전달):** 이 문단이 아래 GPU·슬롯 문구보다 우선한다. (A5000 3장 상한은 위 2026-10-10 기간 동안 5장 해석으로 대체된다.)
-
-- A5000(이 줄이 같은 날 앞선 실행/probe 보류를 대체): Song의 2026-10-09 ~21:06 KST 지시로 **최대 3장 상한**이다. 21:22:41–21:23:37 KST 읽기 전용 [스냅샷](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-gpu-inventory/REPORT.md)([INVENTORY.json](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-gpu-inventory/INVENTORY.json))을 바탕으로, Root가 21:26:20 KST에 기록한 [결정](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-gpu-inventory/ROOT-DECISION.md)에서 다음 UUID를 **조건부 배정 후보**로 수용했다: idx2 `GPU-18e648d0-b68e-9321-9c77-69da241aad85`, idx3 `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9`, idx4 `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`. index는 관측값이고 실행은 UUID로 묶는다. **예약이 아니다.** 스냅샷의 compute 앱 없음·0%·2 MiB는 순간 관측일 뿐 소유·예약 부재 증거가 아니다. 등록·독립 검토된 실험 직전에 UUID·프로세스·소유자를 새로 확인하고 공통 장치별 배타 lock을 획득한다. GPU2 lock 파일 부재는 검토된 안전 생성/획득 절차가 필요하다는 뜻이며 새 사용 허가가 아니다. 10-05 GPU4 반납 이력은 새 재승인 게이트가 아니다(작성자 REPORT·제안의 재확인 제안은 Root 결정으로 대체). 2026 A/B/C 파일럿은 CPU이며(아래 줄 참조, 이전 audit/full REWORK 표기는 이력), 이 상한은 자료 열람·fit·결과 채택·운영 서비스 교체 권한이 아니다. 아래 다섯 GPU 허용은 배경 이력이다.
-- 연구 A/B/C 파일럿(문서 기록 2026-10-09 23:13:21 KST, Root 결정 시각 미측정): full-001이 CPU로 **TERMINAL_SUCCESS**(classifier 9/9, temperature 9, 230.86초)였다. 공통 `.heavy.lock`은 runner만 보유했고 종료 후 보유자가 없었다. 소유 프로세스는 종료됐다([EXECUTION-REPORT](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-abc-full-launch/EXECUTION-REPORT.json)). 독립 수치 재현 ACCEPT([REVIEW.json](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-batch1-001/research-abc-result-verify/REVIEW.json)) 뒤 Root는 서술 수치만 수용했다. 대상 이득이 입증되지 않아 B/C 확장을 중단했다. 다음은 별도 등록된 matched-eligible bridge 준비뿐이며 미착수다. 위 3장 상한을 자동으로 쓰지 않으며, 그 상한은 실행 직전 UUID·프로세스·소유자·lock 재확인이 필요한 조건부 상한이다. 예약이나 다섯 GPU 허가가 아니다.
-- 활성 슬롯은 CLI를 포함해 총 4개다. Root와 Sol PM 2개를 빼면 외부 `claude-opus-5-5` 작업자 슬롯은 1개이고, Root가 배타적으로 임대한다.
-- 이 4슬롯 회계는 우리가 관리하는 Root+PM 2개+임대 CLI 1개에만 해당한다. 인수 감사 때 맥에서 관측된 기존 `ccd-cli` remote-control 프로세스 6개와 codex app-server는 활동·소유가 미확인이며 이 회계에 포함되지 않는다. 맥 전역 에이전트가 유휴이거나 모두 회계됐다고 쓰지 않는다.
-- 10:54 KST 관측: 8766에는 PID3277(`pitcheezy-demo`, Tailscale 주소)과 PID94628(메인, loopback)이 있고, 8771에는 PID99202가 있으며, 8792 listener는 없다. 공통 `.heavy.lock`의 lsof 보유자는 없다. 근거는 [인수 감사](/Users/song/Projects/pitcheezy-pm-jobs/20261009-pm-takeover-001/takeover/AUDIT.md)다. 관측 시점의 사실일 뿐 소유·가용 판정이 아니다.
-
-소유: 통합 문서 담당 · 갱신: 자원 승인/인수/보호 조건 변경 시 · 마지막 확인: 2026-10-06 문서 계약. 실제 배치·관측 시각·정리 대장은 [운영 인벤토리](operations-inventory.md)에 둔다. 아래 시각별 수치는 당시 관측이며 현재 유휴·예약을 뜻하지 않는다.
-
-현재 상태 요약: 연구 실행은 종료되어 [종료 증거](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-close-001/REPORT.md)를 보존했다. 17:31:38 KST에 시연 종료 보고를 받았지만 시연 종료만으로 MPS/GPU 작업을 자동 재개하지 않는다. 자원 재배정은 최신 소유·lock·계약 확인 뒤 별도 작업으로 한다.
-
-책임: 통합 PM(충돌 조정), 연구 PM(학습 배정), 서비스 PM(포트·DB·기록기).
-
-- GPU(2026-10-06 11:09 Song 최신 승인): SSH newsrv A5000 서버 **5장 모두 사용 가능**, 기본 장치당 1fit·총 최대 5fit. 이전 GPU3 단독·GPU4 조회/사용 금지는 이 승인으로 대체됐다. 연구 PM이 각 장치의 실제 UUID·소유권·실행 프로세스를 확인하고 기존 작업과 충돌 없이 장치별 배타 lock을 확보한 뒤 배정한다. 현재 알려진 GPU3 UUID `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9`, 과거 GPU4 UUID `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`도 현장 식별·소유권 재확인 대상이다. 확인 전 5장 전부 유휴/가용으로 쓰지 않는다. 동일 GPU 2fit이나 단일 fit의 다중 GPU 학습은 별도 검토 없이 도입하지 않는다. 기존 fit을 강제 중단하지 않고 ID·seed 충돌 방지, 날짜별 예산, 등록·과학·데이터 게이트를 유지한다. [INT-007 인수](transfers/INT-007-five-gpu-20261006.md).
-- [11:10 자원 감사](/Users/song/Projects/pitcheezy-pm-jobs/20261006-five-gpu/resource-audit-001/REPORT.md)는 index 0–4의 UUID를 각각 `GPU-edb6bc12-c9aa-d79b-d3e7-9bc28118e4d4`, `GPU-0cc63040-5522-7fea-20d8-93b9196ce019`, `GPU-18e648d0-b68e-9321-9c77-69da241aad85`, `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9`, `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`로 관측했다. 모두 당시 0%·2MiB/compute 앱 없음이었으나 순간 상태일 뿐 예약 증거는 아니다. **최대 5fit은 승인 상한**이며 기존 큐는 GPU 목록 최대2개, P47은 GPU3 단독으로 고정돼 있다. 다섯 장 동시 실행에는 스케줄러·등록 계약·별도 검증이 필요하다. 준비된 P47 단일 fit을 이 확대 작업 완료 때까지 보류하지 않는다.
-
-11:44 KST 후속: Song 지시로 현재 연구 관리·자원 배정 조정은 통합 Root가 인수했다. 11:10 문단의 큐 최대2는 **당시 코드 관측**이다. 별도 미래 등록용 [5 GPU Queue 변경](/Users/song/Projects/pitcheezy-pm-jobs/20261006-five-gpu/queue-review-001/REPORT.md) `5e6cc8`과 [generic CLI 진입 수정](/Users/song/Projects/pitcheezy-pm-jobs/20261006-five-gpu/review-entry-001/REPORT.md) `fa133ab`는 독립 CPU 검토 후 Root가 제한 수용했으나 아직 새 5 GPU 실험 등록·fit은 없다. 진행 중 [P47 본 실행](/Users/song/Projects/pitcheezy-pm-jobs/20261006-p47/launch-takeover-001/REPORT.md)은 기존 immutable source `1797b62`·GPU3 단독·`max_parallel=1`에 고정이며 새 큐 코드를 소급 적용하지 않는다. 실제 5장 사용은 별도 UUID/소유 프로세스·공통 lock·ID/seed·예산·등록 게이트를 통과해야 한다.
-- 맥 MPS: GPU와 병렬1fit 허용, 기존 공통 `.heavy.lock` 사용, CPU 자동 대체 금지. 기록기·시연 부하 우선. MPS 결과를 CUDA 재현으로 부르지 않는다. 세부 [GPU 배정](../handoffs/GPU-allocation-2026-10-05.md).
-- 2026-10-06 16:00 연구실 시연 보호: **15:00–16:15 KST에는 맥에서 새 MPS fit을 시작하지 않는다.** 15:00 이전에 시작한 fit은 강제 종료하지 않고 담당자가 체크포인트·종료 예정 시각을 확인해 서비스 PM과 조정한다. 서비스 PM이 리허설 부하 충돌을 확인하면 보호 시작을 앞당긴다. 16:15 경과만으로 자동 해제하지 않으며 실제 시연 종료와 서비스 PM의 자원 반환 확인 후 통합 PM이 해제한다. newsrv GPU 실험은 위 장치별 계약·연구 PM 게이트를 지키면 계속할 수 있다. 이는 새 서버 변경이나 운영 8766 교체 승인이 아니다.
-- 실행 전 GPU 작업/lock, 맥 기록기·시연 세션, 메모리·디스크 여유를 확인한다. 잠금 파일 존재만으로 실행 중/미실행을 판단하지 않고 소유 PID/실제 작업도 확인한다.
-- 서비스 PM이 포트·DB·시연 세션 쓰기를 관리한다. 8766운영,8771시연을 혼동하지 않는다. 8770/8767/8787·tmux pz·SSD는 소유 확인 없이 변경하지 않는다.
-
-- GPU/MPS 대기열에는 `실행 가능`, `검토 대기`, `데이터 준비`, `기록/시연 보호`, `막힘`을 표시한다. 유휴 이유를 기록하고 준비된 다음 작업을 선택한다. 사용률을 높이기 위한 무의미한 반복·평가 누수는 금지한다.
-- 네이티브 에이전트 동시4슬롯(Root 포함)은 현재 도구 제한이다. PM 재귀 위임 허용과 자원 무제한은 다르다. 사용자가 승인한 별도 PM 앱 세션은 허용하되, 같은 업무를 중복 실행하거나 도구 제공자의 실행 제한을 우회하지 않는다.
-- 이번 전환은 자동 실행기나 MCP 설치가 아니다. 연속 실행기는 소스·준비된 큐·lock·중단 조건·로그·재시작 중복 방지를 별도 검토한 뒤 도입한다.
-
-12:06 KST 한시 실행 예외: 통합 Root가 별도 검토·수용한 오류 복구 CSS 1행만 `/root/service_audit`에게 **8771 시연 자산**에 적용하도록 위임해 PID99202 재시작 없이 HEAD `3e41c61`로 갱신했다([적용 증거](/Users/song/Projects/pitcheezy-pm-jobs/20261006-service-autonomy-2h/recovery-deploy-001/REPORT.md)). 이는 서비스 PM 채팅·상태판이나 8766/DB/기록기 소유권 이전이 아니다. SVC-003 짧은 DB write 대기 `c2c805f`는 격리 검토 후보로 8766/8771 및 실제 DB에 적용되지 않았다([후보 증거](/Users/song/Projects/pitcheezy-pm-jobs/20261006-service-autonomy-2h/db-busy-candidate-001/REPORT.md)).
-
-전환 중 실제 새 Sol spawn은 `agent thread limit reached`로 실패했다. 완료 핸들도 스레드 한도에 포함될 수 있어 활성 슬롯 숫자만으로 새 생성 가능성을 보장하지 않는다. 기존 Astra 실행 핸들을 재사용해 준비 업무를 전달했으며, 이는 사용량 소진 주장이 아니다. 모델 선택은 정책과 실제 가용성을 함께 기록한다.
-
-완료된 연구 PM 핸들로 작업자가 보낸 메시지도 `live agent path not found`로 실패해 Root가 전달했다. 완료 핸들이 항상 메시지를 받거나 자동으로 깨어난다고 가정하지 않는다. 전달 실패는 정본 상태판과 Root 조정으로 남기고, 세션 생성/감독기 가동을 꾸며 쓰지 않는다.
+대기열은 실행 가능/검토 대기/데이터 준비/기록·시연 보호/막힘을 구분한다. 사용률을 높이기 위한 무의미한 반복이나 평가 누수를 만들지 않는다. 실제 도구 슬롯·기존 작업을 확인하고 위임으로 제한을 우회하지 않는다. 완료된 에이전트 핸들의 전달 성공이나 실행 중 상태를 추정하지 않는다. 연속 실행기는 소스·준비된 큐·lock·중단 조건·로그·재시작 중복 방지를 별도로 검토한 뒤 도입한다.
