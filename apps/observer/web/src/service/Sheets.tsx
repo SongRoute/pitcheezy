@@ -125,10 +125,12 @@ function RecTable({ rec }: { rec: Rec }) {
 const recordedLine = (rec: Rec) => `${provenanceText(rec)}${rec.recorded_at ? ` · ${kstTime(rec.recorded_at)} 기록` : ''}`;
 
 /** ⑧-1 R1: the next pitch's (or the screen's current) recommendation. Half shows the table. */
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST, actualFolded = null, actualExtra = null }:
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, actualHeld = false, pair = null, absentText = ABSENT_PAST, actualFolded = null, actualExtra = null }:
   { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds;
     /** live display state: the server's sentence (and any change note) for the pending pitch */
     recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean;
+    /** the publisher refused the feed's newest body of this pitch and shows the last accepted one (`held_last_accepted`) */
+    actualHeld?: boolean;
     /** viewer delay, device not synced yet: the thrown pitch is not described */
     actualFolded?: string | null;
     /** an optional quiet line that belongs to the thrown pitch (never shown while the pitch is folded or being confirmed) */
@@ -152,7 +154,8 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
       <h3>{actualTitle}</h3>
       {actualFolded ? <p className="sv-muted">{actualFolded}. 화면 위쪽의 ‘중계 맞추기’에서 내 중계에 맞추면 구종·위치·결과를 보여 드려요.</p>
       : actualPending ? <p className="sv-muted">이 공을 다시 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
-      {actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
+      {actualHeld ? <p className="sv-muted">공식 피드가 이 공을 다시 보냈지만 받아들이지 않아, 마지막으로 받아들인 기록을 보여 드려요.{actualCorrected ? ' 받아들인 기록도 처음 받은 뒤에 바뀐 적이 있어요.' : ''}</p>
+        : actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
       {actual && bounds && <div className="sv-detail-zone"><Zone fullWindow bounds={bounds} candidates={rec?.status === 'ready' ? rec.candidates : []} actual={actual.x !== null && actual.z !== null ? {x:actual.x,z:actual.z} : null} actualLabel="" setupX={actual.setup_x} actualKind={resultKind(actual.description)} /></div>}
       {actual === null ? <p className="sv-muted">아직 던지지 않았어요.</p> : <ActualFacts actual={actual} speed={speed} paResult={paResult} withType />}{actual !== null && actualExtra}</>}
     </section>
@@ -179,9 +182,11 @@ function ActualFacts({ actual, speed, paResult, withType = false }: { actual: Ac
 }
 
 /** ⑧-2 P2: one thrown pitch. Title row with ‹ › (previous / next pitch). Half shows the result line and the small zone. */
-export function PitchSheet({ pitch, bounds, onClose, onPrev, onNext, paResult, speed, folded = null, pending = false, corrected = false, actualExtra = null }:
+export function PitchSheet({ pitch, bounds, onClose, onPrev, onNext, paResult, speed, folded = null, pending = false, corrected = false, held = false, actualExtra = null }:
   { pitch: PitchRow; bounds: Bounds; onClose: () => void; onPrev: (() => void) | null; onNext: (() => void) | null; paResult: string | null; speed: (mph: number | null) => string;
-    folded?: string | null; pending?: boolean; corrected?: boolean; actualExtra?: ReactNode }) {
+    folded?: string | null; pending?: boolean; corrected?: boolean;
+    /** the publisher refused the feed's newest body of this pitch and shows the last accepted one (`held_last_accepted`) */
+    held?: boolean; actualExtra?: ReactNode }) {
   const a = pitch.actual, rec = pitch.rec, kind = resultKind(a?.description);
   const head = <span className="sv-sheet-nav"><button onClick={onPrev ?? undefined} disabled={!onPrev} aria-label="이전 공">‹</button><button onClick={onNext ?? undefined} disabled={!onNext} aria-label="다음 공">›</button></span>;
   return <Sheet title={`${inningText(pitch.situation)} · ${pitch.pitch_number}구 · ${pitch.batter.name ?? '타자'}`} onClose={onClose} headExtra={head}>
@@ -190,7 +195,8 @@ export function PitchSheet({ pitch, bounds, onClose, onPrev, onNext, paResult, s
       : pending ? <p className="sv-muted">이 공을 다시 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p>
       : !a ? <p className="sv-muted">실제 투구 기록 없음</p> : <>
         <p className="sv-pitch-line"><G1Dot kind={kind} n={pitch.pitch_number} ring /><b>{a.pitch_label}{a.speed_mph !== null ? ` ${speed(a.speed_mph)}` : ''}</b><span>{[a.result_label, a.zone_label].filter(Boolean).join(' · ')}</span></p>
-        {corrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
+        {held ? <p className="sv-muted">공식 피드가 이 공을 다시 보냈지만 받아들이지 않아, 마지막으로 받아들인 기록을 보여 드려요.{corrected ? ' 받아들인 기록도 처음 받은 뒤에 바뀐 적이 있어요.' : ''}</p>
+        : corrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
         <div className="sv-detail-zone small"><Zone fullWindow bounds={bounds} candidates={rec.status === 'ready' ? rec.candidates : []} actual={a.x !== null && a.z !== null ? { x: a.x, z: a.z } : null} actualLabel=""
           setupX={a.setup_x} actualKind={kind} actualNumber={pitch.pitch_number} /></div>
         <ZoneLegend side={null} actualOnly={kind} />
