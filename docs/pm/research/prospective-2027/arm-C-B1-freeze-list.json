@@ -1,0 +1,469 @@
+{
+  "freeze_list": "EXP-P48-001 primary candidate B1 = tabm_residual_counts/MIX_FIT (RS-03 arm C candidate)",
+  "created_kst": "2026-10-27 17:42 KST",
+  "decisions": {
+    "D184": "proposal decision 1 (B1 proceed)",
+    "D185": "GPU plan 1-1",
+    "D188": "result recorded; Song decision (a) 2026-10-27 17:4x KST: record B1 as RS-03 arm C candidate + this freeze list"
+  },
+  "status": "PREDICTOR BUNDLE frozen; arm C POLICY identity not yet built (RS-03 pins.arm_C_identity stays null until the policy is materialized under D187 decision 3 conditions)",
+  "stage_b_result": {
+    "primary": "tabm_residual_counts/MIX_FIT",
+    "status": "confirmed",
+    "results_json_sha256": "54e38dc6734eed202e201e15349b5dd88d55e9506f613512dea0f05b3fa34bc0",
+    "summary_md_sha256": "fa53f595d93f3aba1da4f491f840bc27b237271cb5909e11b76b1598cf5d361a"
+  },
+  "registration": {
+    "worktree_branch": "research/direct-head-confirm-1026",
+    "registered_commit": "c5f61d47618546867fec9ebfdb9ea68062effc10",
+    "source_commit_reviewed": "011c257fc29f021626d90b1c128c653183baab51",
+    "config_sha256": "2a417d8f6721d0ff158af662512bbce24a5e446cb4be9ddf66127b3e5f7feb5b",
+    "preregistration_sha256": "4ca5ba3c79a0daf8468192c04a64afeb1b5d0f3cb4b53ef7a86d71181673ff74",
+    "independent_review": "docs/reviews/REVIEW-EXP-P48-001-ASTRA-002.md PASS_WITH_NOTES",
+    "export_manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "scorer_stage_b_sha256": "60c2160b4695c23582bba8504669d8983c40d3b4ae4bbb384c02a7f9d61fee07",
+    "registry_sha256": "f75bbdcdbda0ca9e4216912be37bd63f8ee43d064121929c04f2dd40f3996e89"
+  },
+  "frozen_references": {
+    "G15_config_sha256": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d",
+    "G0_bundle_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+    "EXP_P16_001_results_sha256": "9d372da26b39fca07d6963a6861044721b31cf42209c92d5edb66f7b8a778597"
+  },
+  "mix_rule": {
+    "name": "MIX_FIT",
+    "grid": "0.50..0.95 step 0.05 on the June blend split, ties to the smaller w",
+    "weights": {
+      "MIX_FIT": {
+        "ensemble": 0.7,
+        "seeds": [
+          0.65,
+          0.7,
+          0.7,
+          0.75,
+          0.7
+        ],
+        "selection": {
+          "ensemble": {
+            "blend_nll_by_weight": [
+              1.4540579613880675,
+              1.453738175400473,
+              1.4535057753421332,
+              1.4533600041492256,
+              1.4533004427776648,
+              1.4533269995565943,
+              1.4534399226111143,
+              1.4536398412009777,
+              1.4539278521387782,
+              1.4543056895368207
+            ],
+            "grid": [
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95
+            ],
+            "rows": 4821,
+            "weight": 0.7
+          },
+          "seeds": [
+            {
+              "blend_nll_by_weight": [
+                1.4535156906229876,
+                1.4532587278647995,
+                1.4531031297283123,
+                1.4530479306690685,
+                1.4530926143201293,
+                1.4532371023618582,
+                1.453481774524225,
+                1.4538275291663898,
+                1.4542759094337978,
+                1.4548293555444323
+              ],
+              "grid": [
+                0.5,
+                0.55,
+                0.6,
+                0.65,
+                0.7,
+                0.75,
+                0.8,
+                0.85,
+                0.9,
+                0.95
+              ],
+              "rows": 4821,
+              "weight": 0.65
+            },
+            {
+              "blend_nll_by_weight": [
+                1.4545208863751706,
+                1.4541590159463833,
+                1.453900071798656,
+                1.4537432528633716,
+                1.4536881317124206,
+                1.453734635534302,
+                1.4538830439187957,
+                1.4541340038138793,
+                1.4544885657079718,
+                1.4549482509606066
+              ],
+              "grid": [
+                0.5,
+                0.55,
+                0.6,
+                0.65,
+                0.7,
+                0.75,
+                0.8,
+                0.85,
+                0.9,
+                0.95
+              ],
+              "rows": 4821,
+              "weight": 0.7
+            },
+            {
+              "blend_nll_by_weight": [
+                1.455449286404015,
+                1.4550125054729677,
+                1.4546905901522136,
+                1.4544826153566572,
+                1.4543881890218746,
+                1.4544074571047456,
+                1.4545411515418791,
+                1.4547907018114234,
+                1.4551584620384121,
+                1.4556481880891985
+              ],
+              "grid": [
+                0.5,
+                0.55,
+                0.6,
+                0.65,
+                0.7,
+                0.75,
+                0.8,
+                0.85,
+                0.9,
+                0.95
+              ],
+              "rows": 4821,
+              "weight": 0.7
+            },
+            {
+              "blend_nll_by_weight": [
+                1.455371146282516,
+                1.4548637356504037,
+                1.4544697270127878,
+                1.4541882387086793,
+                1.4540188664001197,
+                1.4539616694043505,
+                1.4540171817737633,
+                1.4541864502506276,
+                1.4544711070703908,
+                1.4548734950248747
+              ],
+              "grid": [
+                0.5,
+                0.55,
+                0.6,
+                0.65,
+                0.7,
+                0.75,
+                0.8,
+                0.85,
+                0.9,
+                0.95
+              ],
+              "rows": 4821,
+              "weight": 0.75
+            },
+            {
+              "blend_nll_by_weight": [
+                1.4565400613160275,
+                1.4561310407585937,
+                1.4558323535913036,
+                1.4556430398338709,
+                1.4555626196365026,
+                1.4555910892665735,
+                1.4557289540943978,
+                1.4559773148376312,
+                1.4563380488176565,
+                1.4568141932524783
+              ],
+              "grid": [
+                0.5,
+                0.55,
+                0.6,
+                0.65,
+                0.7,
+                0.75,
+                0.8,
+                0.85,
+                0.9,
+                0.95
+              ],
+              "rows": 4821,
+              "weight": 0.7
+            }
+          ]
+        }
+      },
+      "MIX_FIXED": {
+        "ensemble": 0.5,
+        "seeds": [
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "selection": null
+      }
+    }
+  },
+  "server_jobs": {
+    "stage_a": "261027-152429-p48-main (GPU idx2,idx1; commit c5f61d47)",
+    "stage_a_scores": "261027-160843-p48-score",
+    "server_output": "~/cc/shared/pitcheezy/direct-confirm-1026/runs/EXP-P48-001"
+  },
+  "locations": {
+    "mac_pull": "/Users/song/gpu-pull/pitcheezy/261027-152429-p48-main/runs/EXP-P48-001",
+    "t7_copy": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P48-001/stageA-family",
+    "t7_stage_b": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P48-001/stageB"
+  },
+  "t7_copy_identical": true,
+  "mismatches": [],
+  "bundle_sha256": "6271b70e834215aff96141b8319e84ba041fb980600cc91791248a1b95f5e4ec",
+  "bundle_files": [
+    {
+      "path": "tabm_residual_counts/0/calibration.json",
+      "sha256": "4c88f5699c8b5aea0d4d11d1d9c06fd2e19a0660ee2dfc7f91d6a5b39e409eb2",
+      "bytes": 5822
+    },
+    {
+      "path": "tabm_residual_counts/0/fit.json",
+      "sha256": "938aa230c564b604fde483dab3e427a28afdc65dbb03b77ef5d88c78e021c683",
+      "bytes": 7580
+    },
+    {
+      "path": "tabm_residual_counts/0/identity.json",
+      "sha256": "478e7e0e0f11faf3a04a47645f0a05e9f079c3f995f2d1bd87cc4b399986c9f4",
+      "bytes": 5046
+    },
+    {
+      "path": "tabm_residual_counts/0/mlb_predictions.npz",
+      "sha256": "368e5c53f7bd61ca38d0f27204768758cd5860a88f2709535ccc6816d2e192d4",
+      "bytes": 48322406
+    },
+    {
+      "path": "tabm_residual_counts/0/model.pt",
+      "sha256": "c32b3f948ff6691955bb89a2b374f50ec91b63069d25a4cb511ffa19c9a7934c",
+      "bytes": 1051040
+    },
+    {
+      "path": "tabm_residual_counts/0/predictions.npz",
+      "sha256": "732526df0a099b5cde6901869edad95489864104ae20fda2ee27fb9fb4248b7f",
+      "bytes": 2662772
+    },
+    {
+      "path": "tabm_residual_counts/0/state.json",
+      "sha256": "257df29a20dbccce805058097bf904145d776b8bc36db1e2337a8ccf0d498906",
+      "bytes": 5834
+    },
+    {
+      "path": "tabm_residual_counts/1/calibration.json",
+      "sha256": "5cfcc1580561f62a708a6e9face14c6461cacb666d4708f2f082a8a98e2ff215",
+      "bytes": 7423
+    },
+    {
+      "path": "tabm_residual_counts/1/fit.json",
+      "sha256": "17a1b35967eaef04ab0e2af6926c5721dc43b0c3b293ae9426447d314a26df49",
+      "bytes": 9301
+    },
+    {
+      "path": "tabm_residual_counts/1/identity.json",
+      "sha256": "50dd05c5c53e4f6a4987f21de90c66c1643cac9e41ff6d81ef613570346ca56c",
+      "bytes": 5046
+    },
+    {
+      "path": "tabm_residual_counts/1/mlb_predictions.npz",
+      "sha256": "71520d1e0ef68f6326cb719e4ba9441c9f97f9e5538cf18b8a6fcdc03a5bd28a",
+      "bytes": 48309240
+    },
+    {
+      "path": "tabm_residual_counts/1/model.pt",
+      "sha256": "fe6fbb4c21762155517bb96df938313bad44d5f44b456f9631bd1502fe027ce9",
+      "bytes": 1051424
+    },
+    {
+      "path": "tabm_residual_counts/1/predictions.npz",
+      "sha256": "75b0f5196be1a24e765955b44df1ee7d07662d9497d0a1f5e489a21d2583211e",
+      "bytes": 2662214
+    },
+    {
+      "path": "tabm_residual_counts/1/state.json",
+      "sha256": "a333fafda72096b92fee8cb3f983357f28ae542532bdd355e85ac12c92b86bec",
+      "bytes": 5834
+    },
+    {
+      "path": "tabm_residual_counts/2/calibration.json",
+      "sha256": "8e3f7456dfdb668d96507fa9fa2bcbf8ed3cdeccfe4a2b5868c7f952a13df901",
+      "bytes": 5420
+    },
+    {
+      "path": "tabm_residual_counts/2/fit.json",
+      "sha256": "2caaed14280bc10186b478c528ef251712aaf38c4c4e7e856d18da0237d94c89",
+      "bytes": 7148
+    },
+    {
+      "path": "tabm_residual_counts/2/identity.json",
+      "sha256": "88e39bd66750afb349c5d4ad30a53b5007a5418d480f27a6a95c4dc1a455c6cf",
+      "bytes": 5046
+    },
+    {
+      "path": "tabm_residual_counts/2/mlb_predictions.npz",
+      "sha256": "bfd5b897565c5b6ba4740984d249afc9158453e6e29f2fdf3562c0143935682b",
+      "bytes": 48329540
+    },
+    {
+      "path": "tabm_residual_counts/2/model.pt",
+      "sha256": "3ffc695a655f41c1d8bd82ffc43326b94aed248bf0ccef03eef3ba56330d6406",
+      "bytes": 1050912
+    },
+    {
+      "path": "tabm_residual_counts/2/predictions.npz",
+      "sha256": "e29155c70b50f868188de005f1a60db890c4c1dbe47e9e0cf2c11b2c011d4905",
+      "bytes": 2663759
+    },
+    {
+      "path": "tabm_residual_counts/2/state.json",
+      "sha256": "47ff7f341f9e4ede7167c2e6e24b5369129a5e3f9f782bf1ff99d5b29b0249b4",
+      "bytes": 5834
+    },
+    {
+      "path": "tabm_residual_counts/3/calibration.json",
+      "sha256": "1ad0de14d791b07c8c86e5e900feb773acaf0e932fb87f4135426274db2c2dee",
+      "bytes": 8087
+    },
+    {
+      "path": "tabm_residual_counts/3/fit.json",
+      "sha256": "05f6fff73fadcdc5d781d61e9405b3f92b7bbed4468d937210089af68b17faa2",
+      "bytes": 10014
+    },
+    {
+      "path": "tabm_residual_counts/3/identity.json",
+      "sha256": "ff201571f1dee3efc1fba7e2905da5375dfa5a214457dc2c4c086d937e04702d",
+      "bytes": 5046
+    },
+    {
+      "path": "tabm_residual_counts/3/mlb_predictions.npz",
+      "sha256": "8ec2b74ac30fd2f0f73cc51dac983b733e4312bb01e118083f77cb2ac7fe025b",
+      "bytes": 48347075
+    },
+    {
+      "path": "tabm_residual_counts/3/model.pt",
+      "sha256": "a12502fb669c1ae5a67aa3c1b617c0dfdaac3250727923da5d23302f15037ecc",
+      "bytes": 1051616
+    },
+    {
+      "path": "tabm_residual_counts/3/predictions.npz",
+      "sha256": "354e2151235317c843e78ca830995f578b15b3fdb1a306d9df8f39c9c08da305",
+      "bytes": 2664060
+    },
+    {
+      "path": "tabm_residual_counts/3/state.json",
+      "sha256": "5d521aee4ba3e433f9d8eb51a25eefc6c15e8fe47ad3bb484da3065eaf2ca4ab",
+      "bytes": 5834
+    },
+    {
+      "path": "tabm_residual_counts/4/calibration.json",
+      "sha256": "e4dfc0acfe982d6d559a71262407639af28d515868a335bffdd80cc59e401e7a",
+      "bytes": 5949
+    },
+    {
+      "path": "tabm_residual_counts/4/fit.json",
+      "sha256": "acc76e80cc1e1114c256bbb5c474a0cd4a9ac863280000a4e1f5dc9f9e87f118",
+      "bytes": 7716
+    },
+    {
+      "path": "tabm_residual_counts/4/identity.json",
+      "sha256": "944782e8ba6f91818a01177b0d35f8a538efacc1f1aded8b8ca0d57c9002f3ff",
+      "bytes": 5046
+    },
+    {
+      "path": "tabm_residual_counts/4/mlb_predictions.npz",
+      "sha256": "1e555740c974edc35eb7e5fde55672a2bb752344b967a89740c02b52802b1ce8",
+      "bytes": 48308114
+    },
+    {
+      "path": "tabm_residual_counts/4/model.pt",
+      "sha256": "389acb9616b78ddf5e64224ff0842489956a74a279bc1d1d49295b2c75b0f249",
+      "bytes": 1051040
+    },
+    {
+      "path": "tabm_residual_counts/4/predictions.npz",
+      "sha256": "62d4881a28b2c3c9a7f6680493a634bae9f1b7ccaa49065c604ad70a5b6f891f",
+      "bytes": 2661992
+    },
+    {
+      "path": "tabm_residual_counts/4/state.json",
+      "sha256": "b868e29ba7cb8f4f522b4d958b3dd7c7c6a97304837b250ddbb9b1e7f11ac673",
+      "bytes": 5834
+    }
+  ],
+  "family_context_state_sha256": [
+    {
+      "path": "control/0/state.json",
+      "sha256": "c7fa242cb75f1795a6749591f0d0a796b30bad687cdabd44cf75e42fd27048c5"
+    },
+    {
+      "path": "control/1/state.json",
+      "sha256": "6dce3ef8c1060f32432d8a7da32c523d4e5b2a6c6d7f087639229ec9797a9e1d"
+    },
+    {
+      "path": "control/2/state.json",
+      "sha256": "29577260e9e2fb4e6bb8ae015381d74c7ae405730aa69f6c3bdac16d27d38d53"
+    },
+    {
+      "path": "control/3/state.json",
+      "sha256": "fe5e09a60c2074d97d767854dd63120fc9c3760bdf02d820dc5e19a6c3a44491"
+    },
+    {
+      "path": "control/4/state.json",
+      "sha256": "12be225f7954211eea4b3fd7184d7d195460e86b4af6e2dc82121a9bd61c6599"
+    },
+    {
+      "path": "periodic_residual_counts/0/state.json",
+      "sha256": "1f72d3ed3f3d1f7b546e12e18fcd3ea02913ffa0c63f323427f71cffee7ba550"
+    },
+    {
+      "path": "periodic_residual_counts/1/state.json",
+      "sha256": "05e9b277609427c7fd05117d1edcd6d3d5ff4306cb28860e29bd12866a3c08f1"
+    },
+    {
+      "path": "periodic_residual_counts/2/state.json",
+      "sha256": "d7e01b2ccc76c1f0edd2473f2dd2c99993a684023b20d4c213b567f8fa2e52d4"
+    },
+    {
+      "path": "periodic_residual_counts/3/state.json",
+      "sha256": "f01d213ce061c870cef849706ce6a6721f54f0e823f5ed52cbec79dbfe791b38"
+    },
+    {
+      "path": "periodic_residual_counts/4/state.json",
+      "sha256": "a1b4a7242d04df12412bf6e2e871037d23fffb5beaa46c11d343e4acffb01a59"
+    }
+  ],
+  "not_included": [
+    "no policy identity (planner, materialization, tau)",
+    "no service artifact",
+    "no 2026 data",
+    "the control and periodic_residual_counts arms are context only"
+  ]
+}

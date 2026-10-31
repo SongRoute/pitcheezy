@@ -1,0 +1,379 @@
+{
+  "schema_version": 1,
+  "contract_version": "C0-v1",
+  "value_spec_version": "defense-we-pa-v1",
+  "purpose": "real replay integration example; not performance evaluation",
+  "source_dataset_sha256": "8ad2b369884265bb5197137499e002a32354930cce036253f92b91671dde479b",
+  "source_game_id": 776703,
+  "pitch_id": "776703:1:1",
+  "input": {
+    "pitch": {
+      "id": "776703:1:1",
+      "request": {
+        "inning": 1,
+        "outs": 0,
+        "bases": 0,
+        "home_score": 0,
+        "away_score": 0,
+        "balls": 0,
+        "strikes": 0,
+        "topbot": "Top",
+        "pitcher_id": 657277,
+        "batter_stand": "L",
+        "date": "2025-08-17",
+        "top_k": 3,
+        "batter_profile": {
+          "rates": [
+            0.876476526260376,
+            0.47008609771728516,
+            0.05698970705270767,
+            0.11896280944347382,
+            0.07127364724874496,
+            0.5689902901649475
+          ],
+          "reliabilities": [
+            0.8191681504249573,
+            0.8286203742027283,
+            0.8280802369117737,
+            0.8280802369117737,
+            0.8187311291694641,
+            0.8032786846160889
+          ],
+          "as_of": "2025-08-16"
+        }
+      }
+    },
+    "pa": {
+      "zone_bounds": {
+        "bottom": 1.61,
+        "top": 3.520105879431615
+      },
+      "repertoire_counts": {
+        "SI": 478,
+        "CH": 385,
+        "ST": 365,
+        "FF": 105,
+        "FC": 128
+      }
+    }
+  },
+  "output": {
+    "id": "d8c655a3b73114c5efaeb60bcb694892155bcfe98ec4bdf07d59d8a01bc17bf5",
+    "status": "ready",
+    "mode": "experimental_location_proxy",
+    "model_version": "observer-zone-v1",
+    "candidates": [
+      {
+        "pitch_type": "ST",
+        "pitch_label": "스위퍼",
+        "zone_id": "middle_left",
+        "zone_label": "가운데 높이 왼쪽",
+        "target": {
+          "x": -0.5533333333333333,
+          "z": 2.5650529397158075
+        },
+        "value": 0.5100043787093941,
+        "delta_pp": 0.28015180841640674,
+        "support": 168.2
+      },
+      {
+        "pitch_type": "ST",
+        "pitch_label": "스위퍼",
+        "zone_id": "low_left",
+        "zone_label": "낮은 왼쪽",
+        "target": {
+          "x": -0.5533333333333333,
+          "z": 1.9283509799052694
+        },
+        "value": 0.5099555899223576,
+        "delta_pp": 0.2752729297127554,
+        "support": 199.6
+      },
+      {
+        "pitch_type": "ST",
+        "pitch_label": "스위퍼",
+        "zone_id": "middle_middle",
+        "zone_label": "가운데 높이 중앙",
+        "target": {
+          "x": 0.0,
+          "z": 2.5650529397158075
+        },
+        "value": 0.5098342555116953,
+        "delta_pp": 0.26313948864652437,
+        "support": 168.3
+      }
+    ],
+    "baseline_value": 0.50720286062523,
+    "explanation": {
+      "outcome_probabilities": [
+        [
+          {
+            "outcome": "ball",
+            "label": "볼",
+            "probability": 0.24416630578457177
+          },
+          {
+            "outcome": "strike",
+            "label": "스트라이크",
+            "probability": 0.6443111891632406
+          },
+          {
+            "outcome": "foul",
+            "label": "파울",
+            "probability": 0.04452554212249614
+          },
+          {
+            "outcome": "out",
+            "label": "타구 아웃",
+            "probability": 0.04265901687646454
+          },
+          {
+            "outcome": "single",
+            "label": "단타",
+            "probability": 0.0155707354751292
+          },
+          {
+            "outcome": "double",
+            "label": "2루타",
+            "probability": 0.0042413856438298795
+          },
+          {
+            "outcome": "triple",
+            "label": "3루타",
+            "probability": 0.0002094011091973814
+          },
+          {
+            "outcome": "home_run",
+            "label": "홈런",
+            "probability": 0.0029239209195352114
+          },
+          {
+            "outcome": "hbp",
+            "label": "몸에 맞는 공",
+            "probability": 0.0013925029055353766
+          },
+          {
+            "outcome": "double_play",
+            "label": "병살",
+            "probability": 0.0
+          }
+        ],
+        [
+          {
+            "outcome": "ball",
+            "label": "볼",
+            "probability": 0.26366189960167585
+          },
+          {
+            "outcome": "strike",
+            "label": "스트라이크",
+            "probability": 0.6211229135337158
+          },
+          {
+            "outcome": "foul",
+            "label": "파울",
+            "probability": 0.0459639240034856
+          },
+          {
+            "outcome": "out",
+            "label": "타구 아웃",
+            "probability": 0.044098014047469956
+          },
+          {
+            "outcome": "single",
+            "label": "단타",
+            "probability": 0.016285000891838482
+          },
+          {
+            "outcome": "double",
+            "label": "2루타",
+            "probability": 0.00440680950366344
+          },
+          {
+            "outcome": "triple",
+            "label": "3루타",
+            "probability": 0.00022916932079754983
+          },
+          {
+            "outcome": "home_run",
+            "label": "홈런",
+            "probability": 0.002841630759746542
+          },
+          {
+            "outcome": "hbp",
+            "label": "몸에 맞는 공",
+            "probability": 0.0013906383376067687
+          },
+          {
+            "outcome": "double_play",
+            "label": "병살",
+            "probability": 0.0
+          }
+        ],
+        [
+          {
+            "outcome": "ball",
+            "label": "볼",
+            "probability": 0.17388098081380562
+          },
+          {
+            "outcome": "strike",
+            "label": "스트라이크",
+            "probability": 0.6500381381261499
+          },
+          {
+            "outcome": "foul",
+            "label": "파울",
+            "probability": 0.06843675802556465
+          },
+          {
+            "outcome": "out",
+            "label": "타구 아웃",
+            "probability": 0.06907754920651243
+          },
+          {
+            "outcome": "single",
+            "label": "단타",
+            "probability": 0.02601473173018364
+          },
+          {
+            "outcome": "double",
+            "label": "2루타",
+            "probability": 0.006587475382503394
+          },
+          {
+            "outcome": "triple",
+            "label": "3루타",
+            "probability": 0.0004905872579238655
+          },
+          {
+            "outcome": "home_run",
+            "label": "홈런",
+            "probability": 0.004084755822350502
+          },
+          {
+            "outcome": "hbp",
+            "label": "몸에 맞는 공",
+            "probability": 0.001389023635006125
+          },
+          {
+            "outcome": "double_play",
+            "label": "병살",
+            "probability": 0.0
+          }
+        ]
+      ],
+      "comparison": {
+        "compared_candidate_index": 1,
+        "margin_pp": 0.004878878703651335,
+        "contributions": [
+          {
+            "outcome": "ball",
+            "label": "볼",
+            "probability_difference_pp": -1.9495593817104084,
+            "value_contribution_pp": 0.0018743879907639437
+          },
+          {
+            "outcome": "strike",
+            "label": "스트라이크",
+            "probability_difference_pp": 2.3188275629524746,
+            "value_contribution_pp": 0.002749355733070941
+          },
+          {
+            "outcome": "foul",
+            "label": "파울",
+            "probability_difference_pp": -0.14383818809894575,
+            "value_contribution_pp": -0.00017054409452544448
+          },
+          {
+            "outcome": "out",
+            "label": "타구 아웃",
+            "probability_difference_pp": -0.14389971710054156,
+            "value_contribution_pp": -0.0024836254366605256
+          },
+          {
+            "outcome": "single",
+            "label": "단타",
+            "probability_difference_pp": -0.07142654167092821,
+            "value_contribution_pp": 0.002981895603007082
+          },
+          {
+            "outcome": "double",
+            "label": "2루타",
+            "probability_difference_pp": -0.016542385983356073,
+            "value_contribution_pp": 0.0008231172611661293
+          },
+          {
+            "outcome": "triple",
+            "label": "3루타",
+            "probability_difference_pp": -0.0019768211600168437,
+            "value_contribution_pp": 0.00017987491680785056
+          },
+          {
+            "outcome": "home_run",
+            "label": "홈런",
+            "probability_difference_pp": 0.008229015978866933,
+            "value_contribution_pp": -0.0010677195043464777
+          },
+          {
+            "outcome": "hbp",
+            "label": "몸에 맞는 공",
+            "probability_difference_pp": 0.00018645679286078635,
+            "value_contribution_pp": -7.863765645741935e-06
+          },
+          {
+            "outcome": "double_play",
+            "label": "병살",
+            "probability_difference_pp": 0.0,
+            "value_contribution_pp": 0.0
+          }
+        ],
+        "reconstruction_residual_pp": -1.3578548008208458e-14,
+        "definition": "같은 이후 투구 정책을 따른다는 모델 안에서 첫 공의 결과 확률 차이를 분해했습니다."
+      },
+      "source": "same_planner_probabilities",
+      "causal_effect": false,
+      "notice": "모델이 추정한 한 공의 결과 분포입니다. 실제 빈도나 검증된 효과가 아니며 헛스윙과 루킹은 구분하지 않습니다."
+    },
+    "zone_bounds": {
+      "bottom": 1.61,
+      "top": 3.520105879431615
+    },
+    "reason": null,
+    "basis": [
+      "주자·아웃·카운트·점수·홈/원정 반영",
+      "경기 전날까지의 타자 성향 반영",
+      "목표 구역은 실제 도달 위치 분포를 활용한 근사 제안",
+      "승률 차이는 모델 내부 추정이며 실제 개선 효과는 미검증"
+    ]
+  },
+  "model_identity": "e4580a7418adbc651670c431a4b717f6aeca015db17bb72d57a9dcbf54fa4b50",
+  "bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+  "runtime_manifest_sha256": "31ed85e36c399e891df2b725cb69e6706656242054641e9470ed9183d14cb37d",
+  "config": {
+    "schema_version": 1,
+    "model_version": "observer-zone-v1",
+    "target_sigma_ft": 0.45,
+    "minimum_effective_draws": 20,
+    "minimum_kernel_mass": 0.01,
+    "repertoire_lookback_days": 90,
+    "repertoire_minimum_pitches": 20,
+    "demo_games": 3,
+    "demo_pas_per_game": 8,
+    "demo_start_date": "2025-08-16",
+    "cv_version": "no-media-v1",
+    "cv_max_attempts": 2,
+    "cv_lease_seconds": 30,
+    "profile_cutoff_policy": "strictly_prior_date",
+    "location_model_kind": "gaussian_reweighted_observed_joint_deliveries",
+    "location_model_scope": "Experimental target proxy; not identified intended-target intervention or measured command error"
+  },
+  "code_commit": "a82ddf4261c4f2a6abbc49e585c818152f1e2847",
+  "script_sha256": "f7c13a81eb379e3f1e4329b4bcd92794c51e57c6d606903d0ada453dadeef359",
+  "verification": {
+    "bundle_restored": true,
+    "cache_round_trip_equal": true,
+    "actual_field_poison_invariant": true,
+    "probability_to_pp_equal": true
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "at": "2026-10-03T03:30:22.213Z",
+  "scope": "Live preview, stored actual data, real remote MLB media; desktop Chromium",
+  "scenes": [
+    {
+      "scene": "0",
+      "label": "1회 초 · Pete Crow-Armstrong · 3구째",
+      "frame": "/watch?game=849843&embed=1#i=2",
+      "actual": "실제 투구\n\n포심 · 97.6 mph\n\n삼진 · 높은 왼쪽\n\n추천 1순위(싱커)와 다른 구종\n\nPete Crow-Armstrong strikes out on a foul tip.\n\n승리확률 변화 · 컵스 공격\n\n50%\n→\n47%\n-2.4%p\n\n이 공 뒤 공격 팀이 이길 확률이 이만큼 바뀌었어요.",
+      "video": {
+        "time": 55.628022,
+        "width": 1280,
+        "frames": 459,
+        "error": null
+      }
+    },
+    {
+      "scene": "1",
+      "label": "1회 초 · Alex Bregman · 5구째",
+      "frame": "/watch?game=849843&embed=1#i=7",
+      "actual": "실제 투구\n\n스위퍼 · 88.6 mph\n\n삼진 · 존 바깥\n\n추천 1순위 구종과 같았어요\n\nAlex Bregman strikes out swinging.\n\n승리확률 변화 · 컵스 공격\n\n47%\n→\n45%\n-2.4%p\n\n이 공 뒤 공격 팀이 이길 확률이 이만큼 바뀌었어요.",
+      "video": {
+        "time": 64.34162,
+        "width": 1280,
+        "frames": 1033,
+        "error": null
+      }
+    },
+    {
+      "scene": "2",
+      "label": "1회 초 · Michael Busch · 3구째",
+      "frame": "/watch?game=849843&embed=1#i=10",
+      "actual": "실제 투구\n\n포심 · 96.2 mph\n\n타구 아웃 · 높은 중앙\n\n추천 1순위(체인지업)와 다른 구종\n\nMichael Busch grounds out, first baseman Ty France to pitcher Michael King.\n\n승리확률 변화 · 컵스 공격\n\n45%\n→\n41%\n-3.4%p\n\n이 공 뒤 공격 팀이 이길 확률이 이만큼 바뀌었어요.",
+      "video": {
+        "time": 74.072767,
+        "width": 1280,
+        "frames": 1518,
+        "error": null
+      }
+    }
+  ],
+  "status": "passed"
+}

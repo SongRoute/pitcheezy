@@ -1,0 +1,64 @@
+{
+  "report_id": "AB-AC-v2",
+  "recorded_at": "2026-09-23T07:17:32.107104+00:00",
+  "integration_code_commit": "cd9dcebdf32556e7f62cc38eddd092cc76603431",
+  "test": {
+    "passed": 47,
+    "seconds": 0.95,
+    "log": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/AB-AC-v2/pytest-final.log",
+    "sha256": "657d91fbbd49bd7ffce0058fb2c278a756e56a494c5a61b7037f6e62a99b74e1"
+  },
+  "sha256": {
+    "results/EXP-A-COMMON-001/results.json": "53fae77aa82ca01870b7bea02a1ce519ad006f2488b58d8b31e5351697b17725",
+    "results/EXP-B-DIAG-001/results.json": "10cf117f92386e95635d8e38836716b8539bfd27584b695b43453c249c42a135",
+    "results/EXP-C-INNING-001/conditional_keep_777063.json": "8c2d700508fd98c41bba04d94f09114f5f60e627259ab63f976a7147c4af56b2",
+    "results/EXP-C-INNING-001/source_admissibility_audit.json": "2da9176df04fa6c8aa4c1f0c1bae477e0c31b0c85e7919652bbafbe911643910",
+    "configs/EXP-B-PAHISTORY-002.json": "183c9b4aae26f5132fcce58ef9a6dd31743316213a39ad07f03c20429b4868f2",
+    "results/EXP-B-PAHISTORY-002/design_validation.json": "06ec2dd8abc69cf6d543dd44a8fef5ac65b668cb5657a43be83ff2119ce5deee",
+    "experiments/pitchmdp/configs/EXP-C-INNING-001-ANCHOR.json": "350acee28edbe021e61d8f1577c980a803ee4829e19d70b7cad99c65ad798e5c",
+    "scripts/c_inning_eval.py": "512c1e3773210402f35f92a57e5dbe4e11b41d3f831635f271b71698a2f35bde",
+    "scripts/c_replacement_data.py": "c70276b39deaaee8bfc1eecfab47426ff6689749c2b9ec44d874b8b68950040e"
+  },
+  "verified_output_sha256": {
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-COMMON-001/small_models.pkl": "7390da542a6ff7bb3923eb73d378fae0091c4f63e4a989e7e8d53f97be988974",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-COMMON-001/predictions.npz": "415cfa42f83a246fd4c86bcdffe9fe5149df903da489b6a205193f913c03fb52",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-COMMON-001/policy_pa.json": "4d22ee55cb5dde275e80eaac461137f7e629ed1b65614d8e9264e0249c2c5209",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/replacement_packets.json": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/decision_anchor_777063.json": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c"
+  },
+  "verified_frozen_source_sha256": {
+    "scripts/minimal_pitch_service.py": "9e5754bc53bfec57f8a87db58ef0e5f8b94ad9f0f3b459ae0de290303770b18f",
+    "pitchmdp/planner.py": "46a51faf797cf74dc193cd0cace9fe5f54e5282c00ff56a9b91895cd74419a58",
+    "pitchmdp/game.py": "0e365c03c821e249f019b241dced8ac8e004c6ea9f95227c408cb2387389efc6",
+    "scripts/diagnose_sequence_legality.py": "4988e85c0c46d9d839688a86a9c69df16d5fa485c0ff43a46d10ffb390e4b428",
+    "scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9"
+  },
+  "roles": {
+    "root": "Astra research/review role; exact runtime model ID not exposed",
+    "b_diagnosis_v2": "gpt-6-sol medium",
+    "c_roster_v2": "gpt-6-sol medium",
+    "c_inning_v2": "gpt-6-sol high"
+  },
+  "tokens": null,
+  "cost": null,
+  "usage_note": "No per-agent token/cost telemetry exposed. Timing/RSS are measured only where reported.",
+  "resources": {
+    "common_comparison_seconds": 12.229852250078693,
+    "common_comparison_peak_rss_bytes_macos": 391233536,
+    "conditional_inning_model_calls": 85,
+    "new_large_training_runs": 0
+  },
+  "processes": {
+    "active_task_compute_or_servers": [],
+    "evidence": "Final ps snapshot matched only its own shell/rg command; all three delegates completed."
+  },
+  "next_experiment": {
+    "id": "EXP-B-PAHISTORY-002",
+    "design_commit": "d75fe92",
+    "status": "frozen_not_run"
+  },
+  "actual_replacement_policy_value": null,
+  "cv": "excluded_pending_handoff",
+  "final_holdout": "not_accessed",
+  "new_2026_game_data": "not_accessed"
+}

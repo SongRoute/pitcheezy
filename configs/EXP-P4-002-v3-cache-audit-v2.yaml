@@ -1,0 +1,218 @@
+{
+  "protocol": "f4_observed_context_cache_audit_v2",
+  "experiment_id": "EXP-P4-002",
+  "contracts": {
+    "optional_cache": {
+      "path": "docs/contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md",
+      "sha256": "538373bd943d57ac963b5d0fd5017bfd919c731a9037ef2c9daf68095ed0f6fb"
+    },
+    "runner": {
+      "path": "docs/contracts/ML-F4-CONTEXT-CACHE-RUNNER-v1.md",
+      "sha256": "2cf7127c9f6ecd04c5cd75d843c765d0c50da2840991ce0bf6788ae9bbd75444"
+    }
+  },
+  "historical_registration": {
+    "config": "configs/EXP-P4-002-v3-cache-audit.yaml",
+    "sha256": "55901a029bb0229ce4ebda97c6be9831b9fcb68671d7de250f18a8d61b6d75cf"
+  },
+  "repo_commit": "d022711368057a75badaba46c50f728e718c3e52",
+  "parent": {
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v3",
+    "config": "configs/EXP-P4-002-v3.yaml",
+    "config_sha256": "ea4c81c884d4d840a64eea8e5e959024a8f6b40be1ee23fb28fa3d848afc5696",
+    "preparation_sha256": "b3b5143f8f52dd813f5a6c12ab57ee6b5f1ec7076d1d1fe692b32ca55deeddc8",
+    "profiles": {
+      "F4-H0": {
+        "profile_sha256": "59f39c09034cd03359ae4cf72cf10eb084432f1891ff955bb615f1680af87c2f",
+        "manifest_sha256": "bb1929ab6aa034b69d04f84c93b200400862ecba6854549fe141352cf16a2850"
+      },
+      "F4-32": {
+        "profile_sha256": "07ca8030aa327649862001bb787e9af6415a4446f7e449a0230b5d7944d281a4",
+        "manifest_sha256": "9ac8ca5a17d410d8c1353c2a92cc8095a79178cac52221d80bf1356e665f0505"
+      },
+      "F4-128": {
+        "profile_sha256": "c9092bf22a6cd96d28c2a2f836605b24537ae9db3b127cf4a38821f95afd6268",
+        "manifest_sha256": "46c95c1cc8f958aaa43a51c834a5931b0e1f32ccca0e87b7457d31752eb3e7bf"
+      }
+    }
+  },
+  "sources": {
+    "pitchmdp/archetypes.py": "9c248dae916bd7c301883815176a307ff2043b0a7f52b5f39e6b0408caeaae49",
+    "pitchmdp/data.py": "5fb3a385985aecc9db1a1145b2a2ab0d6d9dd34e7faa8c44ca50f7eb79810608",
+    "pitchmdp/matrix_data.py": "439912ef3adb52bfdbe6916b9fde464dd9fc9ef019e1066b2c32e4571b52d29b",
+    "pitchmdp/model.py": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+    "pitchmdp/sequence_data.py": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65",
+    "pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
+    "pitchmdp/sequence_model.py": "af26aa645d7b6f0df7e8bf7a0d48035883ea8d4bf354106da10afdb58615145b",
+    "scripts/run_ml_matrix.py": "fe509ba85bd12e8ae798f1eb54e533a44faa6f88032ac6dafa5199242b46526a",
+    "scripts/run_sequence_pilot.py": "06f6f41db49a86b4eeaf2c9e558908ea1917478883f0d5cceb2b21878ef415dc",
+    "scripts/run_temporal_blend.py": "e5f66eada969d28531ed0fc4483fe71210a0e60aaf6f8b6d8017c6e8e3e567c4",
+    "scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+    "scripts/run_sequence_context_frequency.py": "ad2706c3906109a2a2d74c236b0057a1462af1ff6ab3df94bfbcb47a355b5bb1",
+    "pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
+    "pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+    "pitchmdp/matrix_benchmark.py": "e468f843f1eb5eae4f5ae22baed5783bcc5a181ea9483da57c1d31c14d6af9ad",
+    "scripts/run_ml_benchmark.py": "bd6901a78062f32ecf39d7478554e05a3d15e5c67e8642a64f757bf39795ba3d",
+    "pitchmdp/matrix_panel.py": "4292647a83af4798c3b2c520209bbbdb6a571ee9d0558e316c00a42cef1516b8",
+    "pitchmdp/matrix_sharing.py": "30d9b0344bed8f0d8afd9aeb736e5f81e5fb0e98229813423bd2c17669f406b7",
+    "scripts/run_ml_sharing.py": "7dc75531c6096954ca735ada660ffffe745375b7e0cd6d7878d8595d39ea3c75",
+    "pitchmdp/matrix_long_history.py": "fd97088c83693ddf4fc477dbd78d83fb9ed4d51708d2e60d93562afd2bd3ecd1",
+    "pitchmdp/matrix_lazy_model.py": "4203aa36099c0fb315b40a541b25d7cd475023025a90d8a557f490cabb86fb78",
+    "pitchmdp/matrix_long_experiment.py": "aa017a5abc9174e7da09fcca37f4d652a9fce84bebc716f6850ecb02849a0931",
+    "pitchmdp/matrix_long_profile.py": "956c883aa43a8060289e0ae5c9f598fc574befce365817293aefe46bc7de5cd5",
+    "scripts/run_ml_long_history.py": "625f952c027e8d97bf3eddb3f26af80ce97701f29ee667d81e5f85ebf7a73bc5",
+    "pitchmdp/matrix_long_equivalence.py": "84b5b65b013bd264751e11467debe12f24514a15ccafe31b0ce9663cf6dddb13",
+    "scripts/audit_ml_long_equivalence.py": "4965f1a298d3cd8a77571b2fadda8289218545947e2ee5b6d788a2e08ccd3ce5",
+    "pitchmdp/matrix_observed_context_cache.py": "e16d7bbf393190ad7edc5e42c491f3ce227c39f42a6f94415b409787bcf69c58",
+    "pitchmdp/matrix_policy_artifacts.py": "a8a0992858372e58e17ca8aa067386a398c457da20e5cb1a93142e55668d2b7c",
+    "pitchmdp/matrix_context_cache_audit.py": "26f3d2ae5abaf2aa5e1faf95fcac60d25142c9db9e1c9b7625e6aad7d3a5a611",
+    "scripts/audit_ml_context_cache.py": "9a3617b78860dc98d2f32c20ee8cbaea6d566f2a43c1bc413fdb061e7022fb03"
+  },
+  "device": "mps",
+  "arms": [
+    "F4-H0",
+    "F4-32",
+    "F4-128"
+  ],
+  "samples": {
+    "rule": "chronological_linspace_no_shrink",
+    "warmup_train": 8192,
+    "train": {
+      "n": 65536,
+      "rows_sha256": "e109cb5f9816583eaf5dd223b8d037007c39f631f72922b0c8a05b3acc933a4e"
+    },
+    "train_evaluation": {
+      "n": 2048,
+      "rows_sha256": "83f1959ec23cfa68bc1958f407d898b00dde49161683f23c3cf86e5350e47f4a"
+    },
+    "earlystop": {
+      "n": 2048,
+      "rows_sha256": "2e73bb09492e1b10f6fe0e1249d663df659d7109920abf7849bec72180068a27"
+    },
+    "temperature": {
+      "n": 16,
+      "draws": 400,
+      "rows_sha256": "d8ace249500f8ba289ca64ec90e38badf5489fea5cbafdcce863bdd3e3e36194"
+    },
+    "dev_or_june_cache": "forbidden"
+  },
+  "stage1": {
+    "orders": [
+      "original",
+      "repeated",
+      "reverse",
+      "uneven_chunks"
+    ],
+    "samples": [
+      "train",
+      "train_evaluation"
+    ],
+    "must_fail": [
+      "count_change",
+      "style_change",
+      "undeclared_row"
+    ],
+    "tolerance": "bitwise",
+    "chunk_size": 8192,
+    "timing_repetitions": 3,
+    "uneven_chunk_sizes": [
+      1,
+      7,
+      256,
+      1000
+    ],
+    "timing_minibatch_size": 256
+  },
+  "stage2": {
+    "seed": 0,
+    "width": 128,
+    "minibatches": 8,
+    "batch_size": 256,
+    "learning_rate": 0.0005,
+    "identical_initialization_and_minibatch_order": true,
+    "tolerances": {
+      "input_context": "bitwise",
+      "forward_logits": {
+        "atol": 2e-05,
+        "rtol": 0.0
+      },
+      "loss": {
+        "atol": 2e-06,
+        "rtol": 0.0
+      },
+      "gradients": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      },
+      "updated_weights": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      }
+    },
+    "rng_state": "numpy/torch-cpu/torch-mps state identical before and after cache construction and each explicit training step on both paths; checked by the runner"
+  },
+  "stage3": {
+    "budget": {
+      "epochs": 4,
+      "patience": 4,
+      "batch_size": 256,
+      "learning_rate": 0.0005
+    },
+    "warmup": {
+      "train": 8192,
+      "epochs": 1,
+      "evaluation": "train_evaluation"
+    },
+    "draws": 400,
+    "tolerances": {
+      "selected_state": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      },
+      "history_nll": {
+        "atol": 2e-06,
+        "rtol": 0.0
+      },
+      "delivery_temperature": {
+        "atol": 0.001,
+        "rtol": 0.0
+      },
+      "probability": {
+        "atol": 2e-05,
+        "rtol": 0.0
+      },
+      "probability_sum": {
+        "atol": 1e-06,
+        "rtol": 0.0
+      },
+      "calibration_objective": {
+        "atol": 2e-06,
+        "rtol": 0.0
+      }
+    },
+    "profile_models_reused_in_full_experiment": false,
+    "scientific_budget_unchanged": "30/5/256/.0005"
+  },
+  "limits": {
+    "command_seconds": {
+      "prepare": 600,
+      "stage1": 1200,
+      "stage2": 1200,
+      "stage3": 600,
+      "compare": 600,
+      "summary": 600
+    },
+    "termination_grace_seconds": 15,
+    "profile_command_cap_seconds": 600,
+    "wall_ledger_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/audit/f4-cache-audit-v2-wall-ledger",
+    "single_member_wall_limit_seconds": 7200,
+    "family_wall_budget_seconds": 28800,
+    "no_seed_data_epoch_batch_draw_reduction": true,
+    "full_fit_started": false
+  },
+  "prior_cost_ledger": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-claude/f4-prior-cost-ledger-v2.json",
+    "sha256": "a60acad02f52611e2426cd66aee091d9b9f1b35f52b4282acf2e249dc62ce6aa"
+  },
+  "adoption": null
+}

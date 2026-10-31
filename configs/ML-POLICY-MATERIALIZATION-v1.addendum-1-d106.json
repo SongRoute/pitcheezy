@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "e33d5f1c0cd1911a5d7825b332dda9ea1804bdba84d81d61993990ba200f1810",
+  "stage": "census",
+  "registered_inputs": {
+    "census": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a2/census.json",
+      "file_sha256": "18ab73e65d1f3d73e9c003f3ed336061a54c7977b2d6a307f5fb74692e64f827"
+    }
+  },
+  "note": "D103: addendum 1 on the D103 config pins the sealed S0-census-a2 census.json (produced at source 9c25d8e; the census code path is unchanged through a454520: later commits touch the artifact writer, the manifest AppleDouble filter, an additive 2026 snapshot guard and tests). Earlier addendum-1 files have older config parents and are not used. Re-pinned on the D104 config (was addendum-1-census-d103). Re-pinned on the D105 config. Re-pinned on the D106 config."
+}

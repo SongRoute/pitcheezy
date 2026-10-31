@@ -1,0 +1,78 @@
+# EXP-WS-SEQ-002 — 투구 시퀀스 모델의 사전 등록 격자 탐색(10개 설정): 맥락 길이, 이전 투구의 존·구속·무브먼트 토큰, 타자 쪽 맥락, 인코더 크기
+# 기계가 읽는 정본은 configs/EXP-WS-SEQ-002.json 이다. 이 YAML은 레포 관례·사람용 쌍둥이이며 값이 JSON과 같아야 한다
+#   (train_seq2.py --selfcheck 와 prepare_inputs2.py --plan 이 yaml.safe_load == json.load 를 확인한다. 한쪽만 고치지 말 것).
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e6-seq2/REGISTRATION.json
+# 2026 EXPOSED DEVELOPMENT — 독립 TEST 없음, 승자·채택 없음. 선택은 SELECT(시드 0)만으로. 실행은 독립 검토 PASS 뒤 `gpu run` 으로만.
+id: EXP-WS-SEQ-002
+phase: WS-adaptation
+baseline: "EXP-WS-SEQ-001 arm N1 (sequence model, 32 earlier pitches, base tokens) and E1b arm P (prequential-refit LightGBM 10+2 backbone)"
+change: "pre-registered 10-config grid over context length, richer prior-pitch tokens (zone, release_speed / pfx_x / pfx_z buckets), batter-side context and encoder size; one config selected on SELECT (seed 0)"
+data_version: d20260930-h2026f
+data_role: 2026 EXPOSED DEVELOPMENT
+authoritative: configs/EXP-WS-SEQ-002.json
+seeds: [0, 1, 2]
+inputs:
+  features_file: x-prequential.npy
+  corpus_file: corpus-subset.npz
+  sequence_file: seq-inputs.npz
+  tokens2_file: seq-inputs2.npz
+  bucket_edges_file: bucket-edges.json
+  manifest_file: manifest.json
+  feature_dimension: 199
+labels:
+  parent_classes: 10
+  whiff_parent_class: 1
+  bip_classes: [3, 4, 5, 6, 7, 9]
+  leaf_order: [ball, foul, hit_by_pitch, narrow_whiff, other_strike, ground_ball_in_play, other_in_play]
+vocab:            # 0 = 결측 범주(zone·버킷). 패딩 id 는 어휘 크기
+  pitch_type: 19
+  outcome: 10
+  balls: 4
+  strikes: 3
+  same: 2
+  zone: 15
+  release_speed: 9
+  pfx_x: 6
+  pfx_z: 6
+buckets:          # FIT 행만으로 맞춘 분위수 구간 수
+  release_speed: 8
+  pfx_x: 5
+  pfx_z: 5
+model:
+  trunk_hidden: [256, 128]
+  activation: gelu
+  dropout: 0.1
+  layer_norm: true
+  encoder_heads: 4
+  encoder_dropout: 0.1
+  encoder_activation: gelu
+training:
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 2048
+  max_epochs: 30
+  patience: 5
+  loss_weights: {parent: 1.0, narrow_whiff: 1.0, ground_ball_per_pitch: 1.0}
+  precision: fp32
+  eval_batch_size: 8192
+  wall_cap_seconds: 3600
+temperature:
+  bounds_T: [0.05, 20.0]
+nll_clip: 1.0e-15
+grid:
+  - {id: G01, context_length: 32, tokens: base, batter_context: 0, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G02, context_length: 16, tokens: base, batter_context: 0, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G03, context_length: 64, tokens: base, batter_context: 0, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G04, context_length: 32, tokens: physics_zone, batter_context: 0, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G05, context_length: 64, tokens: physics_zone, batter_context: 0, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G06, context_length: 32, tokens: physics_zone, batter_context: 16, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G07, context_length: 64, tokens: physics_zone, batter_context: 16, token_dim: 64, encoder_layers: 2, encoder_ff: 128}
+  - {id: G08, context_length: 32, tokens: physics_zone, batter_context: 0, token_dim: 96, encoder_layers: 3, encoder_ff: 192}
+  - {id: G09, context_length: 64, tokens: physics_zone, batter_context: 0, token_dim: 96, encoder_layers: 3, encoder_ff: 192}
+  - {id: G10, context_length: 64, tokens: physics_zone, batter_context: 16, token_dim: 96, encoder_layers: 3, encoder_ff: 192}
+selection:
+  metric: best_select_seven_leaf_nll_uncalibrated
+  seed: 0
+  tie: smaller id
+  stop_rule_reference_select_nll: 1.5685147057271014

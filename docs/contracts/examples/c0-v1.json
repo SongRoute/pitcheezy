@@ -1,0 +1,1019 @@
+{
+  "description": "Synthetic C0 development examples; no real video, labels, or measured calibration.",
+  "pitch_id_convention": "game_pk:at_bat_number:pitch_number",
+  "examples": [
+    {
+      "case": "normal_complete_chain",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "accept",
+        "reason": null
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "zone9",
+        "blocked_by": null,
+        "points": {
+          "image_pixels": {
+            "x": 50.0,
+            "y": 40.0
+          },
+          "annotated_image_zone": {
+            "x": 0.5,
+            "y": 0.5,
+            "inside_annotated_quad": true
+          },
+          "plate_feet": {
+            "x": 0.0,
+            "z": 2.5,
+            "x_convention": "statcast_plate_x_catcher_view"
+          },
+          "zone9": {
+            "zone_id": "middle_middle",
+            "label": "가운데 높이 중앙",
+            "column": 1,
+            "row": 1,
+            "boundary_margin_feet": 0.2766666666666666,
+            "outside_zone": false
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          },
+          {
+            "source_frame": "annotated_image_zone",
+            "target_frame": "plate_feet",
+            "method": "synthetic matrix for development fixtures only",
+            "version": "synthetic-fixture-v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "synthetic": true,
+              "note": "not fit to real footage"
+            }
+          },
+          {
+            "source_frame": "plate_feet",
+            "target_frame": "zone9",
+            "method": "fixed3x3 quantization of the batter strike zone",
+            "version": "domain_zone9_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "zone_bounds": {
+                "top": 3.5,
+                "bottom": 1.5
+              },
+              "note": "quantization; see boundary_margin_feet"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": true,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "missing_intent",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "abstain",
+        "reason": "no_media"
+      },
+      "estimate": {
+        "status": "unavailable",
+        "unavailable_reason": "no_media",
+        "deepest_frame": null,
+        "blocked_by": null,
+        "points": {},
+        "transform_chain": [],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": false,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "partial_coordinates",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "partial",
+        "reason": "no_plate_plane_calibration"
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "annotated_image_zone",
+        "blocked_by": "no_plate_plane_calibration",
+        "points": {
+          "image_pixels": {
+            "x": 50.0,
+            "y": 40.0
+          },
+          "annotated_image_zone": {
+            "x": 0.5,
+            "y": 0.5,
+            "inside_annotated_quad": true
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": false,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "coordinate_chain_mismatch",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "reject",
+        "consumer": "reject",
+        "reason": "points omit an intermediate frame"
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "zone9",
+        "blocked_by": null,
+        "points": {
+          "image_pixels": {
+            "x": 50.0,
+            "y": 40.0
+          },
+          "plate_feet": {
+            "x": 0.0,
+            "z": 2.5,
+            "x_convention": "statcast_plate_x_catcher_view"
+          },
+          "zone9": {
+            "zone_id": "middle_middle",
+            "label": "가운데 높이 중앙",
+            "column": 1,
+            "row": 1,
+            "boundary_margin_feet": 0.2766666666666666,
+            "outside_zone": false
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          },
+          {
+            "source_frame": "annotated_image_zone",
+            "target_frame": "plate_feet",
+            "method": "synthetic matrix for development fixtures only",
+            "version": "synthetic-fixture-v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "synthetic": true,
+              "note": "not fit to real footage"
+            }
+          },
+          {
+            "source_frame": "plate_feet",
+            "target_frame": "zone9",
+            "method": "fixed3x3 quantization of the batter strike zone",
+            "version": "domain_zone9_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "zone_bounds": {
+                "top": 3.5,
+                "bottom": 1.5
+              },
+              "note": "quantization; see boundary_margin_feet"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": true,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "wrong_pitch_link",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "reject",
+        "reason": "estimate pitch_id differs from replay_pitch_id"
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "zone9",
+        "blocked_by": null,
+        "points": {
+          "image_pixels": {
+            "x": 50.0,
+            "y": 40.0
+          },
+          "annotated_image_zone": {
+            "x": 0.5,
+            "y": 0.5,
+            "inside_annotated_quad": true
+          },
+          "plate_feet": {
+            "x": 0.0,
+            "z": 2.5,
+            "x_convention": "statcast_plate_x_catcher_view"
+          },
+          "zone9": {
+            "zone_id": "middle_middle",
+            "label": "가운데 높이 중앙",
+            "column": 1,
+            "row": 1,
+            "boundary_margin_feet": 0.2766666666666666,
+            "outside_zone": false
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          },
+          {
+            "source_frame": "annotated_image_zone",
+            "target_frame": "plate_feet",
+            "method": "synthetic matrix for development fixtures only",
+            "version": "synthetic-fixture-v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "synthetic": true,
+              "note": "not fit to real footage"
+            }
+          },
+          {
+            "source_frame": "plate_feet",
+            "target_frame": "zone9",
+            "method": "fixed3x3 quantization of the batter strike zone",
+            "version": "domain_zone9_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "zone_bounds": {
+                "top": 3.5,
+                "bottom": 1.5
+              },
+              "note": "quantization; see boundary_margin_feet"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:4",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": true,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "low_quality_unavailable",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "abstain",
+        "reason": "low_quality_or_occlusion"
+      },
+      "estimate": {
+        "status": "unavailable",
+        "unavailable_reason": "low_quality_or_occlusion",
+        "deepest_frame": null,
+        "blocked_by": null,
+        "points": {},
+        "transform_chain": [],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": false,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "late_arrival",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:02:30Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "analysis_only",
+        "reason": "received after recommendation; preserve prior recommendation"
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "zone9",
+        "blocked_by": null,
+        "points": {
+          "image_pixels": {
+            "x": 50.0,
+            "y": 40.0
+          },
+          "annotated_image_zone": {
+            "x": 0.5,
+            "y": 0.5,
+            "inside_annotated_quad": true
+          },
+          "plate_feet": {
+            "x": 0.0,
+            "z": 2.5,
+            "x_convention": "statcast_plate_x_catcher_view"
+          },
+          "zone9": {
+            "zone_id": "middle_middle",
+            "label": "가운데 높이 중앙",
+            "column": 1,
+            "row": 1,
+            "boundary_margin_feet": 0.2766666666666666,
+            "outside_zone": false
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          },
+          {
+            "source_frame": "annotated_image_zone",
+            "target_frame": "plate_feet",
+            "method": "synthetic matrix for development fixtures only",
+            "version": "synthetic-fixture-v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "synthetic": true,
+              "note": "not fit to real footage"
+            }
+          },
+          {
+            "source_frame": "plate_feet",
+            "target_frame": "zone9",
+            "method": "fixed3x3 quantization of the batter strike zone",
+            "version": "domain_zone9_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "zone_bounds": {
+                "top": 3.5,
+                "bottom": 1.5
+              },
+              "note": "quantization; see boundary_margin_feet"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": true,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "correction_original",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:01:59.600Z",
+      "analysis_revision": 1,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "accept",
+        "reason": null
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "zone9",
+        "blocked_by": null,
+        "points": {
+          "image_pixels": {
+            "x": 50.0,
+            "y": 40.0
+          },
+          "annotated_image_zone": {
+            "x": 0.5,
+            "y": 0.5,
+            "inside_annotated_quad": true
+          },
+          "plate_feet": {
+            "x": 0.0,
+            "z": 2.5,
+            "x_convention": "statcast_plate_x_catcher_view"
+          },
+          "zone9": {
+            "zone_id": "middle_middle",
+            "label": "가운데 높이 중앙",
+            "column": 1,
+            "row": 1,
+            "boundary_margin_feet": 0.2766666666666666,
+            "outside_zone": false
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          },
+          {
+            "source_frame": "annotated_image_zone",
+            "target_frame": "plate_feet",
+            "method": "synthetic matrix for development fixtures only",
+            "version": "synthetic-fixture-v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "synthetic": true,
+              "note": "not fit to real footage"
+            }
+          },
+          {
+            "source_frame": "plate_feet",
+            "target_frame": "zone9",
+            "method": "fixed3x3 quantization of the batter strike zone",
+            "version": "domain_zone9_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "zone_bounds": {
+                "top": 3.5,
+                "bottom": 1.5
+              },
+              "note": "quantization; see boundary_margin_feet"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v1"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": true,
+          "accuracy_estimate": null
+        }
+      }
+    },
+    {
+      "case": "correction_new_version",
+      "development_only": true,
+      "use_for_training": false,
+      "use_for_performance_evaluation": false,
+      "source": "synthetic_contract_example",
+      "replay_pitch_id": "990001:12:3",
+      "recommendation_created_at": "2026-09-23T12:01:59.700Z",
+      "release_at": "2026-09-23T12:02:00Z",
+      "release_frame_time": 8.0,
+      "received_at": "2026-09-23T12:03:00Z",
+      "analysis_revision": 2,
+      "expected": {
+        "intent_contract": "valid",
+        "consumer": "analysis_only",
+        "reason": "new immutable analysis version; preserve prior recommendation"
+      },
+      "estimate": {
+        "status": "estimated",
+        "unavailable_reason": null,
+        "deepest_frame": "zone9",
+        "blocked_by": null,
+        "points": {
+          "image_pixels": {
+            "x": 58.0,
+            "y": 40.0
+          },
+          "annotated_image_zone": {
+            "x": 0.58,
+            "y": 0.5,
+            "inside_annotated_quad": true
+          },
+          "plate_feet": {
+            "x": 0.13279999999999992,
+            "z": 2.5,
+            "x_convention": "statcast_plate_x_catcher_view"
+          },
+          "zone9": {
+            "zone_id": "middle_middle",
+            "label": "가운데 높이 중앙",
+            "column": 1,
+            "row": 1,
+            "boundary_margin_feet": 0.1438666666666668,
+            "outside_zone": false
+          }
+        },
+        "transform_chain": [
+          {
+            "source_frame": "image_pixels",
+            "target_frame": "annotated_image_zone",
+            "method": "four annotated image corners mapped to the unit square",
+            "version": "annotated_quad_homography_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "calibration_corners": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 0
+                },
+                {
+                  "x": 100,
+                  "y": 80
+                },
+                {
+                  "x": 0,
+                  "y": 80
+                }
+              ]
+            }
+          },
+          {
+            "source_frame": "annotated_image_zone",
+            "target_frame": "plate_feet",
+            "method": "synthetic matrix for development fixtures only",
+            "version": "synthetic-fixture-v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "synthetic": true,
+              "note": "not fit to real footage"
+            }
+          },
+          {
+            "source_frame": "plate_feet",
+            "target_frame": "zone9",
+            "method": "fixed3x3 quantization of the batter strike zone",
+            "version": "domain_zone9_v1",
+            "error": null,
+            "error_units": null,
+            "error_status": "unmeasured",
+            "evidence": {
+              "zone_bounds": {
+                "top": 3.5,
+                "bottom": 1.5
+              },
+              "note": "quantization; see boundary_margin_feet"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "pitch_id": "990001:12:3",
+        "clip_id": "synthetic-c0-clip",
+        "clip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "method": {
+          "kind": "synthetic_contract_fixture",
+          "version": "synthetic-fixture-v2"
+        },
+        "evidence": {
+          "frame_index": 12,
+          "frame_time": 7.4
+        },
+        "provenance": {
+          "label_source": "video_module",
+          "review_status": "unreviewed"
+        },
+        "uncertainty": {
+          "value": null,
+          "units": "pixels",
+          "basis": "synthetic example; accuracy unmeasured"
+        },
+        "is_intent_proxy": true,
+        "claims": {
+          "catcher_intent_verified": false,
+          "independent_ground_truth": false,
+          "physical_plate_coordinates": true,
+          "accuracy_estimate": null
+        }
+      }
+    }
+  ]
+}

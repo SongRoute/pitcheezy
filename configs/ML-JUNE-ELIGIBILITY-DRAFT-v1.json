@@ -1,0 +1,139 @@
+{
+  "prep_id": "ML-JUNE-ELIGIBILITY-v1",
+  "status": "draft_unregistered",
+  "note": "Implementation template. Root registers the final config, code commit C, script SHA256, contract SHA256 and attempt root; the script refuses to run while registration fields are null.",
+  "base_commit": "663a1cd",
+  "contract": "docs/contracts/ML-JUNE-ELIGIBILITY-v1.md",
+  "registration": {
+    "code_commit": null,
+    "script_path": "scripts/prepare_june_eligibility.py",
+    "script_sha256": null
+  },
+  "window": {
+    "season": 2025,
+    "date_min": "2025-06-01",
+    "date_max": "2025-06-30",
+    "game_types": ["R"],
+    "reject_year_min": 2026
+  },
+  "research_fold": {
+    "name": "blend",
+    "date_min": "2025-06-01",
+    "date_max": "2025-06-30",
+    "source": "archived EXP-P4-001 scripts/run_temporal_blend.py assign_fold(2025) periods; date-derived, not the stored split"
+  },
+  "source_split": {
+    "column": "split",
+    "expected": ["calibration"],
+    "source": "experiments/pitchmdp/pitchmdp/data.py add_splits: 2025-05-01..2025-06-30 = calibration"
+  },
+  "key": ["game_pk", "at_bat_number", "pitch_number"],
+  "sort": ["game_date", "game_pk", "at_bat_number", "pitch_number"],
+  "columns": {
+    "metadata": ["game_pk", "at_bat_number", "pitch_number", "game_date", "game_type", "split", "pitcher", "batter", "starter_pitcher", "p_throws"],
+    "eligibility": ["description", "events", "balls", "strikes", "supported_pa", "pitch_type", "plate_x", "plate_z"]
+  },
+  "sources": {
+    "processed_pitches": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+      "sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+      "provenance": "configs/ML-JUNE-SUPPORT-AUDIT-v1.json sources.processed_pitches"
+    },
+    "blend_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/blend_keys.parquet",
+      "sha256": "5bc1cf7830f39f31ca69093b8f855ac2c3530fc0b9f08de82770055dac22094f",
+      "provenance": "EXP-P4-001 preparation.json artifact_hashes"
+    },
+    "blend_metadata": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/blend_metadata.parquet",
+      "sha256": "de4b784c5c2488993c3bfbb6f44515255ed03d085a76a6e4a1c957b06dee2773",
+      "provenance": "EXP-P4-001 preparation.json artifact_hashes"
+    },
+    "panel": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/panel.json",
+      "sha256": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a",
+      "provenance": "EXP-P4-001 preparation.json artifact_hashes"
+    },
+    "p4_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/preparation.json",
+      "sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+      "provenance": "configs/ML-JUNE-SUPPORT-AUDIT-v1.json sources.p4_preparation"
+    },
+    "p4_model_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/source/pitchmdp/model.py",
+      "sha256": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "git_blob_sha1": "07f3389cf7c9300e122cacbf97b5c518921b2043",
+      "approved_repo_path": "experiments/pitchmdp/pitchmdp/model.py",
+      "provenance": "EXP-P4-001 preparation.json identity.source_hashes['pitchmdp/model.py']"
+    },
+    "prior_audit_config": {
+      "path": "configs/ML-JUNE-SUPPORT-AUDIT-v1.json",
+      "sha256": "b1c21f3f1ada028ea48c6514347b2c96964c5107a0c5865d1aa20820884c0050"
+    },
+    "prior_audit_result": {
+      "path": "results/ML-JUNE-SUPPORT-AUDIT-v1.json",
+      "sha256": "6c98069e78ca2f3bdbbfb07eb88c7e9d6049f366ffaf15ae6b12c5fccde8259f",
+      "provenance": "equals COOP-009 corrected-audit-attempt-002/result.json bytes"
+    }
+  },
+  "read_only_guards": {
+    "g0_research_frozen": {
+      "path": "configs/G0-RESEARCH-FROZEN-v1.json",
+      "sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+    }
+  },
+  "eligibility_rule": {
+    "extract": ["OUTCOMES", "outcome_labels", "eligible"],
+    "semantics": "outcome_labels>=0 & supported_pa.fillna(False) & pitch_type.notna() & plate_x.notna() & plate_z.notna() & balls.between(0,3) & strikes.between(0,2)",
+    "reasons": ["unmapped_outcome", "unsupported_pa", "missing_type", "missing_plate_x", "missing_plate_z", "invalid_balls", "invalid_strikes"]
+  },
+  "unknown_policy": {
+    "missing_pitcher": "fail",
+    "missing_starter_pitcher": "fail",
+    "hand_outside_levels": "fail"
+  },
+  "groups": {
+    "volume": {"source": "panel.json train_players[].train_volume; absent = zero", "levels": ["zero", "low", "middle", "high"]},
+    "game_role": {"rule": "starter if pitcher == starter_pitcher else relief", "levels": ["starter", "relief"]},
+    "hand": {"rule": "p_throws", "levels": ["L", "R"]},
+    "crosses": ["role_x_volume", "hand_x_volume"]
+  },
+  "support_rule": {"min_games": 30, "min_pitches": 500, "combine": "AND"},
+  "support_judged_populations": ["eligible", "panel_eligible", "outside_eligible", "eligible_minus_frozen_cpanel"],
+  "shared_game_pairs": [
+    ["panel_eligible", "eligible_minus_frozen_cpanel"],
+    ["panel_requested", "outside_requested"],
+    ["panel_eligible", "outside_eligible"],
+    ["eligible", "excluded"]
+  ],
+  "expected": {
+    "populations": {
+      "requested": {"pitches": 115816, "games": 397, "pitchers": 552},
+      "panel_requested": {"pitches": 5212, "games": 115, "pitchers": 20},
+      "panel_eligible": {"pitches": 4821, "games": 110, "pitchers": 20},
+      "panel_excluded": {"pitches": 391, "games": 50, "pitchers": 17},
+      "outside_requested": {"pitches": 110604, "games": 397, "pitchers": 532},
+      "requested_minus_frozen_cpanel": {"pitches": 110995, "games": 397, "pitchers": 549}
+    },
+    "eligible_bounds": {"min": 4821, "max": 115425},
+    "frozen_volume": {"q25": 170, "q75": 1514}
+  },
+  "heavy_lock": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock",
+  "budget": {"external_worker_seconds": 600, "enforced_by": "Sol supervisor (Popen to wait, monotonic)"},
+  "outputs": {
+    "allowed_attempt_root": null,
+    "files": {
+      "inventory": "requested_inventory.parquet",
+      "eligible_keys": "eligible_keys.parquet",
+      "eligible_metadata": "eligible_metadata.parquet",
+      "complement_eligible_keys": "complement_eligible_keys.parquet",
+      "complement_eligible_metadata": "complement_eligible_metadata.parquet",
+      "excluded": "excluded_reasons.parquet",
+      "result": "result.json",
+      "manifest": "manifest.json",
+      "failure": "failure.json",
+      "failure_log": "failure.log"
+    }
+  },
+  "prohibited": ["training", "inference", "calibration fit", "quality metrics", "class prevalence", "DEV values", "2026 data", "raw fetch", "aux.pkl or checkpoint deserialization", "pipeline loaders", "source changes", "processed pitch_outcome"]
+}

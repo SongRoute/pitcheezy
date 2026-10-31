@@ -1,0 +1,66 @@
+{
+  "id": "EXP-STAB-01",
+  "recorded_at": "2026-10-25 (ledger backfill T-12; run output copied verbatim, nothing recomputed)",
+  "decision": "D180",
+  "data_role": "2025-07-01..2025-09-30 DEV regular season (exposed_development), 150 games outside S5/S6, decisions_compared 37559; June 2025 (S3b), 2026 and outcomes/rewards not read (outcomes_read=false)",
+  "provenance": {
+    "note": "All keys above except id/recorded_at/decision/data_role/provenance are a verbatim copy of the run-written results file; no value was recomputed, rounded or estimated in this backfill. The same run-written file is committed on branch exp/stab01-1020 at 6ca4d3da (results/EXP-STAB-01.json), not yet on this branch.",
+    "run_output": {
+      "results_json": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-01/results.json",
+      "results_json_sha256": "ab3f64957f8cc515e2d89c6ee89945778e482ac090402889c3ad9a1c834a4eb2",
+      "branch_copy": "exp/stab01-1020@6ca4d3da7a4a725fed903a97e49e4e076da4b2b8:results/EXP-STAB-01.json (byte-identical, same sha256)",
+      "decisions_npz": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-01/decisions.npz",
+      "decisions_npz_sha256": "8a6d5724bc8d40dcef53c4d743f58e07fda0efefca63625d7f69d28a723a6969",
+      "started_json": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-01/started.json",
+      "started_json_sha256": "5ab9ac365efb69c1a42c4fb86dc8319fdcd89faba46b246ff357448d0c0a72a0",
+      "ledger_sha256_as_recorded": "21cbfbfd69992ad7e3048528fd3bb2f811252790c6138660c79b894d8fe04832"
+    },
+    "code": {
+      "branch": "exp/stab01-1020",
+      "run_commit": "941d8eb4615adaa880ca55feea0ad2bc99902753",
+      "result_commit": "6ca4d3da7a4a725fed903a97e49e4e076da4b2b8",
+      "config": "configs/EXP-STAB-01.yaml",
+      "config_sha256": "4b0de55c2916bc6097f3f8f6a9b008192d068bd5bc7c31fbb9496f1b6629982f",
+      "runner": "experiments/pitchmdp/scripts/diagnose_policy_seed_ensemble.py",
+      "runner_sha256": "390945280f56a74e8c225199a357f1178a401642f29eb8cbafe738fbcdff2485"
+    },
+    "run_window": {
+      "started_utc": "2026-10-20T13:23:10.744160+00:00",
+      "finished_utc": "2026-10-20T16:52:57.260411+00:00",
+      "kst": "2026-10-20 22:23:10 -> 2026-10-21 01:52:57 KST",
+      "seconds": 12586.464344416745,
+      "machine": "Mac mini M4 24GB, CPU, single process, common .heavy.lock (per registration)"
+    },
+    "registration": {
+      "file": "/Users/song/Projects/pitcheezy-pm-jobs/20261020-stab01/REGISTRATION.json",
+      "sha256": "4f095fab0a690442aeb0037206b83920d34aee7fad650f3b6e1add3ee08d0f5c",
+      "status": "REGISTERED_BEFORE_FULL_RUN, rev 1"
+    },
+    "reviews": [
+      {
+        "file": "/Users/song/Projects/pitcheezy-pm-jobs/20261020-stab01/REVIEW-001.json",
+        "sha256": "23b5c211a1ee48cb8029d15ff81c7fe2a646d1f3c082405b6b4466db103e865c",
+        "reviewer": "Claude Fable 5.1",
+        "verdict": "PASS_WITH_CONDITIONS (M1), reviewed registration b0ff153b..., commit 5933b712",
+        "superseded_by": "REVIEW-002.json"
+      },
+      {
+        "file": "/Users/song/Projects/pitcheezy-pm-jobs/20261020-stab01/REVIEW-002.json",
+        "sha256": "5c9ba5566ac897bd16be62f3161efac38215cccf931049e02a184d9d5fb05684",
+        "reviewer": "Claude Fable 5.1",
+        "verdict": "PASS, reviewed registration 4f095fab..., commit 941d8eb4"
+      }
+    ],
+    "result_verification": {
+      "file": "/Users/song/Projects/pitcheezy-pm-jobs/20261020-stab01/RESULT-REVIEW-001.json",
+      "sha256": "677d5c23e20667adc3d0b0505fc102c40fe9365a475ae341d01d26cc107d901d",
+      "verifier": "claude-sonnet-5-5, independent recomputation from decisions.npz",
+      "verdict": "CONFIRMED (mismatches [], verdict reproduced, values matched to 1e-9)"
+    },
+    "other_job_files": {
+      "RESULT.md": "a6a5ffbd33d910092185d05403dd8ceb90b20d43e36676132ca3776846a0644b",
+      "run.log": "80469683b4ff77f3edb606e86bf799ccf922f0d51db4d0edf3bee3ecf8630d45"
+    }
+  },
+  "note": "results/EXP-STAB-01.json is the byte-identical run output (exp/stab01-1020 6ca4d3da, run commit 941d8eb4); this sidecar holds provenance only. Written 2026-10-25 by Claude PM from an Opus ledger backfill."
+}

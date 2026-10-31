@@ -1,0 +1,72 @@
+{
+  "protocol": "ml_g0_whole_mlb_v1",
+  "experiment_id": "EXP-P11-001",
+  "scope": "Cmlb",
+  "cell": "G0-global",
+  "seeds": [0, 1, 2, 3, 4],
+  "source_arms": {"0": "g", "1": "g", "2": "g", "3": "c1", "4": "c1"},
+  "draws": 400,
+  "kind": "flatten_mlp",
+  "width": 128,
+  "device": "auto",
+  "history_length": 5,
+  "context_width": 52,
+  "routing_width": 7,
+  "individual_tau": 1000,
+  "cluster_tau": 10000,
+  "calibration": {
+    "may_temperature": "reuse each frozen member calibration.json unchanged",
+    "june_weights": "reuse C1 analysis G0-global ensemble and per-seed blend weights unchanged",
+    "refit": false
+  },
+  "expected_samples": {"dev": 311721, "dev_games": 1161, "cpanel_dev": 12334, "cpanel_games": 328, "temperature": 2603, "blend": 4821},
+  "new_fits": 0,
+  "independent_confirmation": null,
+  "held_out_confirmation": false,
+  "parent_g": {
+    "experiment_id": "EXP-P4-001",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+    "preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+    "registered_config_sha256": null,
+    "analysis_manifest_sha256": "d2a66f335a608c1622145992cfa06b681f5bb894e0a97a29f67aef2cd2254042",
+    "mlb_dev_keys_sha256": null,
+    "mlb_dev_metadata_sha256": null,
+    "baseline_predictions_sha256": null
+  },
+  "parent_c1": {
+    "experiment_id": "EXP-P10-001",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001",
+    "config_file": "configs/EXP-P10-001.yaml",
+    "preparation_sha256": null,
+    "registered_config_sha256": null,
+    "analysis_manifest_sha256": null,
+    "analysis_results_sha256": null
+  },
+  "parent_t4": {
+    "experiment_id": "EXP-P7-003",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P7-003",
+    "preparation_sha256": null,
+    "registered_config_sha256": null,
+    "dev_metadata_sha256": null,
+    "baseline_predictions_sha256": null
+  },
+  "budget": {
+    "profile_rows": 256,
+    "profile_wall_limit_seconds": 600,
+    "single_member_wall_limit_seconds": 7200,
+    "batch_wall_budget_seconds": null
+  },
+  "equivalence_probe": {"rows": 64, "atol": 1e-06},
+  "registration": {
+    "status": "DRAFT_UNREGISTERED: template only; null pins and null batch budget must be frozen by the root before any real command",
+    "contract": "docs/contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md (Additional population check, separate from Cpanel closure)",
+    "runner": "experiments/pitchmdp/scripts/run_ml_g0_whole.py",
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+    "estimands": ["eligible whole-MLB DEV (T4 frozen eligibility)", "non-Cpanel complement"],
+    "scorer": "not implemented; scientific scoring rules are drafted separately and need their own registration before any DEV score",
+    "new_fits": "none; five frozen G0-global members (G seeds 0-2, C1 seeds 3-4) predicted with unchanged May temperatures and unchanged C1 June weights",
+    "profile": "seed-0 member on the first profile_rows eligible whole-MLB rows with 400 draws plus the Cpanel equivalence probe; timed gate against profile_wall_limit_seconds; projections gate member and batch budgets",
+    "budget_note": "batch_wall_budget_seconds is intentionally null: whole-MLB inference needs its own frozen budget before preparation; never raise it after preparation",
+    "scope_limits": "Previously exposed 2025 DEV population already used by T4; not independent confirmation; no data-2026 use; no policy claim"
+  }
+}

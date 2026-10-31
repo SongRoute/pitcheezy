@@ -1,0 +1,167 @@
+{
+ "schema": "seq-shadow-config-v1",
+ "status": "provisional_configuration_not_tuned_on_any_data",
+ "job": "20261012-seq-shadow-001",
+ "edition": {
+  "game_pk": 849809,
+  "revision": 2,
+  "previous_config_sha256": "b7abf58a7755252a163d5b3b8ccbfe23c4dc810a01eeeb043d48eaf2394c0d89",
+  "profile_sha256_expected_via_step5_config": "42f0ce33010447bd07a2092eb018d3da5d88079668eed755914a54655b47e272",
+  "changed_keys": ["edition", "step5_shadow.dir", "step5_shadow.sha256.shadow_config.json", "step5_shadow.note", "step5_ledger.path", "step5_ledger.sha256", "step5_ledger.summary_path", "step5_ledger.summary_sha256"],
+  "post_game_fill": ["step5_ledger.sha256", "step5_ledger.summary_sha256"],
+  "written_utc": "2026-10-11T23:24:00Z",
+  "note": "pointer-only edition; no cap, metric, bootstrap, token, parity or model value changed; revision 1 (849831) is commit a779fbb"
+ },
+ "grant_name": "SEQ_SHADOW_REPLAY_ONE_GAME",
+ "author": "seq-shadow-001 author (Claude Code sub-agent, requested claude-opus-5-5)",
+ "runtime_python": "/Users/song/Projects/pitcheezy/.venv/bin/python",
+ "threads": 1,
+ "caps": {
+  "rss_bytes": 2147483648,
+  "wall_seconds": 1800,
+  "hard_wall_grace_seconds": 30,
+  "min_free_memory_bytes": 6442450944,
+  "max_body_bytes": 67108864,
+  "max_bodies": 20000,
+  "watchdog_interval_s": 0.5,
+  "basis": "brief values: rss 2 GiB, wall 1800 s, free-memory floor 6 GiB; body caps copied from the Step 5 shadow config; none tuned on data"
+ },
+ "protected": {
+  "processes": [
+   {
+    "pid": 94628,
+    "lstart": "Wed Sep 23 22:25:15 2026",
+    "argv_contains": "observer_app.main:app --host 127.0.0.1 --port 8766",
+    "label": "production recorder server, port 8766"
+   },
+   {
+    "pid": 94642,
+    "lstart": "Wed Sep 23 22:25:17 2026",
+    "argv_contains": "-m observer_app.worker",
+    "label": "production recorder worker"
+   },
+   {
+    "pid": 99202,
+    "lstart": "Tue Oct 6 09:24:50 2026",
+    "argv_contains": "observer_app.main:app --host 100.108.252.111 --port 8771",
+    "label": "production server, port 8771"
+   },
+   {
+    "pid": 71753,
+    "lstart": "Mon Oct 12 04:43:48 2026",
+    "argv_contains": "observer_app.main:app --host 100.108.252.111 --port 8772",
+    "label": "RC live dry-run server, port 8772 (2026-10-12)"
+   }
+  ],
+  "command_words": [
+   "capture_one_game.py",
+   "capture_supervisor.py",
+   "poll_recorder.py",
+   "shadow_tee.py"
+  ],
+  "note": "identity = pid + C-locale lstart (whitespace collapsed) + argv fragment, read with ps under LC_ALL=C by the pinned shadow_guard; never signalled. Fourth process and the two extra command words added on the lead's addendum of 2026-10-12."
+ },
+ "heavy_lock_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock",
+ "forbidden_path_parts": [
+  "step4-capture-849831",
+  "step4-postcapture-run-849831",
+  "pitcheezy-worktrees"
+ ],
+ "step5_shadow": {
+  "dir": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed",
+  "sha256": {
+   "shadow_sources.py": "570c4f7afdf044cdcbb163fe71622a46c7e2c5489afb0f8dd7b8d0e993adf8ac",
+   "shadow_guard.py": "a143469335f56d893f5a66e55b7cfe4c37dfe65b9dece11750d55877df377721",
+   "shadow_runner.py": "baa007e5f5a5389b2e2a2cdc3093098cadc23efa8fd91c28e9ae24f57ed96c6d",
+   "shadow_config.json": "f904999c1f68cb067ec82511f482794a2b58fd1e31ef9a4e916e8bb989757df0"
+  },
+  "note": "imported by file path after these four sha256 match; the Step 5 encoder (F1-design), MODELS registry, limits, profile dir/sha and prior_poll_rule are read from this pinned shadow_config.json, not repeated here. 849809 edition: dir points at the byte-identical copy of the three reviewed modules whose shadow_config.json pins profile 42f0ce33010447bd07a2092eb018d3da5d88079668eed755914a54655b47e272 (as_of_cutoff 2026-10-10)."
+ },
+ "step5_ledger": {
+  "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/runs/849809-20261011T231222Z-real/shadow-run-849809-001/shadow-ledger.sqlite3",
+  "sha256": "5d9216a5b676341c4e7c95c1f272846c63d69ec1244ec5acfae26a2170dcfd13",
+  "summary_path": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/runs/849809-20261011T231222Z-real/shadow-run-849809-001/SUMMARY.json",
+  "summary_sha256": "f620d6aa8623f06e4a48214a5c566666babb5688bd9c297bf3d189bcb7e943c1",
+  "open": "read-only sqlite URI, mode=ro&immutable=1"
+ },
+ "model": {
+  "arm": "N1",
+  "seeds": [0, 1, 2],
+  "state": {
+   "0": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s0/model-state.pt", "sha256": "e0889160b20a3db4d93d286637a4446a015d1b873433de00b2b8e606cb02c44a"},
+   "1": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s1/model-state.pt", "sha256": "63f3f4948b9f87c64c5b75154ff2c78eacd8ad68774f978a9b8d4c42238f4b94"},
+   "2": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s2/model-state.pt", "sha256": "df96982468aac7c4b3c549037dc279e69cfb3506bdfc218170db81e8e63df3ea"}
+  },
+  "temperatures": {
+   "0": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s0/temperatures.json", "sha256": "72e947972d487fd6c90d201d2080dccfa37d5cc368ebad98df23f1728f40225f"},
+   "1": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s1/temperatures.json", "sha256": "3a9e53ae5f46ce749ade58197aefc407b049b113c73275345cec9cb0480dae0a"},
+   "2": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s2/temperatures.json", "sha256": "0f007386ee35daaae4f9551fa62c46697d1a7d4617f9b20e8ff9d7db30a0d4fd"}
+  },
+  "architecture": {"path": "/Users/song/Projects/pitcheezy/configs/EXP-WS-SEQ-001.json", "sha256": "bbee1279236ef52d4fcb7ab0c761bee7a0c7f363bc8dd86d31b6a74b97bd92bf"},
+  "train_seq": {"path": "/Users/song/Projects/pitcheezy/experiments/ws_seq/train_seq.py", "sha256": "1328c4148f5fa9e89728207a06dc839df72c26a7f6ead89a90ae4ecec8c24ac0"},
+  "expected_state_tensors": 45,
+  "expected_parameters": 158860,
+  "max_state_bytes": 16777216,
+  "candidate_rows": 17,
+  "feature_dimension": 199
+ },
+ "calibration": {
+  "result": {"path": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e5-seqcal/attempts/seqcal-001/result.json", "sha256": "def098b02af08ae0c3b873e3039147a0426e7476c500e48b299cd35a3984c62f"},
+  "terminal": {"path": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e5-seqcal/attempts/seqcal-001/terminal.json", "sha256": "2bc9f127dc97f0d647567b33759d0edfcfe720f9d57d65a55595b1fd26ee8171"},
+  "code": {"path": "/Users/song/Projects/pitcheezy/experiments/ws_seq/calibrate_logits.py", "sha256": "7568b8b43c74de946d822c9b226406823b1789f1ceb4ee37ba80ca66c8b226e7"},
+  "arms": ["C0", "C1", "C2", "C3"],
+  "row_sum_tolerance": 1e-9,
+  "temperature_match_tolerance": 0.0,
+  "note": "the selected arm per seed is read from result.json cal_selected (and must equal terminal.json cal_selected); the code file is hash-pinned as the origin of the copied apply formulas and imported only by the tests"
+ },
+ "encoder_seq": {
+  "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-step2-scale-f2-recovery-author-001/attempts/scale-002/encoder.json",
+  "sha256": "3c32aaab1e1ac3c96349f13d5c23e91b63011b58af86b5207c5485382f8759a6",
+  "raw_columns": 91,
+  "knot_blocks": 3,
+  "z_clip": 8.0,
+  "note": "scale-002 encoder the N1 model was trained with; applied to the raw 91 columns of the pinned Step 5 build_candidates"
+ },
+ "tokens": {
+  "outcome10_source": {
+   "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-source-author-001/projector.py",
+   "sha256": "e7b37c9909cb5efd90be144912b20d84ea8b234fb223032fb32c9ae8ff3a7eeb"
+  },
+  "pitch_number_range": [1, 99],
+  "missing_type_policy": "unknown_token",
+  "missing_type_policy_values": ["skip", "unknown_token"],
+  "missing_type_policy_basis": "brief of 2026-10-12: an earlier pitch without a type code is skipped. The author's code reading of abc_corpus.project (line 94) says the training corpus kept null pitch_type rows as UNKNOWN; 'unknown_token' reproduces that. Lead decision 2026-10-12 05:35 KST: 'unknown_token' (matches the training corpus: null pitch_type rows were kept as UNKNOWN, 367 accepted rows per the feature-path investigation).",
+  "note": "context length and vocabularies come from the architecture config (context.max_length etc.); the call-code table is shadow_runner.DESCRIPTION (pinned)"
+ },
+ "metrics": {
+  "leaf_order": ["ball", "foul", "hit_by_pitch", "narrow_whiff", "other_strike", "ground_ball_in_play", "other_in_play"],
+  "nll_clip": 1e-12,
+  "bins": 10,
+  "leaf_ece_leaves": ["narrow_whiff", "ground_ball_in_play"],
+  "models_population_A": ["N1_SEL", "N1_C0", "STEP5_2024"],
+  "models_population_B": ["N1_SEL", "N1_C0"],
+  "paired_differences": [["N1_SEL", "STEP5_2024"], ["N1_C0", "STEP5_2024"], ["N1_SEL", "N1_C0"]]
+ },
+ "bootstrap": {
+  "draws": 10000,
+  "seed": 20261212,
+  "chunk": 500,
+  "ci_quantiles": [0.025, 0.975],
+  "units": ["pitch", "plate_appearance"]
+ },
+ "parity": {
+  "inputs_dir": "/Users/song/Projects/pitcheezy/data/ws-seq/inputs",
+  "manifest_sha256": "150d225e684fa6c34bc1479ed8035bcf46c83777f36ad27fa2ac839567c9fc8b",
+  "role": "calibration",
+  "margins": {
+   "0": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s0/margins.npz", "sha256": "19d8596b456bec437f436c35e381ac35b9056f06b71a276fe0fec319a5a99815"},
+   "1": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s1/margins.npz", "sha256": "1394b8285f1187eb0b0283aed263c6170e19b98053bcd31306e0f1b0f71e5a09"},
+   "2": {"path": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001/N1-s2/margins.npz", "sha256": "77f41f65a0c3c95f753967babf0ac7d1fe631d19c5139df1ad40e163931dd1a3"}
+  },
+  "batch": 8192,
+  "max_abs_tolerance": 1e-3,
+  "nll_clip": 1e-15,
+  "tolerance_basis": "registration revision 1 (2026-10-12 05:55 KST): attempt parity-001 under 1e-4 STOPped with max abs diff 1.46e-4 (fp32 CUDA vs CPU), mean abs diff well below 1e-4, 98.9-100% rows within 1e-4, CAL C0 NLL abs diff <= 1.7e-7; 1e-3 is 10x the observed max and >= 100x below any plausible port error (which would be O(1e-2)); see PARITY-001-STOP.md"
+ },
+ "claims": "descriptive, one game, shadow only; no fan-facing output, no adoption, winner or calibration claim; a scored row is not evidence that the decision preceded the physical pitch; one game, already exposed (SERVICE_EXPOSED_DEV); paired CIs are descriptive"
+}

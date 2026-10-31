@@ -1,5 +1,7 @@
 """SQLite persistence for replay cursors, immutable recommendations and leased jobs."""
 from contextlib import closing, contextmanager
+from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -31,6 +33,16 @@ class Store:
                 CREATE TABLE IF NOT EXISTS manual_annotations (
                     session_id TEXT PRIMARY KEY REFERENCES sessions(id), pitch_id TEXT NOT NULL,
                     zone_id TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS recommendation_meta (
+                    session_id TEXT NOT NULL, pitch_id TEXT NOT NULL, created_at TEXT NOT NULL,
+                    PRIMARY KEY(session_id,pitch_id),
+                    FOREIGN KEY(session_id,pitch_id) REFERENCES recommendations(session_id,pitch_id));
+                CREATE TABLE IF NOT EXISTS event_results (
+                    session_id TEXT NOT NULL REFERENCES sessions(id), pitch_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(session_id,pitch_id,revision));
+                CREATE TRIGGER IF NOT EXISTS event_results_immutable
+                    BEFORE UPDATE ON event_results BEGIN SELECT RAISE(ABORT,'immutable event result'); END;
             ''')
             if 'cv_status' not in {row['name'] for row in db.execute('PRAGMA table_info(jobs)')}:
                 db.execute("ALTER TABLE jobs ADD COLUMN cv_status TEXT NOT NULL DEFAULT 'unavailable:no_media'")
@@ -59,12 +71,46 @@ class Store:
     def save_recommendation(db, session_id, pitch_id, recommendation):
         db.execute('INSERT OR IGNORE INTO recommendations VALUES (?,?,?)',
                    (session_id, pitch_id, json.dumps(recommendation, ensure_ascii=False, allow_nan=False)))
+        db.execute('INSERT OR IGNORE INTO recommendation_meta VALUES (?,?,?)',
+                   (session_id, pitch_id, datetime.now(timezone.utc).isoformat()))
 
     @staticmethod
     def recommendation(db, session_id, pitch_id):
         row = db.execute('SELECT payload FROM recommendations WHERE session_id=? AND pitch_id=?',
                          (session_id, pitch_id)).fetchone()
         return json.loads(row['payload']) if row else None
+
+    @staticmethod
+    def event_result(db, session_id, pitch_id):
+        row = db.execute('SELECT payload FROM event_results WHERE session_id=? AND pitch_id=? ORDER BY revision DESC LIMIT 1',
+                         (session_id, pitch_id)).fetchone()
+        return json.loads(row['payload']) if row else None
+
+    @staticmethod
+    def save_event_result(db, session_id, pitch_id, result):
+        if not isinstance(result, dict) or type(result.get('revision')) is not int or result['revision'] < 1:
+            raise ValueError('event result requires a positive revision')
+        linkage = result.get('linkage') or {}
+        recommendation = Store.recommendation(db, session_id, pitch_id)
+        if recommendation is None or linkage.get('session_id') != session_id or linkage.get('pitch_id') != pitch_id or (
+            linkage.get('recommendation_id') != recommendation.get('id') or
+            linkage.get('event_input_revision') != result['revision'] or
+            linkage.get('recommendation_sha256') != hashlib.sha256(json.dumps(
+                recommendation, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        ):
+            raise ValueError('event result must link to saved same-pitch recommendation')
+        payload = json.dumps(result, ensure_ascii=False, allow_nan=False)
+        old = db.execute('SELECT payload FROM event_results WHERE session_id=? AND pitch_id=? AND revision=?',
+                         (session_id, pitch_id, result['revision'])).fetchone()
+        if old:
+            if json.loads(old['payload']) != result:
+                raise ValueError('conflicting event result revision')
+            return
+        latest = db.execute('SELECT MAX(revision) FROM event_results WHERE session_id=? AND pitch_id=?',
+                            (session_id, pitch_id)).fetchone()[0]
+        if latest is not None and result['revision'] <= latest:
+            raise ValueError('event revision must advance')
+        db.execute('INSERT INTO event_results VALUES (?,?,?,?)', (session_id, pitch_id, result['revision'], payload))
 
     @staticmethod
     def enqueue(db, pitch_id, version):

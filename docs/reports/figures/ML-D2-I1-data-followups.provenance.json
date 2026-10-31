@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P6-001/analysis/results.json",
+      "sha256": "cbd8dfd5bc4e9fe726e60fd4d75d933aa865ba83e0fd093c24ba8d767526e11f"
+    },
+    {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P5-001/analysis/results.json",
+      "sha256": "c34a3ef0ba1bbc01935aaa834cd5e51fbd2cd38639a494831d33127118b25008"
+    }
+  ],
+  "source_sha256": "2ba9899ffa7416cc6b5e77c061e1c8e449c10718bf0d828c729451135d47c4b8",
+  "matplotlib": "3.11.1",
+  "limits": "Separate fixed-prediction bootstrap families; D2 changes multiple auxiliary components jointly. D2 and I1 use different input representations; do not compare their absolute scores as a controlled effect. No new tests, policy effects or independent confirmation."
+}

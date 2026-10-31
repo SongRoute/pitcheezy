@@ -1,0 +1,905 @@
+{
+  "protocol": "mlb_2026_ope_prereg_draft_v1",
+  "status": "DRAFT_UNREGISTERED",
+  "registered": false,
+  "created": "2026-09-28",
+  "preregistration_complete": false,
+  "base_commit": "522339e8e5bf2aedb9c1c961ff30a478b69f95f1",
+  "task": "COOP-014",
+  "execution": {
+    "enabled": false,
+    "reason": "Draft only. No 2026 loading, fitting, inference, OPE or scoring is authorized by this file; the final registration and the single run require every item of pre_run_gates."
+  },
+  "documents": {
+    "contract": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+    "readiness_report": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md"
+  },
+  "proposal_convention": "Fields with status=proposal are not in any existing registered contract and are not measured facts. null means unresolved; no placeholder hashes.",
+  "governing_rules": {
+    "season_2026_use": "ope_only",
+    "season_2026_train_tune_select": false,
+    "season_2026_as_predictive_nll_holdout": false,
+    "g0_status": "frozen_predictive_10class_model_not_a_policy",
+    "g0_retained_per": "D86",
+    "promote_b1_b2": false,
+    "predictor_seeds_are_policy_confirmations": false,
+    "june_calibration_D86": {
+      "N3_all_three_contrasts": "inconclusive",
+      "B1_B2": "not_selected",
+      "B0": "frozen_G0_baseline_retained_not_candidate"
+    }
+  },
+  "use_history": {
+    "evidence_basis": "repo_metadata_and_code_only",
+    "collection_version": "d20260911-s2325",
+    "collection_date_range": [
+      "2026-03-25",
+      "2026-09-09"
+    ],
+    "collection_frozen": false,
+    "collection_source": "data/versions.md",
+    "prior_uses": [
+      {
+        "what": "behavior_policy_crossfit_on_2026_logs",
+        "decision": "D18",
+        "code": "src/pitcheezy/ope/behavior.py::crossfit_logged"
+      },
+      {
+        "what": "support_set_from_2026_pitch_counts_min20",
+        "decision": "D19"
+      },
+      {
+        "what": "target_policy_tilt_on_2026_crossfit_behavior",
+        "decision": "D20",
+        "code": "src/pitcheezy/ope/behavior.py::tilt"
+      },
+      {
+        "what": "paired_ope_model_comparison_and_adoption",
+        "decision": [
+          "D22",
+          "D27",
+          "D30",
+          "D31",
+          "D39"
+        ]
+      }
+    ],
+    "full_season_label": "contains_previously_exposed_window",
+    "post_20260909_label": "c_unknown",
+    "exact_unused_game_list": null,
+    "exposure_categories": [
+      "a_completed_run_evidence",
+      "b_configuration_only",
+      "c_unknown",
+      "d_certified_untouched_in_bounded_audit"
+    ],
+    "unknown_is_unexposed": false,
+    "certified_untouched_count": 0,
+    "complete_season_collection": "unknown",
+    "published_ope_experiments": {
+      "value": {
+        "P0": 12,
+        "P1": 8
+      },
+      "module_only_no_2026_ope": [
+        "EXP-P1-006",
+        "EXP-P1-007",
+        "EXP-P1-008"
+      ],
+      "source": "sol_usage_evidence"
+    },
+    "published_ope_selection_denominators": {
+      "ip100": {
+        "pa": 68425,
+        "games": 1993,
+        "pitches": 264479
+      },
+      "ip150": {
+        "pa": 47638,
+        "games": 1571,
+        "pitches": 183946
+      },
+      "source": "sol_usage_evidence copying existing aggregate results JSON",
+      "note": "OPE selection denominators, not total collection or decoded scope; exact game IDs unknown"
+    },
+    "evidence_references": {
+      "sol_usage_evidence": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/usage-evidence.json",
+      "sol_usage_evidence_md": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/usage-evidence.md",
+      "astra_design_guidance": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-design-guidance.md",
+      "root_public_context": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/public-context.json",
+      "available_at_finalization": true,
+      "astra_draft_review_initial": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-draft-review-initial.md",
+      "root_public_context_supplement": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/public-context-supplement.json",
+      "astra_final_review": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-final-review.md"
+    },
+    "every_2026_row_exposed_claim": false,
+    "historical_procedure_wording": "conducted_at_the_time_with_limitations_preserved",
+    "bounded_metadata_audit": {
+      "status": "complete",
+      "independent_review": "Astra PASS within bounded scope",
+      "report": "docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
+      "results": "results/MLB-2026-use-history-audit-v1.json",
+      "root_owned_pending_integration": false,
+      "evidence_bytes_sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
+      "beyond_scope_unknown": [
+        "exact_used_game_ids",
+        "full_season_availability",
+        "untouched_certification"
+      ]
+    },
+    "certified_untouched_required_for_exposed_exploratory_analysis": false,
+    "exposure_disclosure": {
+      "evaluation_snapshot": {
+        "version": "d20260930-h2026f",
+        "range": [
+          "2026-03-25",
+          "2026-09-27"
+        ],
+        "rows": 716792,
+        "sha256": "c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b",
+        "frozen": true,
+        "source": "data/versions.md",
+        "provenance": {
+          "collection_commit": "6bd76fd-dirty",
+          "dirty_tree": "uncommitted edits to experiments/pitchmdp/pitchmdp/policy_artifacts.py only",
+          "fetch_code_unchanged": "src/pitcheezy/data/statcast_fetch.py and scripts/fetch_data.py; diff 6bd76fd..70968eb over src/pitcheezy/data and scripts/fetch_data.py is empty (checked 2026-09-30)",
+          "path": "holdout_2026/statcast_2026.parquet under version directory d20260930-h2026f",
+          "overwrite": "none: prior file is d20260911-s2325/holdout_2026/statcast_2026.parquet (sha 374e8b9539ae7c42cf1f5a8bb38194d3ccfcc1f3e34746fd5b0d46b98ffd55c5, 647,896 rows, frozen=false), a different directory; existing versions.md rows unchanged",
+          "le2025_isolation": "run_policy_validation.guard_dates rejects rows dated after 2025-12-31 in <=2025 stages"
+        }
+      },
+      "prior_collection_used": {
+        "version": "d20260911-s2325",
+        "range": [
+          "2026-03-25",
+          "2026-09-09"
+        ],
+        "ope_experiments": {
+          "P0": 12,
+          "P1": 8
+        },
+        "selection_sample_pa": 68425
+      },
+      "W_exposed": "2026-03-25..2026-09-09 exposed",
+      "W_post": "2026-09-10..2026-09-27 outside prior collection, c_unknown (no untouched certification)",
+      "components_from": "le2025_only (tau from June 2025 overlap/noise rule without outcomes; D106 grid widening after seeing the June overlap table)",
+      "designer_awareness": "designers knew past 2026 OPE results; disclosed"
+    }
+  },
+  "evaluation_universe": {
+    "league": "MLB",
+    "game_type": [
+      "R"
+    ],
+    "excluded": [
+      "postseason",
+      "spring_training",
+      "exhibition",
+      "all_star"
+    ],
+    "season": 2026,
+    "regular_season_start": {
+      "value": "2026-03-25",
+      "citation": "https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule",
+      "verified_by": "Root web read 2026-09-28T06:12:21Z (public-context-supplement.json)",
+      "author_independent_read": false,
+      "status": "proposed_bound_publicly_verified_by_root_draft",
+      "distinct_from": "resident acquisition ending 2026-09-09 and unverified snapshot"
+    },
+    "regular_season_end": {
+      "value": "2026-09-27",
+      "citation": "https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule",
+      "verified_by": "Root web read 2026-09-28T06:12:21Z (public-context-supplement.json)",
+      "author_independent_read": false,
+      "status": "proposed_bound_publicly_verified_by_root_draft",
+      "distinct_from": "resident acquisition ending 2026-09-09 and unverified snapshot"
+    },
+    "pitchers": "all_starters_and_relievers",
+    "role_rule": {
+      "value": "team_first_pitcher_in_game=SP_else_RP",
+      "status": "proposal"
+    },
+    "flagged_not_excluded": [
+      "opener",
+      "position_player_pitching"
+    ],
+    "windows": {
+      "W_exposed": {
+        "start": "2026-03-25",
+        "end": "2026-09-09"
+      },
+      "W_post": {
+        "start": "2026-09-10",
+        "end": "2026-09-27",
+        "exposure_category": "c_unknown",
+        "reported_only_if_audit_certifies_untouched": true
+      }
+    },
+    "primary_population": "full_regular_season_labeled_contains_previously_exposed_window",
+    "independent_confirmation_claim": false,
+    "denominator_chain": [
+      "all_R_games",
+      "collected_games",
+      "eligible_PA_starts",
+      "supported_requests",
+      "evaluable_PAs"
+    ],
+    "postseason_start_root_reported": "2026-09-29",
+    "start_population": "fixed_predecision_PA_starts_defined_from_predecision_fields",
+    "explicit_handling": [
+      "incomplete_PA",
+      "substitution_multiple_pitchers",
+      "no_pitch_terminal",
+      "nonstandard_count",
+      "inning_transition",
+      "censoring"
+    ],
+    "new_analysis_label": "amended_exploratory_on_exposed_data",
+    "evaluation_start": {
+      "value": "first_pitch_0_0_of_each_PA_weight_1",
+      "status": "proposal"
+    },
+    "calendar_vs_resident_coverage": "official calendar bounds distinct from resident collection ending 2026-09-09"
+  },
+  "arms": {
+    "ARM_A": {
+      "role": "product_primary",
+      "value_spec": "defense-we-pa-v1",
+      "value_unit": "dimensionless_win_probability_difference",
+      "display": "delta_pp = 100*delta",
+      "horizon": "plate_appearance_end_then_frozen_WE_continuation",
+      "estimand": "V_WE(pi_cand) - V_WE(pi_ref)",
+      "effect_direction": "positive_favors_initial_defender_under_candidate",
+      "candidate": "frozen_pitch_type_x_target_zone_policy",
+      "status": "BLOCKED_NOT_IDENTIFIED",
+      "blocked_reason": "Observed plate location is realized delivery, not intended target; no intent log or logging propensity.",
+      "unblock_requires": "BLK-04",
+      "reference": "frozen_TRAIN_BC",
+      "observed_2026_behavior": "separate_descriptive_comparison_not_reference",
+      "not_a_claim_of": [
+        "observed_final_game_win_improvement",
+        "full_game_intervention",
+        "inning_substitution_value",
+        "RE24_converted_to_WE"
+      ],
+      "primary_estimator": null,
+      "held": true
+    },
+    "ARM_B": {
+      "role": "primary_evaluated_arm",
+      "estimand": "PA-horizon defense WE difference when candidate and frozen TRAIN BC differ in pitch-type probabilities only",
+      "not_a_claim_of": [
+        "target_location_effect",
+        "service_recommendation_causal_WE"
+      ],
+      "assumption": "pitch_type_assignment_exchangeability_given_H_t_and_le2025_to_2026_transport_stated_not_evidenced",
+      "enabled": true,
+      "auto_opt_in": false,
+      "fallback_for_ARM_A": false,
+      "requires": "pre_run_gates (final registration and user sign-off)",
+      "value_spec": "defense-we-pa-v1",
+      "reference": {
+        "value": "SupportedBC (BC-P restricted/renormalised on M once, before freezing)",
+        "bc_p_file_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
+        "support_file_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4",
+        "addendum": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d107.json"
+      },
+      "delivery": {
+        "model_term": "marginalized_from_frozen_pre2026_delivery_law",
+        "weighted_term": "realized_location_is_post_action_outcome"
+      },
+      "causal_estimate_if_assumptions_unjustified": "reported_with_label_assumption_conditional_exposed_exploratory",
+      "primary_estimator": "DR v2 (see inference.primary_estimator)",
+      "enabled_by": "D100 (user: CV intent unavailable; ARM_A stays held)",
+      "identification": "assumed_not_evidenced",
+      "location": "observer experimental_location_proxy display only; not an OPE target",
+      "candidate": {
+        "formula": "P3 kl_policy on TRAIN repertoire support M: pi proportional to pi_ref*exp(Q_ref/tau)",
+        "tau": 0.1,
+        "tau_source": "S3b-tau-a2 (D107)",
+        "samples": 6,
+        "pitch_cap": 12,
+        "profile_source": "S3-profile-a2 (D105)",
+        "final_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+        "tau_freeze_file_sha256": "1aedb2f58a996a1e88534d077083cca7136bf6c36851fda90533d6ada7ed6096",
+        "tau_freeze_addendum": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d107.json"
+      },
+      "logging_law": {
+        "value": "full-vocabulary BC-P, never renormalised (D-1)",
+        "fit_on_2026": false
+      },
+      "dr_q_hat": {
+        "value": "frozen simulator MC of pi_ref from the evaluation seed (M-7, in the frozen identity)",
+        "robustness": {
+          "candidate": "single_robust (q_hat = Q_ref; relies on pi_b_hat)",
+          "reference": "doubly_robust"
+        },
+        "source": "COOP-019 F5"
+      },
+      "profile_as_of": {
+        "as_of_exclusive": "2026-03-25",
+        "source_guard": "max(source game_date) <= 2025-12-31",
+        "consistency_check": "2025-12-31 rolling bit-equal",
+        "code_commit": "fa82afb",
+        "source": "COOP-019 F2"
+      },
+      "R7_mid_pa_pitcher_change": {
+        "status": "on_hold_D100_7",
+        "provisional_rule": "known new pitcher continue; unknown new pitcher UNSUPPORTED_UNKNOWN_PITCHER then UNSUPPORTED_MID_PA; batter change continue",
+        "report": [
+          "change_share",
+          "unknown_new_pitcher_share",
+          "secondary_natural_course_sensitivity"
+        ],
+        "label": "보류"
+      },
+      "reward_we": {
+        "value_spec": "defense-we-pa-v1",
+        "implementation": "FrozenWE(inputs, game_values): game.terminal_values, WinExpectancy.predict_defense",
+        "we_contract": "docs/contracts/model-v1.json",
+        "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
+        "bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+        "source_lineage_sha256": "6d6f777bacde98d5c60b2d61cd594fda172fd63f99c315a002b5e7291afb099a",
+        "game_values_sha256": "aa6c4e486cc6b027758d966ab680566a4a4ce2afa4a918dd26f8fb65c8957677",
+        "source": "configs/ML-POLICY-MATERIALIZATION-v1.json identity_registration (we_contract_sha256) + docs/contracts/model-v1.json (manifest, lineage, game_values)",
+        "same_as_le2025_rehearsal": true,
+        "fit_on_2026": false,
+        "exposure": "passed the 2025 DEV Brier gate in the original build (DEV exposed, P8 record)",
+        "final_bytes_recheck": "M3b"
+      }
+    },
+    "LEGACY_RE24_APPENDIX": {
+      "role": "audit_appendix_only",
+      "sources": [
+        "results/EXP-P0-*.json",
+        "results/EXP-P1-*.json"
+      ],
+      "unit": "RE24_per_decision_onestep_SNIPS_DR",
+      "convert_to_WE": false,
+      "fallback_if_blocked": false,
+      "rerun": "deferred_not_enabled"
+    },
+    "primary_designation": {
+      "value": "ARM_B",
+      "status": "draft_decided_D100",
+      "rule": "Named before any new 2026 access; no switching after outcomes; ARM_A held, not replaced"
+    }
+  },
+  "nuisance_policy": {
+    "default": "no_2026_fit_of_any_component",
+    "nuisances": [
+      "propensity",
+      "outcome_regression",
+      "calibration_temperature",
+      "intention_delivery",
+      "support_derived_target_policy",
+      "Q_value",
+      "WE_continuation"
+    ],
+    "unknown_identity": [
+      "behavior_policy",
+      "ARM_B_outcome_model",
+      "candidate_policy"
+    ],
+    "nuisance_2026_crossfit_exception": {
+      "enabled": false,
+      "status": "deferred_not_enabled",
+      "requires": "user_decision_and_decisions_md_entry_with_fields_models_folds_target_independence_uncertainty_exposure_amendment"
+    },
+    "behavior_2026_diagnostic": {
+      "what": "NLL_and_calibration_of_frozen_pi_b_on_2026_logged_actions",
+      "establishes_exchangeability": false,
+      "requires": "separate_registration_and_authorization",
+      "used_for_predictor_selection": false,
+      "status": "proposal"
+    },
+    "independent_target_implies_unbiased_nuisance": false,
+    "dm_only_counts_as_ope_evidence": false,
+    "support_or_mapping_mismatch": "fail_closed",
+    "prefer_logged_assignment_probabilities": true,
+    "frozen_pre2026_propensity_assumed_true_2026_law": false,
+    "probability_floor_creates_positivity": false,
+    "frozen_model_vs_state": {
+      "allowed_in_future_authorized_eval": "registered_predecision_2026_game_count_fields_and_strictly_prior_same_PA_history",
+      "default_frozen_at_pre2026_snapshot": [
+        "player_profiles",
+        "repertoire"
+      ],
+      "current_pitch_physics_or_outcome_as_input": false
+    },
+    "support_source": "TRAIN_and_legal_constraints_only",
+    "uses_of_2026_for_support": "overlap_diagnosis_only",
+    "zero_target_mass": "valid_zero_ratio",
+    "zero_or_unknown_logging_probability": "recorded_separately_fail_or_null",
+    "legacy_reference": {
+      "WE_continuation": {
+        "source": "docs/contracts/model-v1.json",
+        "artifact": "game_values.pkl",
+        "status": "legacy_reference_only",
+        "selected_for_this_eval": false,
+        "payload_validated": null,
+        "superseded": "COOP-020 M1 (2026-09-30): ARM_B reward WE pinned by full SHA in arms.ARM_B.reward_we / identities.we_continuation_selection_for_this_eval; the \"no validated identity\" status below is historical"
+      }
+    }
+  },
+  "inference": {
+    "primary_estimator": {
+      "ARM_A": null,
+      "ARM_B": "DR_v2_per_decision_sequential_with_censored_node_bounds_fixed_nuisances_paired_same_PA",
+      "recursion": "For each pi in {candidate, reference} separately, decisions t=0..T-1: V^pi_T=0; V^pi_t = vhat^pi(H_t) + rho^pi_t*(r_t + V^pi_{t+1} - qhat^pi(H_t,a_t)); vhat^pi(H_t)=sum_a pi(a|H_t)*qhat^pi(H_t,a); rho^pi_t = pi(a_t|H_t)/pi_b(a_t|H_t) over pitch types; r_t nonzero only at PA end = W(S_PA_end)",
+      "estimate": "mean over PAs of paired V^cand_0 - V^ref_0",
+      "self_normalized": false,
+      "auto_switch_to_pitch_type_only": false,
+      "status": "frozen_in_le2025_rehearsal_draft_for_2026",
+      "history": "H_t = registered request fields (matrix_policy.SAFE_COLUMNS + policy_requests request state): count (balls, strikes); all strictly prior same-PA pitches (type label, normalized physics, 10-class outcome, pre-pitch count); base-out/score (inning, inning_topbot, outs_when_up, bases, home_score, away_score); batter stand and as-of batter profile (batter_style_*_prior and _reliability, 6 styles x 2); pitcher id and hand (pitcher, p_throws, TRAIN single-hand registry) and TRAIN repertoire (support table M). Sufficiency of H_t for pitch-type assignment (sequential exchangeability) is an identification assumption, not evidenced.",
+      "censoring": "censored node value c in [0,1] inside the recursion (D-5); layers L0 all PAs bounds, L1 E0 bounds (primary), L2 E0 and complete (descriptive)",
+      "history_fields": [
+        "balls",
+        "strikes",
+        "prior_same_PA_pitches(type,normalized_physics,outcome10,pre_count)",
+        "inning",
+        "inning_topbot",
+        "outs_when_up",
+        "bases",
+        "home_score",
+        "away_score",
+        "stand",
+        "batter_style_*_prior",
+        "batter_style_*_reliability",
+        "pitcher",
+        "p_throws",
+        "TRAIN_repertoire_M"
+      ],
+      "history_sufficiency": "identification_assumption"
+    },
+    "ratio_clip": {
+      "primary": null,
+      "sensitivity": [
+        10,
+        20,
+        50
+      ],
+      "status": "proposal",
+      "rationale": "diagnostic only; clip20 (D19) not inherited as OPE guarantee",
+      "placement": "per_step_ratio_before_product"
+    },
+    "bootstrap": {
+      "unit": "game",
+      "paired": true,
+      "retain_PAs": true,
+      "n": 10000,
+      "ci": "two_sided_percentile_95",
+      "self_normalizer_recomputed_per_resample": true,
+      "seed": null,
+      "invalid_replicate_handling": "counted; CI null if invalid share > 0.05",
+      "status": "draft_from_le2025_registration",
+      "seed_rule": "SeedSequence([seeds.base, bootstrap role]) as in ML-POLICY-MATERIALIZATION-v1; base pinned at M3b",
+      "invalid_share_max": 0.05
+    },
+    "multiplicity": {
+      "family": "ARM_B",
+      "primary_comparisons": 1,
+      "confirmatory_secondary_comparisons": 0,
+      "subgroups": "descriptive_only_no_multiplicity_claim (incl. W_post and SP/RP)",
+      "status": "proposal"
+    },
+    "minimum_effect": {
+      "value": 0.001,
+      "unit": "defense WE per PA (0.1 pp)",
+      "status": "proposal_judgment_call",
+      "rationale": "A team defends dozens of PAs per game, so 0.1 pp per PA would be non-negligible over a season if additive (additivity assumed, win conversion unmeasured); smaller effects are hard to separate from frozen pi_b/q_hat model error.",
+      "caveat": "le2025 V2 tolerance 0.01 (delta_gap_se <= 0.005) is 10x the MEI, so V2 acceptance does not certify unbiasedness at MEI resolution; tau 0.1 candidate is close to BC (mean KL 0.0074)",
+      "not_inherited": [
+        "RE24_resolution_D31",
+        "ML_dNLL_-0.003",
+        "R78",
+        "kernel_ESS20",
+        "clip20"
+      ],
+      "fixed_before": "any <=2025 S6 result is read"
+    },
+    "overlap_diagnostics": [
+      "per_pitch_ratio_quantiles_moments",
+      "cumulative_PA_game_concentration",
+      "zero_invalid_denominators",
+      "unsupported_target_mass",
+      "clip_fraction",
+      "missingness_censoring",
+      "ESS_by_role_month_volume"
+    ],
+    "secondary_diagnostics": {
+      "value": [
+        "IS",
+        "SNIS",
+        "DM_only"
+      ],
+      "favorable_estimator_selection": false,
+      "snis_normalizer": "recomputed_per_resample"
+    },
+    "overlap_gates": {
+      "pa_ess_min": 100,
+      "game_ess_min": 30,
+      "status": "registered_at_le2025_draft_for_2026",
+      "justify_with": "pre2026_or_synthetic_work_before_registration",
+      "definition": "PA ESS=(sum w_i)^2/sum w_i^2 with w_i cumulative PA-end ratio; game ESS same on game-summed w",
+      "use": "min(candidate, reference)",
+      "report_beside_gate": "min ESS over all E0 weights (complete and censored), COOP-019 F3"
+    }
+  },
+  "outcome_handling": {
+    "statuses": [
+      "IMPROVEMENT_SUPPORTED",
+      "HARM_SUPPORTED",
+      "NO_EFFECT_DETECTED",
+      "UNCONFIRMED_WEAK_OVERLAP",
+      "NOT_IDENTIFIED_CAUSAL_NULL",
+      "BLOCKED_NOT_IDENTIFIED",
+      "FAILED_INTEGRITY",
+      "NO_EVIDENCE_OF_IMPROVEMENT"
+    ],
+    "improvement_requires": [
+      "success_criteria.decision_rule.IMPROVEMENT_SUPPORTED",
+      "identification_assumptions_stated_not_evidenced (ARM_B, D100)"
+    ],
+    "missing_value": "null_with_reason",
+    "retry_after_label_unblinding": false,
+    "new_attempt": "new_registration_id_and_disclose_prior",
+    "post_unblinding_label": "reused_after_unblinding",
+    "pre_unblinding_integrity_fix": "allowed_with_history_and_reregistration",
+    "while_minimum_effect_null": "n/a for ARM_B draft (minimum_effect proposed 0.001)",
+    "optional_stopping_or_quality_peeks": false,
+    "keep_all_registered_slots_including_null": true,
+    "identification_assumptions": [
+      "consistency",
+      "sequential_exchangeability",
+      "positivity_support",
+      "logging_assignment_and_cross_year_transport_evidence"
+    ],
+    "unevidenced_identification_status": "BLOCKED_NOT_IDENTIFIED",
+    "numeric_overlap_is_identification": false
+  },
+  "coverage_and_selection_bias": {
+    "report": [
+      "requested_and_covered_denominators",
+      "restricted_predecision_population_estimand_named_separately",
+      "new_2026_pitchers_list",
+      "exclusion_reasons_by_role_team_month_volume"
+    ],
+    "unsupported_request_policy": {
+      "value": null,
+      "rule": "realizable frozen fallback law, registered only if identifiable; never observed action or ratio=1",
+      "status": "unresolved"
+    },
+    "full_population_causal_value": "null_or_0_1_worst_case_bounds_until_identified",
+    "candidate_may_reach_new_unsupported_states": "record",
+    "drop_PAs_by_later_observed_support_or_completion": false,
+    "incomplete_PA_censoring_rule": null
+  },
+  "abs_compatibility": {
+    "abs_regime": "2026_challenge",
+    "nuisance_training_regime": "human_umpire_pre2026",
+    "report": [
+      "edge_band_pitch_fraction_descriptive_only"
+    ],
+    "statcast_records_overturned_call": null,
+    "challenge_availability_state_variable": null,
+    "root_reference": "https://www.mlb.com/news/abs-challenge-system-mlb-2026",
+    "edge_band_exclusion_as_ope_sensitivity": false,
+    "edge_band_exclusion_reason": "post_treatment_selection_on_realized_location",
+    "edge_band_width": null,
+    "regime_shift": "potential_boundary_call_distribution_shift_unmeasured",
+    "measured_magnitude": null,
+    "all_2026_games_used_ABS_assumed": false,
+    "special_event_exceptions": "noted by official source; event-specific treatment deferred to M2 schema plan"
+  },
+  "identities": {
+    "candidate_policy_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "action_mapping_sha256": null,
+    "legal_support_mask_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4",
+    "behavior_policy_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
+    "outcome_model_sha256": null,
+    "collection_snapshot_version": "d20260930-h2026f",
+    "collection_snapshot_sha256": "c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b",
+    "execution_source_commit": null,
+    "resource_profile": null,
+    "reference_policy_sha256": "see arms.ARM_B.reference (BC-P b4f274eb..., support 152cdab4...)",
+    "we_continuation_selection_for_this_eval": {
+      "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
+      "bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+      "source_lineage_sha256": "6d6f777bacde98d5c60b2d61cd594fda172fd63f99c315a002b5e7291afb099a",
+      "game_values_sha256": "aa6c4e486cc6b027758d966ab680566a4a4ce2afa4a918dd26f8fb65c8957677",
+      "status": "pinned_draft_COOP020_M1"
+    },
+    "environment": null,
+    "source_commit_C": null,
+    "plan_commit_D": null,
+    "budget_seconds": null,
+    "pinned_at": "M3b_final_execution_registration_gate",
+    "pin_status": "draft; re-verified and finally pinned at M3b"
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "metadata_use_history_audit_and_draft",
+      "status": "bounded_audit_complete_draft_this_deliverable"
+    },
+    {
+      "id": "M1",
+      "name": "policy_estimand_source_availability_resolution",
+      "includes": [
+        "pre2026_or_synthetic_adapter_verification",
+        "identification_review"
+      ],
+      "status": "not_started"
+    },
+    {
+      "id": "M2",
+      "name": "pre_access_science_and_acquisition_QA_plan_registration",
+      "before_new_data": true,
+      "status": "not_started"
+    },
+    {
+      "id": "M3",
+      "name": "separately_authorized_isolated_snapshot_and_quality_blind_QA",
+      "produces": "actual_dataset_identity",
+      "status": "not_authorized"
+    },
+    {
+      "id": "M3b",
+      "name": "final_execution_registration_gate",
+      "pins": [
+        "snapshot_and_manifest_sha256",
+        "source_commit_C",
+        "plan_commit_D",
+        "environment",
+        "budget"
+      ],
+      "requires": "independent_review",
+      "status": "not_started"
+    },
+    {
+      "id": "M4",
+      "name": "bounded_profile_and_execution",
+      "requires": [
+        "M3b_pass",
+        "separate_user_execution_authorization",
+        "root_release"
+      ],
+      "status": "not_authorized"
+    },
+    {
+      "id": "M5",
+      "name": "audit_and_report",
+      "status": "not_started"
+    }
+  ],
+  "release_blockers": [
+    {
+      "id": "BLK-01",
+      "what": "candidate_and_reference_policies_not_frozen",
+      "owner": [
+        "Song",
+        "Astra"
+      ],
+      "action": "Freeze candidate policy and TRAIN BC reference as callable action laws (probabilities, masks, tie breaks, fallbacks) from pre-2026 artifacts",
+      "gates": "M1"
+    },
+    {
+      "id": "BLK-02",
+      "what": "legal_support_and_action_mapping_missing",
+      "owner": [
+        "B_adapter_owner_Song"
+      ],
+      "action": "Export C0 B-adapter candidate probability/mask and action index mapping with hashes",
+      "gates": "M1"
+    },
+    {
+      "id": "BLK-03",
+      "what": "pre2026_nuisance_identities_missing",
+      "owner": [
+        "Astra",
+        "Sol"
+      ],
+      "action": "Specify and build frozen pre-2026 behavior/outcome nuisances under separate registration",
+      "gates": "M2"
+    },
+    {
+      "id": "BLK-04",
+      "what": "target_location_and_pitch_type_assignment_not_identified",
+      "owner": [
+        "CV_member",
+        "Song",
+        "Astra"
+      ],
+      "action": "Provide intent labels/logging or assignment evidence plus identification review; until then ARM_A blocked and causal ARM_B estimates null",
+      "gates": [
+        "ARM_A",
+        "ARM_B_causal_interpretation"
+      ]
+    },
+    {
+      "id": "BLK-05",
+      "what": "cohort_provenance_availability_and_wider_access_certification_unresolved",
+      "owner": [
+        "Sol",
+        "Root"
+      ],
+      "action": "Bounded metadata audit is complete; establish exact used game IDs, full-season availability and, if needed, untouched certification, or keep unknown. Not required for explicitly exposed exploratory analysis",
+      "gates": "M1"
+    },
+    {
+      "id": "BLK-06",
+      "what": "ABS_record_semantics_and_event_treatment_unknown",
+      "owner": [
+        "Root",
+        "Sol"
+      ],
+      "action": "Record Statcast challenge-call semantics, challenge state variables and special-event exception handling in M2 schema plan",
+      "gates": "M2"
+    },
+    {
+      "id": "BLK-07",
+      "what": "isolated_2026_snapshot_not_authorized",
+      "owner": [
+        "Song"
+      ],
+      "action": "After M2 registration, separately authorize; Sol executes M3 isolated snapshot and quality-blind QA",
+      "gates": "M3"
+    },
+    {
+      "id": "BLK-08",
+      "what": "numeric_gates_are_proposals",
+      "owner": [
+        "Astra",
+        "Song"
+      ],
+      "action": "Justify ESS gates with pre-2026/synthetic work; fix estimator, bootstrap seed, invalid-replicate rule, minimum effect before any 2026 load",
+      "gates": "M2"
+    }
+  ],
+  "milestone_auto_release": false,
+  "revisions": [
+    {
+      "date": "2026-09-30",
+      "base_commit": "8c57bda",
+      "decisions": [
+        "D100",
+        "D104",
+        "D105",
+        "D106",
+        "D107"
+      ],
+      "what": "ARM_B enabled as evaluated arm (still DRAFT); frozen <=2025 components pinned; success criteria pre-registered before any <=2025 S6 result is read; exposure disclosure; pre-run gates"
+    },
+    {
+      "date": "2026-09-30",
+      "base_commit": "e10ead8",
+      "review": "COOP-020",
+      "what": "Fable 5.1 narrow review (COOP-020) conditions applied: B1 label split (IMPROVEMENT_SUPPORTED_STATISTICAL = D108 rule; IMPROVEMENT_SUPPORTED needs CI lower > MEI + b_V from sealed S5 V2, V3 alpha 0.5 misspecification report/flag); M1 reward FrozenWE full-SHA pins, legacy game_values note superseded, 2025 DEV Brier exposure disclosed; M2 hang guard, sealed-unopened partial ledger, max 2 attempts then FAILED_INFRA, no resume; M3 power disclosure placeholder; m1 one primary contrast, zero confirmatory secondaries; m2 concrete H_t field list, sufficiency = identification assumption; m3 snapshot provenance; m4 ESS gate non-binding at tau 0.1. D108 thresholds unchanged; still DRAFT, registered=false, execution disabled."
+    },
+    {
+      "date": "2026-10-01",
+      "change": "candidate identity pin a6dffaea... -> c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c (D122/D123: runtime v3 source change re-certified S2->S6; tau table and V2 gaps identical; policy computation unchanged)"
+    },
+    {
+      "date": "2026-10-01",
+      "change": "candidate identity pin -> c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c (D125: low-memory ledger source change re-certified S2->S6; all results identical)"
+    }
+  ],
+  "success_criteria": {
+    "status": "proposal_preregistered_before_le2025_S6_read",
+    "written": "2026-09-30",
+    "primary_estimand": "L1 (E0 start population) Delta = V(pi_cand) - V(pi_ref), defense WE per PA, paired per PA; interval [Delta_lo, Delta_hi] from censored-node bounds",
+    "decision_rule": {
+      "IMPROVEMENT_SUPPORTED_STATISTICAL": [
+        "game_bootstrap_95ci_lower_of_Delta_lo > minimum_effect (0.001)",
+        "both_policy_ESS_gates_pass (PA>=100, game>=30)",
+        "bootstrap_invalid_share <= 0.05",
+        "no_integrity_failure_and_paired_identity_run_exact_zero"
+      ],
+      "IMPROVEMENT_SUPPORTED": [
+        "game_bootstrap_95ci_lower_of_Delta_lo > minimum_effect (0.001) + b_V",
+        "both_policy_ESS_gates_pass (PA>=100, game>=30)",
+        "bootstrap_invalid_share <= 0.05",
+        "no_integrity_failure_and_paired_identity_run_exact_zero"
+      ],
+      "IMPROVEMENT_SUPPORTED_implies_STATISTICAL": true,
+      "bias_bound_b_V": {
+        "definition": "b_V := |delta_gap_V2| + 1.96 * delta_gap_se_V2",
+        "source": "sealed le2025 S5 v2.json, check=V2 law=pi_b_hat runs",
+        "seeds": "seeds.planning_v2 = [0,1,2] (includes planning_main = 0); use max b_V over seeds",
+        "value": null,
+        "value_status": "filled from sealed S5 v2.json before S6 is read; not a threshold change"
+      },
+      "v3_misspecification_report": {
+        "what": "|delta_gap_V3| for V3 tempered alpha=0.5 (law tempered_alpha_0.5), max over seeds.planning_v2, printed beside the 2026 result",
+        "flag_if_exceeds_MEI": "pi_b_misspecification_sensitivity_exceeds_MEI",
+        "decision_input": false,
+        "registered_mandatory_report": true
+      },
+      "rationale": "V2 logs are generated by pi_b_hat itself, so V2 cannot exercise pi_b_hat misspecification; the candidate DR is single-robust (q_hat = Q_ref, COOP-019 F5), so its bias rides on pi_b_hat. Claiming improvement beyond MEI therefore requires clearing MEI + the V2-measured bias bound, with V3 (logging law != pi_b_hat) disclosed as misspecification sensitivity.",
+      "alternative_not_chosen": "raise MEI to >= 0.01 to match the V2 tolerance; not chosen, D108 MEI kept and statistical vs bias-bounded labels reported separately",
+      "HARM_SUPPORTED": [
+        "game_bootstrap_95ci_upper_of_Delta_hi < 0",
+        "same_gates"
+      ],
+      "UNCONFIRMED_WEAK_OVERLAP": "ESS gate or invalid-share failure",
+      "FAILED_INTEGRITY": "integrity failure",
+      "otherwise": "NO_EVIDENCE_OF_IMPROVEMENT (includes 0 < CI lower <= minimum_effect)",
+      "identification_label": "assumed_not_evidenced",
+      "service_promotion_automatic": false,
+      "ess_gate_binding_note": "ESS gate is effectively non-binding at tau 0.1 (le2025 June S3b candidate PA ESS 9,779 = 93.4% of reference, game ESS 147; D107); UNCONFIRMED_WEAK_OVERLAP is not a live safeguard in this registration (still applied if 2026 fails it)"
+    },
+    "one_shot": {
+      "runs": 1,
+      "snapshot": "d20260930-h2026f",
+      "rerun_allowed_only_for": "infrastructure failure before any reward/WE/outcome is read, logs and partial ledger preserved, same registration and scope",
+      "post_read_changes": false,
+      "hang_guard": "le2025 S6 measured cost seconds x (n_2026_games / 150) x 2, fixed at M3b; n_2026_games = eligible R games in the snapshot counted outcome-blind at M3",
+      "hang_guard_seconds": null,
+      "on_abort": "partial ledger sealed by hash and not opened (no reward/WE/Delta summary read)",
+      "max_attempts": 2,
+      "after_second_infra_failure": "FAILED_INFRA; no third attempt (new registration id only)",
+      "resume_from_checkpoint": "not allowed unless bit-deterministic and the resume procedure is registered at M3b"
+    },
+    "report_not_for_decision": [
+      "L0_bounds",
+      "L2_E0_complete_descriptive",
+      "censored_share_by_reason",
+      "R7_change_share_unknown_pitcher_share_and_secondary_sensitivity_labeled_on_hold",
+      "all_E0_min_ESS_COOP019_F3",
+      "candidate_single_robustness_statement_COOP019_F5",
+      "IS_SNIS_DM_only_clip_sensitivity_diagnostic"
+    ],
+    "subgroups_descriptive": [
+      "SP_RP_D87_role",
+      "bc_p_only_pitcher",
+      "month",
+      "TRAIN_volume_tertiles",
+      "extra_innings",
+      "W_exposed_vs_W_post"
+    ],
+    "change_after_le2025_S6_read": "disclose and use a new registration id",
+    "power_disclosure": {
+      "status": "placeholder; filled after le2025 S6 is sealed; thresholds unchanged",
+      "S6_delta_point": null,
+      "S6_delta_se": null,
+      "projected_2026_se": "SE_S6 * sqrt(150 / n_2026_games)",
+      "projected_2026_se_value": null,
+      "decision_input": false
+    }
+  },
+  "pre_run_gates": [
+    {
+      "id": "G1",
+      "what": "le2025 S5 V2 accept: runner accept AND delta_gap_se <= 0.005 (COOP-019 F1); else no S6 and no 2026",
+      "status": "open"
+    },
+    {
+      "id": "G2",
+      "what": "reviewer-side IS-only (q_hat := 0) check on the sealed V2 ledger before S6 is read (COOP-019 condition 2)",
+      "status": "open"
+    },
+    {
+      "id": "G3",
+      "what": "le2025 S6 completed and sealed (paired identity run passes; F3/F5 reported)",
+      "status": "open"
+    },
+    {
+      "id": "G4",
+      "what": "Fable 5.1 narrow review of this prereg (ARM_B pins, success_criteria, exposure disclosure)",
+      "status": "open",
+      "note": "COOP-020 review returned conditions; applied in this draft revision (Fable re-check of the applied conditions not recorded here)"
+    },
+    {
+      "id": "G5",
+      "what": "M3b final registration: snapshot/manifest sha, source commit, config/addenda sha, bootstrap seed, 2026 cost budget (unmeasured) and hang guard, registered=true",
+      "status": "open"
+    },
+    {
+      "id": "G6",
+      "what": "user sign-off of final registration and the single run",
+      "status": "open"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "task": "COOP-018",
+  "decision": "D93",
+  "status": "IMPLEMENTED_SYNTHETIC_ONLY_DECIDED_NOT_REGISTERED",
+  "created_utc": "2026-09-29T07:02:56.011712+00:00",
+  "mode": "opus_5_5_alone_by_user_instruction",
+  "roles_observed": {
+    "main": "claude-opus-5-5",
+    "support_sol": null,
+    "focused_review_astra": null,
+    "same_model_workflows": "claude-opus-5-5 multi-agent (lenses, 3 verifiers per finding); not an independent review"
+  },
+  "fable_calls": 0,
+  "circular_codex_call": false,
+  "user_decisions": {
+    "date": "2026-09-29",
+    "D-1..D-10": "recommended options",
+    "M-1..M-13": "recommended options",
+    "D-11": "option D (measure first), not the recommended C",
+    "record": "configs/ML-POLICY-MATERIALIZATION-v1.json decisions / decisions_extra; docs/decisions.md D93"
+  },
+  "decision_workflow": {
+    "decisions": 11,
+    "agents": 56,
+    "critic_refuted": 0,
+    "missing_decisions_found": 13
+  },
+  "commits": {
+    "wip_reviewed": "a7049837182af97e2fba63c260e6809e32f14074",
+    "decisions_and_round1_fixes": "0135379f25a564ea8ed153182e27ad8dfb071b75",
+    "round2_fixes": "b416701614906fc11fe6056e0a01aaca80a76a8c",
+    "round3_fixes": "5186810c5b6bf461f2549a9b7f445dedb70ca9f0"
+  },
+  "reviews": [
+    {
+      "round": 1,
+      "target": "a704983",
+      "lenses": 6,
+      "agents": 127,
+      "confirmed": 36,
+      "rejected": 4,
+      "completeness_gaps": 12
+    },
+    {
+      "round": 2,
+      "target": "0135379",
+      "lenses": 7,
+      "agents": 215,
+      "confirmed": 61,
+      "rejected": 8,
+      "completeness_gaps": 13
+    },
+    {
+      "round": 3,
+      "target": "b416701",
+      "lenses": 7,
+      "agents": 121,
+      "confirmed": 36,
+      "rejected": 2,
+      "completeness_gaps": null
+    }
+  ],
+  "all_confirmed_findings_addressed": true,
+  "left_unimplemented": [
+    "D-10 mandatory test variant with a BC-only (token-outside) code after an off-mask action",
+    "D-3 description allowlist fail-closed gate (runtime refuses the successor instead)",
+    "membership TV when the bound context encoder has no archetypes (synthetic encoders)"
+  ],
+  "tests": {
+    "test_policy_validation": "36 passed, 9 subtests",
+    "policy_three_files": "59 passed, 32 subtests",
+    "experiments_pitchmdp_tests": "733 passed, 1 skipped, 49 subtests",
+    "root_tests": "362 passed",
+    "check_2026_policy_contract": "all_pass true"
+  },
+  "file_sha256_at_round3_commit": {
+    "experiments/pitchmdp/pitchmdp/policy_runtime.py": "af8674c5031333a212ffca47fce37d83718b1120d8fdbf9f4b17f207a467d0b3",
+    "experiments/pitchmdp/pitchmdp/policy_requests.py": "6ab5e7da76d94452cf11330b1a49f23ec862b9748df6a63e6b84fc180febdb19",
+    "experiments/pitchmdp/pitchmdp/policy_estimator.py": "a60180a2aa82ac101629b29772101fe26c54d8bf2abdcccee67b42b4dad4b4f1",
+    "experiments/pitchmdp/pitchmdp/policy_tau.py": "fd8173670029a8157d87f07775640f77a86bd110db09c8bd12388a48c9ccf85e",
+    "experiments/pitchmdp/pitchmdp/policy_semisynthetic.py": "4d5ee6f63627c7f1e6614a5e0212e99b2b778758871466426c9432be8e86f42f",
+    "experiments/pitchmdp/pitchmdp/policy_identity.py": "c1dfec8294116089d8a545edb9c098c5cac35ff6845eeb666cfb9a4ea816a81a",
+    "experiments/pitchmdp/pitchmdp/policy_artifacts.py": "bc63ebf5080db4c5f81e9af75c73d4ddb7aff317a21737176d1bb6171cf21b89",
+    "experiments/pitchmdp/pitchmdp/rollout_policy.py": "b2c5843694d0e73170b2cdde755f373e34b3b923a47e3251262f67a20bb87d50",
+    "experiments/pitchmdp/scripts/run_policy_validation.py": "6553d8c29eac1205bf7c5d66ae06a69ecf61a52e3ed803b02769d7341b12e53c",
+    "experiments/pitchmdp/tests/test_policy_validation.py": "ea0f4b594c25365a3a31f926bf0c17437f3443db208ce7daec2cef02fb6d6d64",
+    "experiments/pitchmdp/tests/test_policy_runtime.py": "ed9860dd7301417eae96d7b508b26accdea0c1b8c860274078b2162b71a1cde3",
+    "experiments/pitchmdp/tests/test_policy_identity.py": "1f210973e3213d311bc9772c0846b2a0fa668c4107a403712adf6d0a66ff2d64",
+    "configs/ML-POLICY-MATERIALIZATION-v1.json": "0b7f605379dcbcb7ffa5c98caca5a7dd85dea68b277bfb8830828d06bbc35205",
+    "configs/MLB-2026-POLICY-PREPARATION-v1.json": "3fb7a4fb3df3dc10899bd44b322bf4009d1b0ec9320c90019a9bf1a9cbc7d1f8"
+  },
+  "real_data_access": 0,
+  "payload_opened_or_hashed": 0,
+  "new_2026_access": 0,
+  "real_data_fit_inference_ope_runs": 0,
+  "policy_frozen": false,
+  "registered": false,
+  "execution_authorized_by_this_record": false,
+  "open_gates": [
+    "review_gates.code_review (S0-S2)",
+    "review_gates.independent_review (S3 and later)",
+    "le2025_validation_plan.source_commit",
+    "null stage fields (S3 candidates/budgets, S3b n_games/thresholds, S5 design/tolerance, S6 n_games/budget/planned_decisions/d7_diagnostic_starts, bootstrap invalid share)",
+    "D-4 thresholds before S0",
+    "user approval to run"
+  ],
+  "claims": {
+    "causal_effect": null,
+    "population_value": null,
+    "independent_review": false,
+    "identification": null
+  }
+}

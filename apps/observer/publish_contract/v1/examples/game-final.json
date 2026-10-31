@@ -1,0 +1,1913 @@
+{
+ "current": {
+  "batter": {
+   "id": 32,
+   "jersey": null,
+   "name": "B32",
+   "side": "R"
+  },
+  "context": {
+   "basis": "event_prefix_current_feed",
+   "batter": {
+    "at_bats": 0,
+    "hits": 0,
+    "on_base": 0
+   },
+   "boxscore": {
+    "away": {
+     "batters": [
+      {
+       "at_bats": 1,
+       "hits": 0,
+       "id": 11,
+       "name": "B11",
+       "on_base": 0
+      },
+      {
+       "at_bats": 1,
+       "hits": 1,
+       "id": 12,
+       "name": "B12",
+       "on_base": 1
+      },
+      {
+       "at_bats": 1,
+       "hits": 0,
+       "id": 13,
+       "name": "B13",
+       "on_base": 0
+      }
+     ],
+     "pitchers": [
+      {
+       "earned_runs": null,
+       "id": 41,
+       "name": "P41",
+       "pitches": 3,
+       "strikeouts": 0
+      }
+     ]
+    },
+    "home": {
+     "batters": [
+      {
+       "at_bats": 1,
+       "hits": 1,
+       "id": 31,
+       "name": "B31",
+       "on_base": 1
+      },
+      {
+       "at_bats": 0,
+       "hits": 0,
+       "id": 32,
+       "name": "B32",
+       "on_base": 0
+      }
+     ],
+     "pitchers": [
+      {
+       "earned_runs": null,
+       "id": 21,
+       "name": "P21",
+       "pitches": 6,
+       "strikeouts": 1
+      }
+     ]
+    }
+   },
+   "lineups": {
+    "away": [],
+    "home": []
+   },
+   "next_batters": [],
+   "pitcher": {
+    "earned_runs": null,
+    "pitches": 3,
+    "strikeouts": 0
+   }
+  },
+  "pa_key": "900200:5",
+  "phase": "final",
+  "pitcher": {
+   "hand": "R",
+   "id": 41,
+   "jersey": null,
+   "name": "P41"
+  },
+  "situation": {
+   "away_score": 0,
+   "balls": 1,
+   "bases": 0,
+   "half": "Bot",
+   "home_score": 1,
+   "inning": 1,
+   "outs": 0,
+   "runners": {
+    "first": false,
+    "second": false,
+    "third": false
+   },
+   "strikes": 0
+  }
+ },
+ "cutoff": {
+  "index": 8,
+  "pitch_key": "900200:5:1"
+ },
+ "display_state": {
+  "correction": null,
+  "detail": null,
+  "feed": {
+   "delayed": false,
+   "failing_for_s": null,
+   "failing_since": null,
+   "lag_max_s": 5.0,
+   "lag_measured": true,
+   "lag_s": 0.0,
+   "lag_threshold_s": 45,
+   "last_ok_at": "2026-10-05T10:25:00Z",
+   "ok": true,
+   "provider_order": "ordered",
+   "received_at": "2026-10-05T10:25:00Z",
+   "thresholds_provisional": true
+  },
+  "label": "경기 종료",
+  "ledger": {
+   "outcome": null,
+   "status": "not_applicable",
+   "store_ok": true,
+   "why": null
+  },
+  "message": "경기가 끝났어요.",
+  "pitch_key": null,
+  "reason": "game_over",
+  "recommendation_shown": false,
+  "schema": "pitcheezy-display-state-v1",
+  "state": "final"
+ },
+ "features": {
+  "profile_reference": {
+   "enabled": true
+  },
+  "provisional": true,
+  "step5_expectation": {
+   "enabled": false
+  },
+  "viewer_delay": {
+   "default_s": 30,
+   "enabled": false,
+   "fold_actual_until_synced": false,
+   "sync_prompt": false
+  }
+ },
+ "feed": {
+  "as_of": "2026-10-05T10:25:00Z",
+  "ok": true,
+  "stale_s": 0.0
+ },
+ "game": {
+  "away_abbr": "AWY",
+  "away_score": 0,
+  "away_team": "Away Club",
+  "date_kst": "2026-10-05",
+  "double_header": false,
+  "double_header_code": "N",
+  "embargoed": false,
+  "game_number": 1,
+  "game_pk": 900200,
+  "game_type": "F",
+  "games_in_series": null,
+  "half": null,
+  "has_history": true,
+  "home_abbr": "HOM",
+  "home_score": 1,
+  "home_team": "Home Club",
+  "inning": null,
+  "live": false,
+  "official_date": "2026-10-05",
+  "probable_pitchers": {
+   "away": null,
+   "home": null
+  },
+  "series_description": null,
+  "series_game_number": null,
+  "start": "2026-10-05T10:00:00Z",
+  "start_kst": "2026-10-05T19:00:00+09:00",
+  "status": "final",
+  "status_text": "Final",
+  "venue": null
+ },
+ "linescore": {
+  "basis": "revealed_events",
+  "current": {
+   "half": "Bot",
+   "inning": 1
+  },
+  "innings": [
+   {
+    "away": 0,
+    "home": 1,
+    "inning": 1
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 2
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 3
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 4
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 5
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 6
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 7
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 8
+   },
+   {
+    "away": null,
+    "home": null,
+    "inning": 9
+   }
+  ],
+  "provenance": {
+   "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+   "errors": "fielding_error_credits_dedup",
+   "hits": "pa_result_events",
+   "runs": "score_deltas"
+  },
+  "teams": {
+   "away": {
+    "bb_hbp": 0,
+    "errors": 0,
+    "hits": 1,
+    "runs": 0
+   },
+   "home": {
+    "bb_hbp": 0,
+    "errors": 0,
+    "hits": 1,
+    "runs": 1
+   }
+  }
+ },
+ "next": null,
+ "pas": [
+  {
+   "at_bat_number": 1,
+   "batter": {
+    "id": 11,
+    "jersey": null,
+    "name": "B11",
+    "side": "R"
+   },
+   "batting_order": null,
+   "complete": true,
+   "event": "strikeout",
+   "event_label": "삼진",
+   "first_index": 0,
+   "half": "Top",
+   "inning": 1,
+   "last_index": 1,
+   "pa_key": "900200:1",
+   "pitch_count": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "play_text": "text 1",
+   "result_text": "헛스윙 삼진"
+  },
+  {
+   "at_bat_number": 2,
+   "batter": {
+    "id": 12,
+    "jersey": null,
+    "name": "B12",
+    "side": "R"
+   },
+   "batting_order": null,
+   "complete": true,
+   "event": "single",
+   "event_label": "안타",
+   "first_index": 2,
+   "half": "Top",
+   "inning": 1,
+   "last_index": 3,
+   "pa_key": "900200:2",
+   "pitch_count": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "play_text": "text 2",
+   "result_text": "중견수 방면 1루타"
+  },
+  {
+   "at_bat_number": 3,
+   "batter": {
+    "id": 13,
+    "jersey": null,
+    "name": "B13",
+    "side": "R"
+   },
+   "batting_order": null,
+   "complete": true,
+   "event": "field_out",
+   "event_label": "타구 아웃",
+   "first_index": 4,
+   "half": "Top",
+   "inning": 1,
+   "last_index": 5,
+   "pa_key": "900200:3",
+   "pitch_count": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "play_text": "text 3",
+   "result_text": "2루수 땅볼 아웃"
+  },
+  {
+   "at_bat_number": 4,
+   "batter": {
+    "id": 31,
+    "jersey": null,
+    "name": "B31",
+    "side": "R"
+   },
+   "batting_order": null,
+   "complete": true,
+   "event": "home_run",
+   "event_label": "홈런",
+   "first_index": 6,
+   "half": "Bot",
+   "inning": 1,
+   "last_index": 7,
+   "pa_key": "900200:4",
+   "pitch_count": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 41,
+    "jersey": null,
+    "name": "P41"
+   },
+   "play_text": "text 4",
+   "result_text": "홈런"
+  },
+  {
+   "at_bat_number": 5,
+   "batter": {
+    "id": 32,
+    "jersey": null,
+    "name": "B32",
+    "side": "R"
+   },
+   "batting_order": null,
+   "complete": false,
+   "event": null,
+   "event_label": null,
+   "first_index": 8,
+   "half": "Bot",
+   "inning": 1,
+   "last_index": 8,
+   "pa_key": "900200:5",
+   "pitch_count": 1,
+   "pitcher": {
+    "hand": "R",
+    "id": 41,
+    "jersey": null,
+    "name": "P41"
+   },
+   "play_text": null,
+   "result_text": null
+  }
+ ],
+ "pitches": [
+  {
+   "actual": {
+    "call_label": "볼",
+    "catcher_setup": null,
+    "description": "Ball",
+    "event": null,
+    "event_label": null,
+    "pitch_label": "포심",
+    "pitch_type": "FF",
+    "play_text": null,
+    "result_label": "볼",
+    "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 1.2,
+    "z": 2.0,
+    "zone_label": "존 바깥"
+   },
+   "at_bat_number": 1,
+   "batter": {
+    "id": 11,
+    "jersey": null,
+    "name": "B11",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 0,
+     "strikeouts": 0
+    }
+   },
+   "half": "Top",
+   "index": 0,
+   "inning": 1,
+   "key": "900200:1:1",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Top",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": null,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:1",
+   "pitch_number": 1,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 0,
+    "bases": 0,
+    "half": "Top",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 0,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "헛스윙",
+    "catcher_setup": null,
+    "description": "Swinging Strike",
+    "event": "strikeout",
+    "event_label": "삼진",
+    "pitch_label": "슬라이더",
+    "pitch_type": "SL",
+    "play_text": "text 1",
+    "result_label": "삼진",
+    "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 0.1,
+    "z": 2.5,
+    "zone_label": "가운데 높이 중앙"
+   },
+   "at_bat_number": 1,
+   "batter": {
+    "id": 11,
+    "jersey": null,
+    "name": "B11",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 1,
+     "strikeouts": 0
+    }
+   },
+   "half": "Top",
+   "index": 1,
+   "inning": 1,
+   "key": "900200:1:2",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Top",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": null,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:1",
+   "pitch_number": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 1,
+    "bases": 0,
+    "half": "Top",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 0,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "볼",
+    "catcher_setup": null,
+    "description": "Ball",
+    "event": null,
+    "event_label": null,
+    "pitch_label": "포심",
+    "pitch_type": "FF",
+    "play_text": null,
+    "result_label": "볼",
+    "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 1.2,
+    "z": 2.0,
+    "zone_label": "존 바깥"
+   },
+   "at_bat_number": 2,
+   "batter": {
+    "id": 12,
+    "jersey": null,
+    "name": "B12",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 2,
+     "strikeouts": 1
+    }
+   },
+   "half": "Top",
+   "index": 2,
+   "inning": 1,
+   "key": "900200:2:1",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Top",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": null,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:2",
+   "pitch_number": 1,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 0,
+    "bases": 0,
+    "half": "Top",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 1,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "인플레이",
+    "catcher_setup": null,
+    "description": "In play, no out",
+    "event": "single",
+    "event_label": "안타",
+    "pitch_label": "슬라이더",
+    "pitch_type": "SL",
+    "play_text": "text 2",
+    "result_label": "안타",
+    "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 0.1,
+    "z": 2.5,
+    "zone_label": "가운데 높이 중앙"
+   },
+   "at_bat_number": 2,
+   "batter": {
+    "id": 12,
+    "jersey": null,
+    "name": "B12",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 3,
+     "strikeouts": 1
+    }
+   },
+   "half": "Top",
+   "index": 3,
+   "inning": 1,
+   "key": "900200:2:2",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Top",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": null,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:2",
+   "pitch_number": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 1,
+    "bases": 0,
+    "half": "Top",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 1,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "볼",
+    "catcher_setup": null,
+    "description": "Ball",
+    "event": null,
+    "event_label": null,
+    "pitch_label": "포심",
+    "pitch_type": "FF",
+    "play_text": null,
+    "result_label": "볼",
+    "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 1.2,
+    "z": 2.0,
+    "zone_label": "존 바깥"
+   },
+   "at_bat_number": 3,
+   "batter": {
+    "id": 13,
+    "jersey": null,
+    "name": "B13",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 4,
+     "strikeouts": 1
+    }
+   },
+   "half": "Top",
+   "index": 4,
+   "inning": 1,
+   "key": "900200:3:1",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Top",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": null,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 1,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:3",
+   "pitch_number": 1,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 0,
+    "bases": 0,
+    "half": "Top",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 1,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "인플레이",
+    "catcher_setup": null,
+    "description": "In play, out(s)",
+    "event": "field_out",
+    "event_label": "타구 아웃",
+    "pitch_label": "슬라이더",
+    "pitch_type": "SL",
+    "play_text": "text 3",
+    "result_label": "타구 아웃",
+    "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 0.1,
+    "z": 2.5,
+    "zone_label": "가운데 높이 중앙"
+   },
+   "at_bat_number": 3,
+   "batter": {
+    "id": 13,
+    "jersey": null,
+    "name": "B13",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 5,
+     "strikeouts": 1
+    }
+   },
+   "half": "Top",
+   "index": 5,
+   "inning": 1,
+   "key": "900200:3:2",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Top",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": null,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 1,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:3",
+   "pitch_number": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 21,
+    "jersey": null,
+    "name": "P21"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 1,
+    "bases": 0,
+    "half": "Top",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 2,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "볼",
+    "catcher_setup": null,
+    "description": "Ball",
+    "event": null,
+    "event_label": null,
+    "pitch_label": "포심",
+    "pitch_type": "FF",
+    "play_text": null,
+    "result_label": "볼",
+    "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 1.2,
+    "z": 2.0,
+    "zone_label": "존 바깥"
+   },
+   "at_bat_number": 4,
+   "batter": {
+    "id": 31,
+    "jersey": null,
+    "name": "B31",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 0,
+     "strikeouts": 0
+    }
+   },
+   "half": "Bot",
+   "index": 6,
+   "inning": 1,
+   "key": "900200:4:1",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Bot",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": 0,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 1,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:4",
+   "pitch_number": 1,
+   "pitcher": {
+    "hand": "R",
+    "id": 41,
+    "jersey": null,
+    "name": "P41"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 0,
+    "bases": 0,
+    "half": "Bot",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 0,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "인플레이",
+    "catcher_setup": null,
+    "description": "In play, run(s)",
+    "event": "home_run",
+    "event_label": "홈런",
+    "pitch_label": "슬라이더",
+    "pitch_type": "SL",
+    "play_text": "text 4",
+    "result_label": "홈런",
+    "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 0.1,
+    "z": 2.5,
+    "zone_label": "가운데 높이 중앙"
+   },
+   "at_bat_number": 4,
+   "batter": {
+    "id": 31,
+    "jersey": null,
+    "name": "B31",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": 0,
+     "pitches": 1,
+     "strikeouts": 0
+    }
+   },
+   "half": "Bot",
+   "index": 7,
+   "inning": 1,
+   "key": "900200:4:2",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Bot",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": 0,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 1,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 0,
+      "runs": 0
+     }
+    }
+   },
+   "pa_key": "900200:4",
+   "pitch_number": 2,
+   "pitcher": {
+    "hand": "R",
+    "id": 41,
+    "jersey": null,
+    "name": "P41"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": false,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 1,
+    "bases": 0,
+    "half": "Bot",
+    "home_score": 0,
+    "inning": 1,
+    "outs": 0,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  },
+  {
+   "actual": {
+    "call_label": "볼",
+    "catcher_setup": null,
+    "description": "Ball",
+    "event": null,
+    "event_label": null,
+    "pitch_label": "포심",
+    "pitch_type": "FF",
+    "play_text": null,
+    "result_label": "볼",
+    "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 1.2,
+    "z": 2.0,
+    "zone_label": "존 바깥"
+   },
+   "at_bat_number": 5,
+   "batter": {
+    "id": 32,
+    "jersey": null,
+    "name": "B32",
+    "side": "R"
+   },
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": null,
+     "pitches": 2,
+     "strikeouts": 0
+    }
+   },
+   "half": "Bot",
+   "index": 8,
+   "inning": 1,
+   "key": "900200:5:1",
+   "linescore_before": {
+    "basis": "revealed_events",
+    "current": {
+     "half": "Bot",
+     "inning": 1
+    },
+    "innings": [
+     {
+      "away": 0,
+      "home": 1,
+      "inning": 1
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 2
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 3
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 4
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 5
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 6
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 7
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 8
+     },
+     {
+      "away": null,
+      "home": null,
+      "inning": 9
+     }
+    ],
+    "provenance": {
+     "bb_hbp": "pa_result_events(walk,intent_walk,hit_by_pitch)",
+     "errors": "fielding_error_credits_dedup",
+     "hits": "pa_result_events",
+     "runs": "score_deltas"
+    },
+    "teams": {
+     "away": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 1,
+      "runs": 0
+     },
+     "home": {
+      "bb_hbp": 0,
+      "errors": 0,
+      "hits": 1,
+      "runs": 1
+     }
+    }
+   },
+   "pa_key": "900200:5",
+   "pitch_number": 1,
+   "pitcher": {
+    "hand": "R",
+    "id": 41,
+    "jersey": null,
+    "name": "P41"
+   },
+   "rec": {
+    "candidates": [],
+    "pairing": {
+     "rule": "no_recorded_recommendation",
+     "status": "none"
+    },
+    "policy": null,
+    "provenance": "absent",
+    "reason": "이 공은 기록된 추천이 없어요.",
+    "recorded_at": null,
+    "status": "missing"
+   },
+   "receipt": {
+    "corrected": true,
+    "reason": null,
+    "status": "received"
+   },
+   "situation_before": {
+    "away_score": 0,
+    "balls": 0,
+    "bases": 0,
+    "half": "Bot",
+    "home_score": 1,
+    "inning": 1,
+    "outs": 0,
+    "runners": {
+     "first": false,
+     "second": false,
+     "third": false
+    },
+    "strikes": 0
+   }
+  }
+ ],
+ "pregame": null,
+ "publish": {
+  "contract": "v1",
+  "final": true,
+  "published_at": "2026-10-05T10:25:00Z",
+  "sequence": 19
+ },
+ "receipts": {
+  "corrected": 1,
+  "paired": 0,
+  "unconfirmed": 0,
+  "version": "4a6b93e410fb"
+ },
+ "schema": "pitcheezy-service-game-v2",
+ "source": {
+  "kind": "live",
+  "session_id": null
+ },
+ "viewer": {
+  "buffering": false,
+  "default_s": 30,
+  "delay_s": 0.0,
+  "enabled": false,
+  "max_delay_s": 120,
+  "provisional": true,
+  "wait_s": 0.0
+ },
+ "zone_bounds": {
+  "bottom": 1.6,
+  "top": 3.3899
+ }
+}

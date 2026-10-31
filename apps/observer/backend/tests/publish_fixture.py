@@ -1,0 +1,347 @@
+"""A synthetic world for the public publisher: one finished archive game (with stored recommendations and a
+validated setup-estimate file), one live game behind a store-backed feed and a fake policy, an injected clock and
+a schedule that lists the live game. No network, no T7, no model. ``export`` writes the contract examples and
+schemas from it (``scripts/export_publish_contract.py``; ``test_publisher.py`` checks the committed copies)."""
+import copy
+from datetime import datetime, timezone
+import gzip
+import hashlib
+import json
+from pathlib import Path
+import sqlite3
+import sys
+import time
+
+from fastapi.testclient import TestClient
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from observer_app import publish_schema, publisher, service_api
+from observer_app.live_armb import LiveArmB
+from observer_app.live_feed import LiveFeed
+from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
+from test_display_state import GAME as LIVE_GAME, Policy, snap as _snap
+from test_service_demo_api import feed as final_feed, watch
+import test_setup_estimates as setup_fixture
+
+ARCHIVE_GAME = 900101
+ARCHIVE_DATE, LIVE_DATE = '2026-09-30', '2026-10-05'  # KST dates of the two games
+BASE = datetime(2026, 10, 5, 10, 20, tzinfo=timezone.utc).timestamp()  # "now": 19:20 KST on the live game's day
+COMMIT = ('0'*40, False)  # the examples never carry a real commit
+
+
+def snap(ts='20261005_100000', *, wall=BASE-5, **options):
+    return _snap(wall, ts, **options)
+
+
+class Upstream:
+    """The MLB API as the feed sees it: the schedule of the live game's day and the game's current body."""
+
+    def __init__(self, body):
+        self.body, self.calls = body, []
+
+    def __call__(self, url, timeout):
+        self.calls.append(url)
+        if 'schedule' in url:
+            if f'date={LIVE_DATE}' not in url:
+                return {'dates': []}
+            status = self.body['gameData']['status'] if isinstance(self.body, dict) else {'abstractGameState': 'Live', 'detailedState': 'In Progress'}
+            return {'dates': [{'games': [{'gamePk': LIVE_GAME, 'gameType': 'F', 'gameDate': '2026-10-05T10:00:00Z',
+                                          'officialDate': LIVE_DATE, 'status': status, 'gameNumber': 1, 'doubleHeader': 'N',
+                                          'teams': {'away': {'team': {'name': 'Away Club'}, 'score': 0},
+                                                    'home': {'team': {'name': 'Home Club'}, 'score': 1}}}]}]}
+        if isinstance(self.body, Exception):
+            raise self.body
+        return copy.deepcopy(self.body)
+
+
+class _ServiceTime:
+    """``service_api``'s clock: the world's injected time instead of the machine's (bodies become repeatable)."""
+    strftime = staticmethod(time.strftime)
+
+    def __init__(self, now):
+        self.now = now
+
+    def time(self):
+        return self.now[0]
+
+    def gmtime(self, seconds=None):
+        return time.gmtime(self.now[0] if seconds is None else seconds)
+
+
+class World:
+    def __init__(self, tmp, *, store=True, first=None, setup=True, **config):
+        self.tmp, self.now, self.policy = Path(tmp), [BASE], Policy()
+        self.upstream = Upstream(snap() if first is None else first)
+        self.feeds, self.watch, self.demo, self.intent, self.out = (self.tmp/name for name in ('feeds', 'watch', 'demo', 'intent', 'out'))
+        for folder in (self.feeds, self.watch, self.demo/'mappings', self.intent):
+            folder.mkdir(parents=True)
+        with gzip.open(self.feeds/f'{ARCHIVE_GAME}_final.json.gz', 'wt') as handle:
+            json.dump(final_feed(ARCHIVE_GAME, '2026-09-30T02:00:00Z'), handle)
+        (self.watch/f'{ARCHIVE_GAME}.json').write_text(json.dumps(watch(ARCHIVE_GAME)))
+        rows = [{'index': i, 'pitch_key': key, 'reveal_at_s': 10.0*i} for i, key in
+                enumerate(f'{ARCHIVE_GAME}:{ab}:{n}' for ab in range(1, 6) for n in (1, 2))]
+        (self.demo/'mappings'/'fx.json').write_text(json.dumps({
+            'schema': 'pitcheezy-demo-mapping-v1', 'mapping_id': 'fx', 'game_pk': ARCHIVE_GAME, 'kind': 'test_fixture',
+            'verified': False, 'video': None, 'rows': rows}))
+        if setup:
+            self.write_setup()
+        wall = lambda: self.now[0]
+        options = dict(delay_s=0, clock=wall, wall=wall, sleep=lambda _: None)
+        self.feed = (PersistentLiveFeed(self.upstream, store=LiveSnapshotStore(self.tmp/'live.sqlite3'), source='live_poll', **options)
+                     if store else LiveFeed(self.upstream, **options))
+        self.armb = LiveArmB(lambda: self.policy)
+        self.config = publisher.load_config(env={}, out_dir=str(self.out), **config)
+        self._time, service_api.time = service_api.time, _ServiceTime(self.now)
+        self.publisher = None
+        try:
+            self.start()
+        except BaseException:
+            service_api.time = self._time
+            raise
+
+    def start(self, **extra):
+        """(Re)start the publisher process over the same output folder, state file, store and clock."""
+        if getattr(self, 'publisher', None) is not None:
+            self.publisher.close()  # the old process is gone: its lock with it
+        self.app, self.publisher = publisher.build(
+            self.config, wall=lambda: self.now[0], commit=COMMIT, live_feed=self.feed, live_policy=self.armb,
+            watch_dir=self.watch, feed_dir=self.feeds, demo_dir=self.demo, intent_dir=self.intent,
+            demo_wall=lambda: self.now[0], **extra)
+        self.client = TestClient(self.app)
+
+    def close(self):
+        service_api.time = self._time
+        if self.publisher is not None:
+            self.publisher.close()
+
+    def write_setup(self, lines=None, game=ARCHIVE_GAME, **pin):
+        est = lambda ab, n, x: setup_fixture.estimate(ab, n, x) | {'pitch_id': f'{game}:{ab}:{n}'}
+        lines = [est(1, 1, .1), est(2, 2, -.5), est(5, 2, 1.2)] if lines is None else lines
+        raw = ''.join(json.dumps(line)+'\n' for line in lines).encode()
+        (self.intent/f'{game}.jsonl').write_bytes(raw)
+        (self.intent/f'{game}.source.json').write_text(json.dumps(
+            setup_fixture.SOURCE | {'sha256': hashlib.sha256(raw).hexdigest()} | pin))
+
+    def settle(self):
+        deadline = time.time()+5
+        while time.time() < deadline and (self.armb.pending or self.armb.running is not None or self.armb.loading):
+            time.sleep(.01)
+
+    def cycle(self, body=None, *, after=12.0, settle=True):
+        """Advance past the poll interval, optionally change what upstream answers, and publish. With ``settle``
+        the fake policy gets its (instant) turn and a second cycle at the same moment publishes the settled view,
+        as two successive real cycles would."""
+        if body is not None:
+            self.upstream.body = body
+        self.now[0] += after
+        health = self.publisher.cycle()
+        if settle:
+            self.settle()
+            health = self.publisher.cycle()
+        return health
+
+    def read_after_cycle(self, name):
+        self.cycle(settle=False)
+        return self.read(name)
+
+    def path(self, name):
+        return self.out/name
+
+    def read(self, name):
+        return json.loads(self.path(name).read_text())
+
+    def game(self, game_pk=LIVE_GAME):
+        return self.read(f'v1/game/{game_pk}.json')
+
+    def files(self):
+        return sorted(str(path.relative_to(self.out)) for path in self.out.rglob('*') if path.is_file())
+
+    def served(self, path, **params):
+        answer = self.client.get(path, params=params)
+        assert answer.status_code == 200, answer.text
+        return answer.json()
+
+
+def strip(body):
+    """A published file without the key the publisher added: what the route answers."""
+    return {key: value for key, value in body.items() if key != 'publish'}
+
+
+# ---- contract examples and schemas -------------------------------------------------------------------------
+KINDS = {'manifest': False, 'health': False, 'dates': False, 'games': False, 'game': True, 'setup': True}  # kind -> has final mark
+def pregame(ts='20261005_100000', *, wall=BASE-5):
+    """The live game before its first pitch: no play yet."""
+    body = snap(ts, wall=wall, half='preview')
+    body['liveData']['plays'] = {'allPlays': []}
+    body['liveData']['linescore'] = {'teams': {'away': {'runs': 0}, 'home': {'runs': 0}}}
+    return body
+
+
+def unidentified(body):
+    """``body`` with its newest pitch lacking the provider identity: the store does not admit it (확인 중)."""
+    del body['liveData']['plays']['currentPlay']['playEvents'][-1]['playId']
+    return body
+
+
+def _broken_ledger(**_):
+    raise sqlite3.OperationalError('disk I/O error')
+
+
+class RichPolicy(Policy):
+    """A synthetic policy candidate with optional values the normal fake policy leaves unknown."""
+
+    def __call__(self, snapshot):
+        result = super().__call__(snapshot)
+        candidate = result['pitch']['pre']['recommendation']['candidates'][0]
+        candidate.update(target={'x': 0.1, 'z': 2.5}, detail={'probability': 0.4})
+        return result
+
+
+class SyntheticReference:
+    """Stand-in for ``profile_reference.ProfileReference`` in the contract world (the real module executes pinned
+    Step 5 source that only exists on the PM machine). It answers with the full card the real module builds,
+    provenance included, so the export shows what ``service_extras`` keeps of it. The numbers are synthetic."""
+
+    def __init__(self, as_of='2026-10-04', stale=False):
+        self.as_of, self.stale, self.asked = as_of, stale, []
+
+    def card(self, pitcher_id, batter_side, balls, strikes, official_date, *, pitcher_hand=None):
+        self.asked.append((pitcher_id, batter_side, balls, strikes, official_date, pitcher_hand))
+        return {'kind': 'profile_reference', 'reason_code': 'unsupported/profile_reference',
+                'title': '이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', 'chip': '참고 · 기록 통계',
+                'items': [{'pitch_type': 'FF', 'pitch_label': '포심', 'share': .55, 'share_pct': 55, 'count': 22},
+                          {'pitch_type': 'SL', 'pitch_label': '슬라이더', 'share': .3, 'share_pct': 30, 'count': 12}],
+                'other': {'share': .15, 'count': 6, 'share_pct': 15},
+                'sample': {'pitches': 40, 'batter_side': batter_side, 'scope': 'count_and_batter_side',
+                           'balls': balls, 'strikes': strikes},
+                'as_of': self.as_of, 'stale': self.stale,
+                'note': '올해 10월 4일까지 이 투수가 같은 상황에서 실제로 던진 공 40개의 비율입니다. 추천이나 다음 공 예측이 아닙니다.',
+                'provenance': {'profile_sha256_prefix': '0'*12, 'role': 'SERVICE_PROFILE_STRICTLY_PRIOR',
+                               'cutoff': self.as_of, 'thresholds': {'cell_min_pitches': 20}}}
+
+
+REFERENCE_ON = {'enabled': True, 'profile_sources': ['synthetic-profile-pointer']}
+
+
+def reference_world(tmp, reference=None, **config):
+    """A live game whose pending pitch belongs to a pitcher the policy does not know (``unknown_pitcher``), with the
+    publisher's A2 switch on and ``SyntheticReference`` behind it."""
+    world = World(tmp, first=snap('20261005_100100', wall=BASE, second=True), skip_unchanged_live=False,
+                  **({'profile_reference': REFERENCE_ON} | config))
+    world.reference = reference or SyntheticReference()
+    world.app.state.service_extras.reference = lambda block: world.reference if block.get('profile_sources') else None
+    world.policy.status = 'UNSUPPORTED_UNKNOWN_PITCHER'
+    return world
+
+
+def collect(tmp):
+    """``{kind: [(example file name, published body), ...]}``: one live game walked from before its first pitch to
+    its end through the states the fan screen has, and the archive game. Every body goes
+    into the schemas; ``EXAMPLES`` names the ones written out as example files."""
+    tmp = Path(tmp)
+    out = {kind: [] for kind in KINDS}
+    # every-cycle rewrite mode (here and in the worlds below): the committed examples carry the sequence of the
+    # cycle that took them
+    world = World(tmp/'main', first=pregame(), skip_unchanged_live=False)
+    stamps = iter(f'20261005_10{minute:02d}00' for minute in range(1, 60))
+    # 30 s apart: past the feed's poll interval and the 20 s schedule cache of the game list
+    body = lambda **options: snap(next(stamps), wall=world.now[0]+25, **options)
+
+    def take(name, upstream=None):
+        world.cycle(upstream, after=30.0)
+        out['game'].append((f'game-{name}.json', world.game()))
+        out['games'].append((f'games-{name}.json', world.read(f'v1/games/{LIVE_DATE}.json')))
+        out['health'].append((f'health-{name}.json', world.read('v1/health.json')))
+        out['manifest'].append((f'manifest-{name}.json', world.read('v1/manifest.json')))
+    try:
+        take('pregame')
+        take('live', body())
+        take('live-corrected', body(call='C'))  # the provider changes the first pitch: a visible correction
+        # Before the second pitch is ever admitted (a key accepted once is held with its last accepted body, Song
+        # 2026-10-12): the renamed first pitch is held, the unidentified second one is 확인 중.
+        take('live-unconfirmed', unidentified(body(call='C', second=True, pid='g5p1b')))
+        take('live-second-pitch', body(call='C', second=True))
+        # Keep the established cycle timing for the following fixture states. This
+        # decision key already has a recommendation, so it cannot be the unsupported example.
+        world.policy.status = 'UNSUPPORTED_PITCHER'
+        world.cycle(body(call='C', second=True), after=30.0)
+        world.policy.status = None
+        real, world.feed.store.append_recommendation = world.feed.store.append_recommendation, _broken_ledger
+        take('live-ledger-unavailable', body(second=True))
+        world.feed.store.append_recommendation = real
+        take('disconnected', OSError('upstream down'))
+        take('between-innings', body(half='between'))
+        take('final', body(half='final'))
+        out['game'].append(('game-final-archive.json', world.game(ARCHIVE_GAME)))
+        out['games'].append(('games-archive.json', world.read(f'v1/games/{ARCHIVE_DATE}.json')))
+        out['dates'].append(('dates.json', world.read('v1/dates.json')))
+        out['setup'].append(('setup.json', world.read(f'v1/setup/{ARCHIVE_GAME}.json')))
+    finally:
+        world.close()
+    rich = World(tmp/'rich', skip_unchanged_live=False)
+    try:
+        rich.policy = RichPolicy()
+        rich.cycle()
+        rich.cycle(snap('20261005_100100', second=True, wall=rich.now[0]-5))
+        out['game'].append(('game-rich-candidate.json', rich.game()))
+    finally:
+        rich.close()
+    # Use a new decision key: a previously recorded recommendation is immutable,
+    # so flipping the policy inside the main world's same pending pitch cannot make an unsupported example.
+    unsupported = World(tmp/'unsupported', first=snap('20261005_100100', wall=BASE, second=True), skip_unchanged_live=False)
+    try:
+        unsupported.policy.status = 'UNSUPPORTED_PITCHER'
+        unsupported.cycle()
+        out['game'].append(('game-live-unsupported.json', unsupported.game()))
+    finally:
+        unsupported.close()
+    referenced = reference_world(tmp/'reference')
+    try:
+        referenced.cycle()
+        out['game'].append(('game-live-unsupported-reference.json', referenced.game()))
+    finally:
+        referenced.close()
+    odd = World(tmp/'odd', skip_unchanged_live=False)  # a setup source whose commit is not a hash: published as null
+    try:
+        odd.write_setup(commit='main')
+        odd.cycle(settle=False)
+        out['setup'].append(('setup-no-commit.json', odd.read(f'v1/setup/{ARCHIVE_GAME}.json')))
+    finally:
+        odd.close()
+    failing = World(tmp/'failing', first=OSError('upstream down'), skip_unchanged_live=False)  # the first poll fails: health names the game
+    try:
+        failing.cycle(settle=False)
+        out['health'].append(('health-game-unavailable.json', failing.read('v1/health.json')))
+    finally:
+        failing.close()
+    return out
+
+
+EXAMPLES = {'manifest': ('manifest-live.json',), 'health': ('health-live.json',), 'dates': ('dates.json',),
+            'games': ('games-live.json', 'games-archive.json'),
+            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-live-unsupported.json',
+                     'game-live-unsupported-reference.json', 'game-disconnected.json',
+                     'game-between-innings.json', 'game-final.json', 'game-final-archive.json'),
+            'setup': ('setup.json',)}
+
+
+def render(tmp):
+    """``{relative file name: text}`` of the contract folder: ``examples/*.json`` and ``schema/*.schema.json``."""
+    collected, files = collect(tmp), {}
+    dump = lambda value: json.dumps(value, ensure_ascii=False, indent=1, sort_keys=True)+'\n'
+    for kind, final in KINDS.items():
+        bodies = dict(collected[kind])
+        for name in EXAMPLES[kind]:
+            files[f'examples/{name}'] = dump(bodies[name])
+        files[f'schema/{kind}.schema.json'] = dump(publish_schema.document(
+            kind, list(bodies.values()), final=final, source='apps/observer/backend/tests/publish_fixture.py'))
+    return files
+
+
+def export(target, tmp):
+    target = Path(target)
+    for name, text in render(tmp).items():
+        (target/name).parent.mkdir(parents=True, exist_ok=True)
+        (target/name).write_text(text)
+    return target

@@ -1,0 +1,12 @@
+{
+  "parent_sha256": "90bbc2caeb29eca5e4a59184ff230df49289b689ee1a009c8b723adb3d05e9d9",
+  "stage": "v2-world",
+  "registered_inputs": {
+    "v2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S5-v2-a1/v2.json",
+      "file_sha256": "c113e59c32424bb7506039c995d7053e1d86f2247a5ddf7c8ed0ea526ac6d003"
+    }
+  },
+  "note": "D111: addendum 7 pins the sealed S5-v2-a1 (V2 accept on seeds 0,1,2; max delta_gap_se 0.00106 <= 0.005). D112: pins the expected policy identity = S3b tau_freeze final_identity_sha256 (contract: identity_pin). Re-chained as d112. Re-chained as d121b.",
+  "expected_identity_sha256": "a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c"
+}

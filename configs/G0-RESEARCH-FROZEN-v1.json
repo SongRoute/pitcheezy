@@ -1,0 +1,581 @@
+{
+  "protocol": "g0_research_frozen_v1",
+  "research_only": true,
+  "service_promotion": false,
+  "independent_confirmation": false,
+  "execution_code_commit": "5e82bebc239ced378911919de48c106034ee24b0",
+  "evidence_head": "eef5417c0a035f11412fb7fe535bf32e57fe7f8e",
+  "builder_sha256": "703f9f929d786b18f6fa2704ed32892a4b3a85918d0b50ea1417d01f0b2b1ac0",
+  "scope": "Five existing G0-global members; 2025 exposed DEV evaluation; no new fit or inference",
+  "availability": "Reference inventory only: external SSD model and cached input dependencies plus execution worktree scoring source remain required; no model or data bytes are copied into this repository.",
+  "archived_references": {
+    "p4_external_hashes": {
+      "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P3-001/preparation.json": "6b03dd7507938d9dedacff1953552d6bac4af252e67e69bf6b0107f55cd79844"
+    },
+    "p4_architecture_dataset_identity": {
+      "cache_version": 1,
+      "sources": [
+        {
+          "file": "statcast_2023.parquet",
+          "bytes": 95124285,
+          "sha256": "46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730"
+        },
+        {
+          "file": "statcast_2024.parquet",
+          "bytes": 103060977,
+          "sha256": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274"
+        },
+        {
+          "file": "statcast_2025.parquet",
+          "bytes": 104922105,
+          "sha256": "4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249"
+        }
+      ],
+      "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+      "rows": 2145111,
+      "key": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number"
+      ],
+      "columns": [
+        "effective_speed",
+        "spin_axis"
+      ]
+    }
+  },
+  "decision_evidence": {
+    "whole_N_status": "development_advantage_over_frequency",
+    "non_cpanel_N_status": "development_advantage_over_frequency",
+    "I1_N_status": "worse_or_guardrail_failure",
+    "I2_status": "not_activated"
+  },
+  "environment": {
+    "config_sha256": "f04f83270c02518c5ee76859951cfd44ecd9879293f5ab94bf59483928d75b51",
+    "local_config_sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967",
+    "source_hashes": {
+      "pitchmdp/archetypes.py": "9c248dae916bd7c301883815176a307ff2043b0a7f52b5f39e6b0408caeaae49",
+      "pitchmdp/data.py": "5fb3a385985aecc9db1a1145b2a2ab0d6d9dd34e7faa8c44ca50f7eb79810608",
+      "pitchmdp/matrix_data.py": "439912ef3adb52bfdbe6916b9fde464dd9fc9ef019e1066b2c32e4571b52d29b",
+      "pitchmdp/model.py": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "pitchmdp/sequence_data.py": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65",
+      "pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
+      "pitchmdp/sequence_model.py": "af26aa645d7b6f0df7e8bf7a0d48035883ea8d4bf354106da10afdb58615145b",
+      "scripts/run_ml_matrix.py": "fe509ba85bd12e8ae798f1eb54e533a44faa6f88032ac6dafa5199242b46526a",
+      "scripts/run_sequence_pilot.py": "06f6f41db49a86b4eeaf2c9e558908ea1917478883f0d5cceb2b21878ef415dc",
+      "scripts/run_temporal_blend.py": "e5f66eada969d28531ed0fc4483fe71210a0e60aaf6f8b6d8017c6e8e3e567c4",
+      "scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+      "scripts/run_sequence_context_frequency.py": "ad2706c3906109a2a2d74c236b0057a1462af1ff6ab3df94bfbcb47a355b5bb1",
+      "pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
+      "pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+      "pitchmdp/matrix_benchmark.py": "e468f843f1eb5eae4f5ae22baed5783bcc5a181ea9483da57c1d31c14d6af9ad",
+      "scripts/run_ml_benchmark.py": "bd6901a78062f32ecf39d7478554e05a3d15e5c67e8642a64f757bf39795ba3d",
+      "pitchmdp/matrix_panel.py": "4292647a83af4798c3b2c520209bbbdb6a571ee9d0558e316c00a42cef1516b8",
+      "pitchmdp/matrix_sharing.py": "30d9b0344bed8f0d8afd9aeb736e5f81e5fb0e98229813423bd2c17669f406b7",
+      "scripts/run_ml_sharing.py": "7dc75531c6096954ca735ada660ffffe745375b7e0cd6d7878d8595d39ea3c75",
+      "pitchmdp/matrix_confirmation.py": "8fe2a23317e66d0a6af30b95a7afb3d58108918f99f66a19692ac29787cfe0cb",
+      "pitchmdp/matrix_confirmation_metrics.py": "180d08b57507e50522c2f3cc394206ff570d1dfc0e5c123bcb182c63f548404d",
+      "pitchmdp/matrix_group_metrics.py": "1e718cacbde7c13bf77e7f4ebd53f8cf72696ac9ec0a7e5a60cae9774d06d851",
+      "pitchmdp/matrix_metrics.py": "dc54b9105b9c6d94f690550847b858fc732404c0f41739441874c861e29b29e3",
+      "scripts/score_ml_matrix.py": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112",
+      "scripts/run_ml_confirmation.py": "0c98c745d2a6d54d66b39a2324b2b375deef4458e11bac73a554bc7f25c11969",
+      "scripts/score_ml_confirmation.py": "36aa57fe4172b5e584354c731ddc54fe51cacd4aefdc885c79d962ac045d68c7",
+      "scripts/run_ml_transfer.py": "97cf15c3b79f7af911ff212cdecd2191c5f51ae7a2155032b9dd8eeb1f0840b8",
+      "pitchmdp/matrix_policy_artifacts.py": "a8a0992858372e58e17ca8aa067386a398c457da20e5cb1a93142e55668d2b7c",
+      "pitchmdp/matrix_g0_whole.py": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e",
+      "scripts/run_ml_g0_whole.py": "5430bfbd3849b7f5389ae51194d029e4c48821fdf07252bf999b7cb9db9b0e9a"
+    },
+    "python": "/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+    "python_version": "3.12.14",
+    "torch": "2.14.0",
+    "numpy": "2.5.3",
+    "pandas": "3.0.5",
+    "scipy": "1.18.1",
+    "lightgbm": "4.6.0",
+    "dynamic_library_path": "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib",
+    "pythonpath": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:/Users/song/Projects/pitcheezy/experiments/pitchmdp"
+  },
+  "data_identity": {
+    "p4_samples": {
+      "train": {
+        "path": "train_keys.parquet",
+        "n": 1252824,
+        "games": 4671,
+        "rows_sha256": "0a2e81aecbf9dbb0453544440561b090017f3903ea7456ea7be47fcdf6b3ba6a"
+      },
+      "earlystop": {
+        "path": "earlystop_keys.parquet",
+        "n": 16000,
+        "games": 195,
+        "rows_sha256": "ff0fce97fe5bd807c9517214b4204a932f2cdaab2ebc1268e456985c171666b0"
+      },
+      "temperature": {
+        "path": "temperature_keys.parquet",
+        "n": 2603,
+        "games": 60,
+        "rows_sha256": "1b5a76cd8e378b3aec3e606220e5e6adb2e971e19f4c629f9b6cda00769ad59a"
+      },
+      "blend": {
+        "path": "blend_keys.parquet",
+        "n": 4821,
+        "games": 110,
+        "rows_sha256": "0f66807ba93c185e40416e6543183f389dac595fec310fb5a56cfe21bd9c4674"
+      },
+      "dev": {
+        "path": "dev_keys.parquet",
+        "n": 12334,
+        "games": 328,
+        "rows_sha256": "461222d0059d71f134e1255c1a8d719b8b1b01b98e26864c8d1e23f16c33a8c1"
+      },
+      "mlb_dev": {
+        "path": "mlb_dev_keys.parquet",
+        "n": 311721,
+        "games": 1161,
+        "rows_sha256": "afa9d8e3098aa91510a8dce9e63691202d87d65871665a179dbaf8b36736a516"
+      }
+    },
+    "p11_samples": {
+      "dev": {
+        "path": "mlb_dev_keys.parquet",
+        "n": 311721,
+        "games": 1161,
+        "rows_sha256": "afa9d8e3098aa91510a8dce9e63691202d87d65871665a179dbaf8b36736a516"
+      },
+      "cpanel_dev": {
+        "path": "dev_keys.parquet",
+        "n": 12334,
+        "games": 328,
+        "rows_sha256": "461222d0059d71f134e1255c1a8d719b8b1b01b98e26864c8d1e23f16c33a8c1"
+      }
+    },
+    "p11_population": {
+      "n": 311721,
+      "games": 1161
+    },
+    "p11_cpanel_overlap": {
+      "overlap_pitches": 12334,
+      "overlap_games": 328,
+      "complement_pitches": 299387,
+      "complement_games": 1161,
+      "note": "Cpanel rows are the ordered in_cpanel subset; complement excludes them"
+    }
+  },
+  "members": {
+    "0": {
+      "source_arm": "g",
+      "model_sha256": "4838d8802d5640923515624c6e94be7a8c08594668a993643e3c8decc0a050da",
+      "delivery_temperature": 1.0602808472714507,
+      "june_model_weight": 0.7360713993721615
+    },
+    "1": {
+      "source_arm": "g",
+      "model_sha256": "d2677e7531bc29e4525887ea4715895050ff6ccef0ed03f6eb074cc25d018341",
+      "delivery_temperature": 1.0060816801090056,
+      "june_model_weight": 0.7110143941240522
+    },
+    "2": {
+      "source_arm": "g",
+      "model_sha256": "b3b6bc0889ed128e3cc610276bbf8547add38549db1c78460d56ac0ff76a2fa1",
+      "delivery_temperature": 1.0296501952586037,
+      "june_model_weight": 0.6662467703718219
+    },
+    "3": {
+      "source_arm": "c1",
+      "model_sha256": "e971c6ce3bb46744f24e86c159bc54f668eeac312610e0d873d475819d68fb7b",
+      "delivery_temperature": 1.0407056271830506,
+      "june_model_weight": 0.6705016129088885
+    },
+    "4": {
+      "source_arm": "c1",
+      "model_sha256": "92a2a43c542b1129900b368c7caf47c036f537a0cfe5d5aea3bf017bcd4d53f7",
+      "delivery_temperature": 0.9945385118894873,
+      "june_model_weight": 0.6778171874988664
+    }
+  },
+  "files": {
+    "config_p4": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P4-001.yaml",
+      "sha256": "12591099f282638afd0cb13e93591a964ca118d04e3471f790bd499a48d19e3c"
+    },
+    "config_p10": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P10-001.yaml",
+      "sha256": "b863cf2d53e21622d6ed2d160ce824d5246e7b9eea29584334083dd640f950ce"
+    },
+    "config_p11": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P11-001.yaml",
+      "sha256": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b"
+    },
+    "config_p11_calibration": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P11-002.yaml",
+      "sha256": "75d51ecfacfcf41d8d0519d47f3bc1c60f5e8d4949cf3fac25f568668c3acaad"
+    },
+    "p4_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/preparation.json",
+      "sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423"
+    },
+    "p4_registered_config": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/registered_config.json",
+      "sha256": "44e11d162c00c7479e6252b8a78309910c86f046e1dde2f4f7bb3e7fa3aa042b"
+    },
+    "p4_architecture_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/architecture_preparation.json",
+      "sha256": "6b03dd7507938d9dedacff1953552d6bac4af252e67e69bf6b0107f55cd79844"
+    },
+    "p4_parent_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/parent_preparation.json",
+      "sha256": "131c2e887895d863763a1514f9cceb1caa1b82c844dbdcb8148e1951619dc1fb"
+    },
+    "p4_auxiliary": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/aux.pkl",
+      "sha256": "87ad95e61918147c678227875e26d7d45ca9014a5566aa40e4e61e1f112579a5"
+    },
+    "p4_panel": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/panel.json",
+      "sha256": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a"
+    },
+    "p4_clusters": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/clusters.json",
+      "sha256": "97850c791ec08990099c2bf139b10ef1dc5d66c8404e411b8b42e782a4daeef6"
+    },
+    "p4_frequency": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/baseline_predictions.npz",
+      "sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b"
+    },
+    "p4_train_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/train_keys.parquet",
+      "sha256": "372d0aaf32c1748a8f86f597399b88fb097567f93ea17fbc4611cfdcca53d347"
+    },
+    "p4_earlystop_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/earlystop_keys.parquet",
+      "sha256": "8b708191227815fac8164333f212710e496fa039cf2a064f2bb56dbd4c11c225"
+    },
+    "p4_may_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/temperature_keys.parquet",
+      "sha256": "c920e21a82a70a1d9ed580b1b4f30b54c86dc52688192a935477ad5568f96709"
+    },
+    "p4_june_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/blend_keys.parquet",
+      "sha256": "5bc1cf7830f39f31ca69093b8f855ac2c3530fc0b9f08de82770055dac22094f"
+    },
+    "p4_dev_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/dev_keys.parquet",
+      "sha256": "d765d38b3876eac928cefc9748dd71507f8ffdb46d4afb3b950d89cfc8887e16"
+    },
+    "p4_mlb_dev_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/mlb_dev_keys.parquet",
+      "sha256": "464ee2c0108b78867a34316db3a1d23ec45e291edd8d01f44351c45fdce03697"
+    },
+    "p10_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/preparation.json",
+      "sha256": "44f6579d1e1df845d5e92d8886e1935ff18d8dc184aee878d31570e98d40d5b4"
+    },
+    "p10_registered_config": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/registered_config.json",
+      "sha256": "b863cf2d53e21622d6ed2d160ce824d5246e7b9eea29584334083dd640f950ce"
+    },
+    "p10_analysis_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/analysis/results.json",
+      "sha256": "82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c"
+    },
+    "p10_analysis_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/analysis/manifest.json",
+      "sha256": "5105dc03a270d8f93f5e2230270b51847e03ed24d3e0a6799875a159658016a9"
+    },
+    "p11_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/preparation.json",
+      "sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a"
+    },
+    "p11_registered_config": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/registered_config.json",
+      "sha256": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b"
+    },
+    "p11_frozen_calibration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/frozen_calibration.json",
+      "sha256": "e3b96ef49196a658278c7c1c3c436104bd6314a81303ba8b997391e1918e1021"
+    },
+    "p11_dev_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/dev_keys.parquet",
+      "sha256": "464ee2c0108b78867a34316db3a1d23ec45e291edd8d01f44351c45fdce03697"
+    },
+    "p11_dev_metadata": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/dev_metadata.parquet",
+      "sha256": "521efba3e319157107120b41ad766236a84ca0d863d445015b34be54733a95d0"
+    },
+    "p11_cpanel_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/cpanel_dev_keys.parquet",
+      "sha256": "d765d38b3876eac928cefc9748dd71507f8ffdb46d4afb3b950d89cfc8887e16"
+    },
+    "p11_frequency": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/baseline_predictions.npz",
+      "sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b"
+    },
+    "p11_predictions": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/predictions.npz",
+      "sha256": "6890f321e68d0ce83cba203c351a516377c77db6e0491f25802107f237b362d0"
+    },
+    "p11_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/results.json",
+      "sha256": "9fefaaa644adb108e044c0e85a8f3d2dcae54dbfc80cb4051c22f0d097b60f3c"
+    },
+    "p11_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/manifest.json",
+      "sha256": "aaf5db0d0a3d134b4d92393efa640dc67dba8efb4a4af330d21f2ab66d9ebda9"
+    },
+    "p11_calibration_activation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/activation.json",
+      "sha256": "2b84e8991af415c114d23e8afef1491b353d607d46ca9afabee0bc6629a6587a"
+    },
+    "p11_calibration_fit": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/fits/I1.json",
+      "sha256": "dbeaa2de0f996ea46246f95e6c7c3b08c4353aba977bf79b79598415e7c5ba9f"
+    },
+    "p11_calibration_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/analysis/results.json",
+      "sha256": "c5b9f29374a9ee841f1fcff64f6442a0a943615d9e2b9e6ce4180f9fc1ced5f7"
+    },
+    "p11_calibration_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/analysis/manifest.json",
+      "sha256": "8fe8f970d51dd009a518ce03bae671c1dbb98a35e1926daef4bbc8c0d4fc3e21"
+    },
+    "seed0_checkpoint": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed0/global/model.pt",
+      "sha256": "4838d8802d5640923515624c6e94be7a8c08594668a993643e3c8decc0a050da"
+    },
+    "seed0_fit_report": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed0/global/fit.json",
+      "sha256": "1f42967f959f94bbcfedeafbde0569f6d8b666cce4bc0332879690446b342a1e"
+    },
+    "seed0_fit_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed0/global/state.json",
+      "sha256": "1bcaa8a2656944ebbb69cde5aa57b3fb16dc5f8a3776a52a1be5c0cea2cded4c"
+    },
+    "seed0_may_calibration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed0/calibration.json",
+      "sha256": "b0c2f6f79706d379ba3a0cc98e3684898baef26e145f697bc524d85c172991b3"
+    },
+    "seed0_prediction_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed0/prediction_state.json",
+      "sha256": "c56d8d7f6ceb66cba8a4f4ac40c9cfab6a31ce1d4e718830ccbd44191845f85e"
+    },
+    "seed1_checkpoint": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed1/global/model.pt",
+      "sha256": "d2677e7531bc29e4525887ea4715895050ff6ccef0ed03f6eb074cc25d018341"
+    },
+    "seed1_fit_report": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed1/global/fit.json",
+      "sha256": "c96a145e02ea3c2f7295a39e7d1ad94b0423501cc967ca4f1a7422f0b327e21a"
+    },
+    "seed1_fit_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed1/global/state.json",
+      "sha256": "14ab5b8bedb6c05729800aa297b8d8b257f3499ac8627938e3c8f03dc5d401bb"
+    },
+    "seed1_may_calibration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed1/calibration.json",
+      "sha256": "ba5d9e9940b97b73914d2bf1c1edd9caf0775d21ddd854b9f12ed90a227d1091"
+    },
+    "seed1_prediction_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed1/prediction_state.json",
+      "sha256": "927f6d831f122b83f1c07bf5b96fb662c8185df36b50e3eb98f65ae94708927c"
+    },
+    "seed2_checkpoint": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed2/global/model.pt",
+      "sha256": "b3b6bc0889ed128e3cc610276bbf8547add38549db1c78460d56ac0ff76a2fa1"
+    },
+    "seed2_fit_report": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed2/global/fit.json",
+      "sha256": "57d68241db8e0e09712fc8f681800241d2a7a06b098b2a6585319fa7c92ea4ce"
+    },
+    "seed2_fit_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/fits/seed2/global/state.json",
+      "sha256": "1bc570eae66b69143e4fa0024d9a8e601817014b13d180a8ace90dd0a71415cd"
+    },
+    "seed2_may_calibration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed2/calibration.json",
+      "sha256": "5b8a26e0fb90d4609025d1617b4d7c3bfe17c8fecd04a7146d43a85ea2fe7e2e"
+    },
+    "seed2_prediction_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed2/prediction_state.json",
+      "sha256": "ff3c3a8d37c4156166bdcf4f91d6f08202315ba98ef5a9acd5b8447fa2a1dea8"
+    },
+    "seed3_checkpoint": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/fits/seed3/global/model.pt",
+      "sha256": "e971c6ce3bb46744f24e86c159bc54f668eeac312610e0d873d475819d68fb7b"
+    },
+    "seed3_fit_report": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/fits/seed3/global/fit.json",
+      "sha256": "1ef76132b7e44bf0e1d0ae75378cfb45b957f850d452aa7cb564b3bd9cc86362"
+    },
+    "seed3_fit_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/fits/seed3/global/state.json",
+      "sha256": "ea1673b087849c66075f073a3d6bc31c86495d01a5ed68476601333f8409418e"
+    },
+    "seed3_may_calibration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed3/calibration.json",
+      "sha256": "b14c23073da292e8b72498da44d6f699e0a13ed2ab6b56dd0687158424fc2c9a"
+    },
+    "seed3_prediction_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed3/prediction_state.json",
+      "sha256": "6190458d9306f16fd2505eab34bada4b47f83e944dbe728692ce132a20a37f19"
+    },
+    "seed4_checkpoint": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/fits/seed4/global/model.pt",
+      "sha256": "92a2a43c542b1129900b368c7caf47c036f537a0cfe5d5aea3bf017bcd4d53f7"
+    },
+    "seed4_fit_report": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/fits/seed4/global/fit.json",
+      "sha256": "25744b997c7d8e4bd024b139cd56753abf8b544f295ec62dc625cf9c9aea6ce2"
+    },
+    "seed4_fit_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/fits/seed4/global/state.json",
+      "sha256": "37be30e5a312fe0d539fafd3a62f93b8d47f75bae90e2350d1ecb47c42fa0edb"
+    },
+    "seed4_may_calibration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed4/calibration.json",
+      "sha256": "5b6d48e95728481694d6818722297d60c741e9a8317149df647e866ea6d64a56"
+    },
+    "seed4_prediction_state": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed4/prediction_state.json",
+      "sha256": "3014d9fbe91bb61dffe6355424282afa2328c6887200494d2abaf841f232b76d"
+    },
+    "source/pitchmdp/archetypes.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/archetypes.py",
+      "sha256": "9c248dae916bd7c301883815176a307ff2043b0a7f52b5f39e6b0408caeaae49"
+    },
+    "source/pitchmdp/data.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/data.py",
+      "sha256": "5fb3a385985aecc9db1a1145b2a2ab0d6d9dd34e7faa8c44ca50f7eb79810608"
+    },
+    "source/pitchmdp/matrix_benchmark.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_benchmark.py",
+      "sha256": "e468f843f1eb5eae4f5ae22baed5783bcc5a181ea9483da57c1d31c14d6af9ad"
+    },
+    "source/pitchmdp/matrix_confirmation.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_confirmation.py",
+      "sha256": "8fe2a23317e66d0a6af30b95a7afb3d58108918f99f66a19692ac29787cfe0cb"
+    },
+    "source/pitchmdp/matrix_confirmation_metrics.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_confirmation_metrics.py",
+      "sha256": "180d08b57507e50522c2f3cc394206ff570d1dfc0e5c123bcb182c63f548404d"
+    },
+    "source/pitchmdp/matrix_data.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_data.py",
+      "sha256": "439912ef3adb52bfdbe6916b9fde464dd9fc9ef019e1066b2c32e4571b52d29b"
+    },
+    "source/pitchmdp/matrix_features.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_features.py",
+      "sha256": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533"
+    },
+    "source/pitchmdp/matrix_g0_whole.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_g0_whole.py",
+      "sha256": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e"
+    },
+    "source/pitchmdp/matrix_group_metrics.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_group_metrics.py",
+      "sha256": "1e718cacbde7c13bf77e7f4ebd53f8cf72696ac9ec0a7e5a60cae9774d06d851"
+    },
+    "source/pitchmdp/matrix_metrics.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_metrics.py",
+      "sha256": "dc54b9105b9c6d94f690550847b858fc732404c0f41739441874c861e29b29e3"
+    },
+    "source/pitchmdp/matrix_models.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_models.py",
+      "sha256": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd"
+    },
+    "source/pitchmdp/matrix_panel.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_panel.py",
+      "sha256": "4292647a83af4798c3b2c520209bbbdb6a571ee9d0558e316c00a42cef1516b8"
+    },
+    "source/pitchmdp/matrix_policy_artifacts.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_policy_artifacts.py",
+      "sha256": "a8a0992858372e58e17ca8aa067386a398c457da20e5cb1a93142e55668d2b7c"
+    },
+    "source/pitchmdp/matrix_sharing.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/matrix_sharing.py",
+      "sha256": "30d9b0344bed8f0d8afd9aeb736e5f81e5fb0e98229813423bd2c17669f406b7"
+    },
+    "source/pitchmdp/model.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/model.py",
+      "sha256": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150"
+    },
+    "source/pitchmdp/sequence_data.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/sequence_data.py",
+      "sha256": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65"
+    },
+    "source/pitchmdp/sequence_delivery.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/sequence_delivery.py",
+      "sha256": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5"
+    },
+    "source/pitchmdp/sequence_model.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/pitchmdp/sequence_model.py",
+      "sha256": "af26aa645d7b6f0df7e8bf7a0d48035883ea8d4bf354106da10afdb58615145b"
+    },
+    "source/scripts/run_ml_benchmark.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_ml_benchmark.py",
+      "sha256": "bd6901a78062f32ecf39d7478554e05a3d15e5c67e8642a64f757bf39795ba3d"
+    },
+    "source/scripts/run_ml_confirmation.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_ml_confirmation.py",
+      "sha256": "0c98c745d2a6d54d66b39a2324b2b375deef4458e11bac73a554bc7f25c11969"
+    },
+    "source/scripts/run_ml_g0_whole.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_ml_g0_whole.py",
+      "sha256": "5430bfbd3849b7f5389ae51194d029e4c48821fdf07252bf999b7cb9db9b0e9a"
+    },
+    "source/scripts/run_ml_matrix.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_ml_matrix.py",
+      "sha256": "fe509ba85bd12e8ae798f1eb54e533a44faa6f88032ac6dafa5199242b46526a"
+    },
+    "source/scripts/run_ml_sharing.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_ml_sharing.py",
+      "sha256": "7dc75531c6096954ca735ada660ffffe745375b7e0cd6d7878d8595d39ea3c75"
+    },
+    "source/scripts/run_ml_transfer.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_ml_transfer.py",
+      "sha256": "97cf15c3b79f7af911ff212cdecd2191c5f51ae7a2155032b9dd8eeb1f0840b8"
+    },
+    "source/scripts/run_sequence_context_frequency.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_sequence_context_frequency.py",
+      "sha256": "ad2706c3906109a2a2d74c236b0057a1462af1ff6ab3df94bfbcb47a355b5bb1"
+    },
+    "source/scripts/run_sequence_frequency_baselines.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_sequence_frequency_baselines.py",
+      "sha256": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9"
+    },
+    "source/scripts/run_sequence_pilot.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_sequence_pilot.py",
+      "sha256": "06f6f41db49a86b4eeaf2c9e558908ea1917478883f0d5cceb2b21878ef415dc"
+    },
+    "source/scripts/run_temporal_blend.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/run_temporal_blend.py",
+      "sha256": "e5f66eada969d28531ed0fc4483fe71210a0e60aaf6f8b6d8017c6e8e3e567c4"
+    },
+    "source/scripts/score_ml_confirmation.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/score_ml_confirmation.py",
+      "sha256": "36aa57fe4172b5e584354c731ddc54fe51cacd4aefdc885c79d962ac045d68c7"
+    },
+    "source/scripts/score_ml_matrix.py": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/source/scripts/score_ml_matrix.py",
+      "sha256": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112"
+    },
+    "scoring_source/pitchmdp/matrix_g0_whole_metrics.py": {
+      "path": "/Users/song/Projects/pitcheezy-worktrees/g0-whole-mlb-execution/experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py",
+      "sha256": "b39b8236aeb904627d531d3201f85a79da33e8c69bbe320b22f1e92e35f2ff83"
+    },
+    "scoring_source/pitchmdp/matrix_group_metrics.py": {
+      "path": "/Users/song/Projects/pitcheezy-worktrees/g0-whole-mlb-execution/experiments/pitchmdp/pitchmdp/matrix_group_metrics.py",
+      "sha256": "1e718cacbde7c13bf77e7f4ebd53f8cf72696ac9ec0a7e5a60cae9774d06d851"
+    },
+    "scoring_source/pitchmdp/matrix_metrics.py": {
+      "path": "/Users/song/Projects/pitcheezy-worktrees/g0-whole-mlb-execution/experiments/pitchmdp/pitchmdp/matrix_metrics.py",
+      "sha256": "dc54b9105b9c6d94f690550847b858fc732404c0f41739441874c861e29b29e3"
+    },
+    "scoring_source/pitchmdp/matrix_panel.py": {
+      "path": "/Users/song/Projects/pitcheezy-worktrees/g0-whole-mlb-execution/experiments/pitchmdp/pitchmdp/matrix_panel.py",
+      "sha256": "4292647a83af4798c3b2c520209bbbdb6a571ee9d0558e316c00a42cef1516b8"
+    },
+    "scoring_source/scripts/score_ml_g0_whole.py": {
+      "path": "/Users/song/Projects/pitcheezy-worktrees/g0-whole-mlb-execution/experiments/pitchmdp/scripts/score_ml_g0_whole.py",
+      "sha256": "e9a0f627b39a9dde4c2f777b661a8370b7f259e4130762cde9df1eb01bc007d2"
+    }
+  }
+}

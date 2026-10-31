@@ -1,0 +1,55 @@
+{
+ "id": "ML-POLICY-VAL-v1-S6",
+ "stage_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a2",
+ "dr_json_sha256": "46019022217bfad95b34c5a044c5ab1c1edcea747c31612e9ac98ed3c81a7144",
+ "identity_sha256": "a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c",
+ "commit_chain": "configs/ML-POLICY-MATERIALIZATION-v1.json + addendum-1..7-d112",
+ "seed_bootstrap": 3060201743,
+ "games": 150,
+ "pas": 11350,
+ "status": {
+  "CENSORED": 463,
+  "EXCLUDED_PRE_START": 1219,
+  "COMPLETE": 9668
+ },
+ "L1_delta_bounds": [
+  -0.04576266863735026,
+  0.04565499153238848
+ ],
+ "L1_lower_endpoint_ci95": [
+  -0.05794969114567273,
+  -0.03483213699135866
+ ],
+ "L1_upper_endpoint_ci95": [
+  0.03471828342103213,
+  0.05763549558819039
+ ],
+ "L0_delta_bounds": [
+  -0.14824859876343632,
+  0.1481524862744162
+ ],
+ "L2_delta_mean": -4.848375759369093e-05,
+ "L2_ci95": [
+  -0.0006586886095642911,
+  0.0005317661268831269
+ ],
+ "ess_min": {
+  "pa": 9059.948880517904,
+  "game": 144.1918765108894
+ },
+ "censoring_observed_share": 0.04570131280229,
+ "paired_identity_run": true,
+ "rule_D108_applied_as_rehearsal": "NO_EVIDENCE_OF_IMPROVEMENT (CI lower of L1 lower endpoint -0.0579 < 0.001; harm not shown: CI upper of L1 upper endpoint 0.0576 > 0)",
+ "power_disclosure_M3": {
+  "se_L1_lower_endpoint": 0.005897335243447466,
+  "projected_2026_se_2430_games": 0.0014652047211615338,
+  "note": "the L1 bound width (~0.091) is about twice the censored mass (4.6%) and does not shrink with more games; an improvement label needs the whole lower bound above 0.001"
+ },
+ "cost": {
+  "wall_seconds": 3733.492600374855,
+  "cpu_seconds": 2268.751376,
+  "peak_rss_raw": 6760300544,
+  "peak_rss_unit": "platform ru_maxrss"
+ },
+ "interpretation": "exposed_development only; not independent confirmation, not a causal effect"
+}

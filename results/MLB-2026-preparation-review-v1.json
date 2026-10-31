@@ -1,0 +1,1145 @@
+{
+  "schema_version": 1,
+  "status": "PASS_DRAFT_INTEGRATION_ONLY",
+  "created_utc": "2026-09-28T06:18:08.402839+00:00",
+  "not_execution_approval": true,
+  "coordination_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning",
+  "claude_attempts": [
+    {
+      "attempt": "attempt-001",
+      "base_commit": "522339e8e5bf2aedb9c1c961ff30a478b69f95f1",
+      "final_commit": "528f82b7b7dc1082432cb623312241fa38d3dc43",
+      "request_sha256": "0fa468176ac256347aceb1cb6d3ac984715cbebb2ffcdf06d10de5f112d0e27e",
+      "observed_models": [
+        "claude-opus-5-5"
+      ],
+      "session_ids": [
+        "af197e66-5539-4545-8e33-deca2a696cff"
+      ],
+      "status": "returned_for_review",
+      "result_subtype": "success",
+      "permission_denials": [],
+      "wall_seconds": 472.438
+    },
+    {
+      "attempt": "attempt-002",
+      "base_commit": "528f82b7b7dc1082432cb623312241fa38d3dc43",
+      "final_commit": "a230c5d60121521165ef0ff554c42cfeb7ec3f68",
+      "request_sha256": "1f075238bc6c69f6c05b760cc1c517406891798938ac8b04034f0d2eb906241c",
+      "observed_models": [
+        "claude-opus-5-5"
+      ],
+      "session_ids": [
+        "af197e66-5539-4545-8e33-deca2a696cff"
+      ],
+      "status": "returned_for_review",
+      "result_subtype": "success",
+      "permission_denials": [],
+      "wall_seconds": 112.57
+    }
+  ],
+  "independent_usage_evidence_review": {
+    "reviewer": "GPT-6 Astra",
+    "verdict": "PASS bounded metadata evidence",
+    "evidence_sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
+    "base_commit": "522339e8e5bf2aedb9c1c961ff30a478b69f95f1",
+    "source_checks": [
+      {
+        "path": "/Users/song/Projects/pitcheezy/data/versions.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/data/raw/d20260911-s2325/manifest.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/contracts/S0-S1-v1.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/decisions.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/reports/autorun-2026-09-20.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-001.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-011.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-006.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/experiments.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/contracts/C0-v1.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/SESSION_HANDOFF.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-001.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-002.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-002.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-003.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-003.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-004.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-004.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-005.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-005.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-006.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-006.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-007.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-007.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-008.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-008.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-009.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-009.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-010.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-010.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-011.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-011.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P0-012.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P0-012.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-001.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-001.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-002.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-002.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-003.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-003.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-004.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-004.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-005.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-005.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-006.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-007.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-007.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-008.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-008.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-009.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-009.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-010.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/EXP-P1-010.yaml",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/EXP-P1-011.json",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/observer-mvp-v1/dataset_manifest.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/observer-improvement-v2/dataset_manifest.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-FULL-001/dataset_manifest.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-observer-v1/dataset_manifest.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/service-validation-v1/config.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/service-validation-v2/config.json",
+        "basis": "existing_text_metadata",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/apps/observer/RESULTS.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/handoffs/ABCD-quality-v3.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/reports/ML-matrix-execution-2026-09-24.md",
+        "basis": "base_commit_blob",
+        "sha_match": true,
+        "bytes_match": true
+      }
+    ],
+    "line_matches": 545,
+    "line_count": 545,
+    "aggregate_checks": [
+      {
+        "id": "EXP-P0-001",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-002",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-003",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-004",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-005",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-006",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-007",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-008",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-009",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-010",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-011",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P0-012",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-001",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-002",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-003",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-004",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-005",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-006",
+        "actual_aggregate_eval_season": null,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-007",
+        "actual_aggregate_eval_season": null,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-008",
+        "actual_aggregate_eval_season": null,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-009",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-010",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      },
+      {
+        "id": "EXP-P1-011",
+        "actual_aggregate_eval_season": 2026,
+        "ledger_match": true
+      }
+    ],
+    "conclusions": [
+      "Actual recorded acquisition through2026-09-09:647896rows,frozen=false;09-27is configured requested bound,not acquired coverage.",
+      "20published OPE experiments (12P0+8P1);3P1 module-only aggregates without2026OPE. Experiment count is not distinct dataset/run/seed count.",
+      "2026nuisance/support/tilt adaptation and repeated policy comparison exposure cannot become fresh confirmation.",
+      "Exact selected keys/date bounds,decodedcoverage and later untouched population remain unknown; no universal absence claim.",
+      "63text metadata paths inspected; no raw payload/array/headers opened or hashed."
+    ],
+    "limitations": [
+      "This verifies bound text at base commit and resident external metadata,not current data payload contents or full access history.",
+      "Historic authorization is a governance record,not evidence of causal estimator validity."
+    ]
+  },
+  "independent_author_draft_review": {
+    "reviewer": "GPT-6 Astra",
+    "review_type": "independent scientific review",
+    "commit": "528f82b7b7dc1082432cb623312241fa38d3dc43",
+    "verdict": "REVISE",
+    "scope": "draft integration only; no execution approval",
+    "root_audit_verdict": "PASS bounded metadata audit",
+    "initial_blockers_resolved": 8,
+    "required_fixes": [
+      {
+        "id": "R1",
+        "priority": "P2",
+        "location": "config release_blockers[BLK-04].gates",
+        "issue": "Machine field gates only ARM_A, while action/readiness correctly gate causal ARM_B too.",
+        "required_fix": "Use an explicit gate list containing ARM_A and ARM_B_causal_interpretation; synchronize contract/readiness."
+      },
+      {
+        "id": "R2",
+        "priority": "P2",
+        "location": "contract section8; config milestones M2-M4; readiness milestone references",
+        "issue": "M2 requires final data manifest/pins before M3 creates the separately authorized snapshot. This obscures when actual data identities become immutable.",
+        "required_fix": "Separate pre-access science/acquisition registration from post-snapshot validation and final execution registration. Require exact snapshot/manifest hashes plus sourceC/planD/environment/budget review after M3 and before M4 quality/inference. Keep all execution disabled now."
+      },
+      {
+        "id": "R3",
+        "priority": "P2",
+        "location": "config BLK-05.what and contract/readiness audit status",
+        "issue": "use_history_audit_incomplete conflates a completed bounded metadata audit with unproven exact-key/full-season/untouched-cohort claims.",
+        "required_fix": "State bounded metadata audit complete. Rename blocker to unresolved cohort provenance/availability or wider access-history certification. Preserve all unknowns and do not require certified untouched status for an explicitly exploratory exposed-cohort analysis."
+      }
+    ],
+    "clarifications": [
+      {
+        "id": "N1",
+        "location": "contract section6 ABS paragraph",
+        "recommendation": "Use may change boundary-call distribution rather than categorical measured change. New-rule existence does not measure this dataset shift; keep ABS state/Statcast semantics unknown."
+      },
+      {
+        "id": "N2",
+        "location": "config nuisance_policy.known_identity.WE_continuation",
+        "recommendation": "Rename or annotate as legacy_reference_only, not selected or newly byte-validated for this evaluation. identities.we_continuation_selection_for_this_eval=null already correctly blocks selection."
+      },
+      {
+        "id": "N3",
+        "location": "contract/config ARM_B sequential DR formula",
+        "recommendation": "Before registration specify qhat^pi and vhat^pi=sum_a pi(a|H_t)qhat^pi(H_t,a) separately for candidate/reference; use full registered predecision history H_t or justified sufficient state. Define t=0..T-1,V_T=0. Formula currently expresses valid unclipped sequential DR under those conventional definitions; absence is a draft-detail gap rather than proven wrong estimator."
+      }
+    ],
+    "file_pins": [
+      {
+        "path": "/Users/song/Projects/pitcheezy-worktrees/2026-ope-prereg-draft/docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "sha256": "526d27cb895e5d4f563108a7e9b619893a8fa246f987bf8a06d6772b091594dd"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy-worktrees/2026-ope-prereg-draft/configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+        "sha256": "b46a05d8dc5cce51b220d1461a3dd90fc653012e635649776262df5a11ca044d"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy-worktrees/2026-ope-prereg-draft/docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "sha256": "24a08951198737cd492bfc5afdf08485774af511e23f21f58e858336b5020352"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "sha256": "68cde95cde0d9905ccd561f1840d4c1d9c089d6897f2e6db8dbe0e6234368f3b"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/results/MLB-2026-use-history-audit-v1.json",
+        "sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40"
+      }
+    ],
+    "checks": {
+      "three_draft_files_match_commit": true,
+      "worktree_clean": true,
+      "copied_usage_json_exact_sol_sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
+      "prior_independent_evidence_check": "63/63text hashes and bytes;56basecommit blobs+7external metadata;545/545cited lines;20OPE+3module-only"
+    },
+    "no_actions": [
+      "data payload/header/array access",
+      "training",
+      "inference",
+      "OPE",
+      "tracked edits"
+    ],
+    "resolved_scientific_boundaries": [
+      "No realized-location target substitution",
+      "No unsupported-case logged-action fallback/full-population guarantee",
+      "Causal identification distinct from overlap",
+      "No2026nuisance training by default",
+      "Frozen model vs dynamic prior history distinguished",
+      "ARM_A estimator null; ARM_B disabled with explicit sequential DR proposal",
+      "Correct delta_pp scaling",
+      "No post-action ABS exclusion",
+      "No fresh independent2026claim",
+      "LegacyRE24separatefromPA-WE"
+    ]
+  },
+  "independent_author_draft_rereview": {
+    "reviewer": "GPT-6 Astra",
+    "review_type": "independent diff-only scientific re-review",
+    "previous_commit": "528f82b7b7dc1082432cb623312241fa38d3dc43",
+    "reviewed_commit": "a230c5d60121521165ef0ff554c42cfeb7ec3f68",
+    "verdict": "PASS",
+    "approval_scope": "DRAFT integration only; not completed preregistration, causal identification, untouched certification, dataset access or execution approval",
+    "required_fixes": [],
+    "resolved": {
+      "R1": "BLK04 machine and narrative gates cover ARM_A and ARM_B causal interpretation.",
+      "R2": "M2 pre-access science/acquisition/QA registration; M3 authorized isolated snapshot; M3b actual hashes/sourceC/planD/environment/budget independent review; M4 separate authorization/rootrelease.",
+      "R3": "Bounded metadata audit complete; broader provenance/availability/certification unknowns distinguished; exposed exploratory work does not require untouched certification.",
+      "N1": "ABS potential regime shift, magnitude/schema unmeasured, special-event exceptions explicit.",
+      "N2": "Old game_values.pkl explicitly legacy reference only; selection/payloadvalidation not asserted.",
+      "N3": "Candidate/reference separate q/v with v=sum_pi_q; full predecision history or justified sufficient state; t0..T-1,V_T0,paired PA contrast.",
+      "calendar": "Official publicly verified proposed03-25..09-27bounds attributed to Root primary-source check, distinct from actual09-09acquisition and unverifiedsnapshot."
+    },
+    "checks": {
+      "changed_paths_only_allowlisted_three": true,
+      "worktree_clean": true,
+      "files_match_reviewed_commit": true,
+      "json_parses": true,
+      "execution_registered_and_crossfit_guards_disabled": true,
+      "root_audit_report_and_json_unchanged_from_prior_review": true,
+      "root_D87_and_two_handoff_new_summaries_consistent": true
+    },
+    "file_pins": [
+      {
+        "path": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "sha256": "426028a19cf437fbc6de38f7d355d6cd866b38140ea3a48b659740aec5e8c413"
+      },
+      {
+        "path": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+        "sha256": "315578ab79119fb27e2cf3de844b7496e95f52bc43b3c73678694fbad8b90ef5"
+      },
+      {
+        "path": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "sha256": "feeeca46da007217ddde12a74d39d8e78ab0e68340a579710ced67c76c62ffde"
+      }
+    ],
+    "preserved_limitations": [
+      "All policy/nuisance/runtime/data/cost pins remain unresolved until later registered stages.",
+      "Target-location causal endpoint nonidentified; type-only branch disabled and identification assumptions unresolved.",
+      "2026exposure not undone; later unused population uncertified.",
+      "Numerical thresholds remain draft proposals; no quality/data/payload access or experiment was performed."
+    ],
+    "prior_reviews_preserved": true
+  },
+  "sol_author_draft_consistency": {
+    "checked_utc": "2026-09-28T06:16:23.331893+00:00",
+    "commit": "a230c5d60121521165ef0ff554c42cfeb7ec3f68",
+    "compared_to": "528f82b7b7dc1082432cb623312241fa38d3dc43",
+    "result": "PASS",
+    "blocking_issues": 0,
+    "issues": [],
+    "scope": "diff-only document/config consistency, not duplicate Astra scientific review",
+    "checks": [
+      {
+        "name": "valid_json_draft_flags",
+        "passed": true,
+        "detail": "Draft remains unregistered and non-executable"
+      },
+      {
+        "name": "disabled_options",
+        "passed": true,
+        "detail": "No automatic arm, crossfit or milestone release"
+      },
+      {
+        "name": "BLK04_botharms",
+        "passed": true,
+        "detail": "Initial Sol minor mismatch corrected"
+      },
+      {
+        "name": "phase_order",
+        "passed": true,
+        "detail": "M2 science/acquisition plan before access; M3 produces actual identity; M3b pins actual data/source/env/budget beforeM4"
+      },
+      {
+        "name": "phases_not_executed",
+        "passed": true,
+        "detail": "OnlyboundedM0 auditcomplete; other stages unstarted orunauthorized"
+      },
+      {
+        "name": "doc_phase_consistency",
+        "passed": true,
+        "detail": "BothprosedocumentsdescribeM3b andnoautomaticrelease"
+      },
+      {
+        "name": "bounded_audit_complete_unknown_retained",
+        "passed": true,
+        "detail": "BLK05 concernsunresolvedwiderprovenance; completedauditnotmisreportedasincomplete"
+      },
+      {
+        "name": "historical_counts_unchanged",
+        "passed": true,
+        "detail": "Earlierverifiedhistoricalvaluespreserved"
+      },
+      {
+        "name": "calendar_cited",
+        "passed": true,
+        "detail": "Rootpubliccontextsupports03-25/09-27 bounds;ownprimaryreadnotclaimed; currentcollectionunknown"
+      },
+      {
+        "name": "legacy_WEnot_selected",
+        "passed": true,
+        "detail": "LegacyWEpointerisnotanevaluationselectionorpayloadverification"
+      },
+      {
+        "name": "ABSunmeasured",
+        "passed": true,
+        "detail": "Potentialregimechange;nofabricatedmagnitudeorallgamescoverage"
+      },
+      {
+        "name": "links_resolve_or_pending",
+        "passed": true,
+        "detail": "Newrootauditreport/JSONlinksvalidinmain,pendingauthorworktreeintegration"
+      },
+      {
+        "name": "evidence_hash",
+        "passed": true,
+        "detail": "Existingmetadataevidencehashmatches"
+      }
+    ],
+    "links": [
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../../configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "state": "root_owned_pending_integration_exists_main"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../../results/MLB-2026-use-history-audit-v1.json",
+        "state": "root_owned_pending_integration_exists_main"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule",
+        "state": "external_or_heading"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "C0-v1.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../ML_EXPERIMENT_MATRIX.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "model-v1.json",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../design.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "../contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "../../configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "MLB-2026-use-history-audit-2026-09-28.md",
+        "state": "root_owned_pending_integration_exists_main"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "../../results/MLB-2026-use-history-audit-v1.json",
+        "state": "root_owned_pending_integration_exists_main"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "#6-근거와-하지-않은-것",
+        "state": "external_or_heading"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "../../data/versions.md",
+        "state": "exists_author_worktree"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule",
+        "state": "external_or_heading"
+      }
+    ],
+    "source_hashes": {
+      "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json": "315578ab79119fb27e2cf3de844b7496e95f52bc43b3c73678694fbad8b90ef5",
+      "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md": "426028a19cf437fbc6de38f7d355d6cd866b38140ea3a48b659740aec5e8c413",
+      "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md": "feeeca46da007217ddde12a74d39d8e78ab0e68340a579710ced67c76c62ffde"
+    },
+    "initial_check_preserved": true,
+    "tracked_edits": false,
+    "dataset_payload_array_header_reads_hashes": 0
+  },
+  "root_integration_changes": "Set pending-integration false; correct Sol authorship; add primary ABS citation; update readiness review status/links and D87 handoffs. Scientific proposals unchanged.",
+  "integrated_file_pins": [
+    {
+      "path": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+      "sha256": "5c26306fa1a73af30812838fe14c820d43db044620225bc3cc31eb4f9bec91f0",
+      "bytes": 22421
+    },
+    {
+      "path": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+      "sha256": "4e19d95ab3a0a9c14dbda1ec52c9090cb08f95e3516bad0b9620fcf24c1db625",
+      "bytes": 16627
+    },
+    {
+      "path": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+      "sha256": "f0b0ecd1ac2d5d5933d19c5f273b3ef7629279ed77557a0d8af23ef01757f021",
+      "bytes": 9261
+    },
+    {
+      "path": "docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
+      "sha256": "68cde95cde0d9905ccd561f1840d4c1d9c089d6897f2e6db8dbe0e6234368f3b",
+      "bytes": 7092
+    },
+    {
+      "path": "results/MLB-2026-use-history-audit-v1.json",
+      "sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
+      "bytes": 160593
+    }
+  ],
+  "sol_root_integration_check": {
+    "checked_utc": "2026-09-28T06:19:30.390882+00:00",
+    "head_observed": "1b5c1dbe9794dbfa13551a20ba91d562b266be89",
+    "compared_to": "1b5c1db",
+    "result": "PASS",
+    "issues": [],
+    "scope": "final integration documentation only; nofullhistory/test/scientificreviewrerun",
+    "checks": [
+      {
+        "name": "five_integrated_file_pins",
+        "passed": true,
+        "detail": "AllfiveactualtextfilesmatchpacketSHA256andbytecounts"
+      },
+      {
+        "name": "only_expected_config_field_changed",
+        "passed": true,
+        "detail": "Against1b5c1dbonlypendingintegrationtrue→false; scientificvaluesunchanged"
+      },
+      {
+        "name": "draft_guards",
+        "passed": true,
+        "detail": "Draftisnotregistration,execution,automaticfallbackornuisancefitrelease"
+      },
+      {
+        "name": "no_executed_milestones",
+        "passed": true,
+        "detail": "AllpostM0stagesstillnotstarted/unauthorized"
+      },
+      {
+        "name": "new_links",
+        "passed": true,
+        "detail": "Newlinksresolveinmain;officialURLsarecitationsalreadycheckedbyRoot,norepeatedwebread"
+      },
+      {
+        "name": "author_and_integration_wording",
+        "passed": true,
+        "detail": "Sol evidenceauthorshipandcompletedintegrationexplicit"
+      },
+      {
+        "name": "official_ABS_link",
+        "passed": true,
+        "detail": "RootofficialABScitationaddedwithoutscientificvaluechanges"
+      },
+      {
+        "name": "readiness_review_state",
+        "passed": true,
+        "detail": "FinaldraftreviewPASSwithlimitedmeaningandnewreviewlink"
+      },
+      {
+        "name": "D87_and_handoffs",
+        "passed": true,
+        "detail": "D87andtwohandoffsrecorddraft-onlycompletion; noactual2026experimentclaim"
+      },
+      {
+        "name": "review_packet_present",
+        "passed": true,
+        "detail": "HumanandJSONreviewpacketpreserveauthored-versusintegratedpins"
+      },
+      {
+        "name": "AIcollab_scope",
+        "passed": true,
+        "detail": "CollaborationrecorddistinguishesdocumentCLIdurationsfromexperimentcost"
+      }
+    ],
+    "integrated_file_pins_verification": [
+      {
+        "path": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+        "sha256": "5c26306fa1a73af30812838fe14c820d43db044620225bc3cc31eb4f9bec91f0",
+        "bytes": 22421,
+        "match": true
+      },
+      {
+        "path": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "sha256": "4e19d95ab3a0a9c14dbda1ec52c9090cb08f95e3516bad0b9620fcf24c1db625",
+        "bytes": 16627,
+        "match": true
+      },
+      {
+        "path": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "sha256": "f0b0ecd1ac2d5d5933d19c5f273b3ef7629279ed77557a0d8af23ef01757f021",
+        "bytes": 9261,
+        "match": true
+      },
+      {
+        "path": "docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "sha256": "68cde95cde0d9905ccd561f1840d4c1d9c089d6897f2e6db8dbe0e6234368f3b",
+        "bytes": 7092,
+        "match": true
+      },
+      {
+        "path": "results/MLB-2026-use-history-audit-v1.json",
+        "sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
+        "bytes": 160593,
+        "match": true
+      }
+    ],
+    "new_links": [
+      {
+        "from": "docs/AI_COLLABORATION.md",
+        "target": "reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/AI_COLLABORATION.md",
+        "target": "contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/AI_COLLABORATION.md",
+        "target": "reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/SESSION_HANDOFF.md",
+        "target": "reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/SESSION_HANDOFF.md",
+        "target": "contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/SESSION_HANDOFF.md",
+        "target": "reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../../results/MLB-2026-use-history-audit-v1.json",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "../design.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "target": "https://www.mlb.com/news/abs-challenge-system-mlb-2026",
+        "resolution": "external_or_heading"
+      },
+      {
+        "from": "docs/decisions.md",
+        "target": "reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/decisions.md",
+        "target": "contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/decisions.md",
+        "target": "reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/handoffs/ML-experiments-next-session.md",
+        "target": "../reports/MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/handoffs/ML-experiments-next-session.md",
+        "target": "../contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/handoffs/ML-experiments-next-session.md",
+        "target": "../reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "../../results/MLB-2026-use-history-audit-v1.json",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "#6-근거와-하지-않은-것",
+        "resolution": "external_or_heading"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "MLB-2026-use-history-audit-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+        "target": "../reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md",
+        "resolution": "exists"
+      },
+      {
+        "from": "docs/reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md",
+        "target": "../../results/MLB-2026-preparation-review-v1.json",
+        "resolution": "exists"
+      }
+    ],
+    "new_document_diff_files": [
+      "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+      "docs/AI_COLLABORATION.md",
+      "docs/SESSION_HANDOFF.md",
+      "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+      "docs/decisions.md",
+      "docs/handoffs/ML-experiments-next-session.md",
+      "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md"
+    ],
+    "tracked_edits": false,
+    "dataset_payload_array_header_accesses": 0
+  },
+  "root_integration_verification": {
+    "status": "PASS",
+    "utc": "2026-09-28T06:19:03.123824+00:00",
+    "json_files_parsed": 3,
+    "integrated_pins_checked": 5,
+    "relative_links_checked": 37,
+    "draft_guards_pass": true,
+    "audit_evidence_sha_preserved": true,
+    "changed_files": [
+      "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json",
+      "docs/AI_COLLABORATION.md",
+      "docs/SESSION_HANDOFF.md",
+      "docs/contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md",
+      "docs/decisions.md",
+      "docs/handoffs/ML-experiments-next-session.md",
+      "docs/reports/MLB-2026-evaluation-readiness-2026-09-28.md",
+      "docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
+      "docs/reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md",
+      "results/MLB-2026-preparation-review-v1.json",
+      "results/MLB-2026-use-history-audit-v1.json"
+    ],
+    "diff_check": "PASS",
+    "tests_run": false,
+    "reason": "documentation and disabled planning JSON only; no implementation changed"
+  }
+}

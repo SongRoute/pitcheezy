@@ -1,0 +1,36 @@
+{
+  "passed": true,
+  "base": "http://127.0.0.1:8767/",
+  "checks": {
+    "existing_label_tracking": {
+      "id": "8091cd25ed653ac9d927f7cd850050fdbe2289a413aea2fa3bb687c31b00fdc9",
+      "status": "abstained",
+      "labels_preserved": true
+    },
+    "video_lab_desktop": {
+      "save_button": true,
+      "track_button": true,
+      "viewport": 1440,
+      "scrollWidth": 1440
+    },
+    "explanation_desktop": {
+      "candidates": 3,
+      "outcomes_each": 10,
+      "viewport": 1440,
+      "scrollWidth": 1440
+    },
+    "video_lab_mobile": {
+      "save_button": true,
+      "track_button": true,
+      "viewport": 390,
+      "scrollWidth": 390
+    },
+    "explanation_mobile": {
+      "candidates": 3,
+      "outcomes_each": 10,
+      "viewport": 390,
+      "scrollWidth": 390
+    }
+  },
+  "issues": []
+}

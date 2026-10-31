@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "219a2f53624d518328d329bb713c39dab01f111d09b7fae0d203d0aef2a951c0",
+  "stage": "tau-select",
+  "registered_inputs": {
+    "tau_freeze": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3b-tau-a2/tau_freeze.json",
+      "file_sha256": "1aedb2f58a996a1e88534d077083cca7136bf6c36851fda90533d6ada7ed6096"
+    }
+  },
+  "note": "D107: addendum 5 pins the sealed S3b-tau-a2 tau freeze (tau 0.1 SELECTED under the D106 grid; final identity a6dffaea...)."
+}

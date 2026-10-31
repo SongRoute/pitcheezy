@@ -1,0 +1,82 @@
+{
+  "protocol": "f4_observed_context_cache_audit_v1",
+  "experiment_id": "EXP-P4-002",
+  "status": "registered_before_execution; adoption null",
+  "registered_utc": "2026-09-27",
+  "contract": "docs/contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md",
+  "contract_sha256": "538373bd943d57ac963b5d0fd5017bfd919c731a9037ef2c9daf68095ed0f6fb",
+  "repo_commit": "d0aa4f1ee93c7af655c683c6beabf5369786ca28",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v3-cache-audit",
+  "audit_log_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/audit/f4-cache-audit",
+  "parent": {
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v3",
+    "config": "configs/EXP-P4-002-v3.yaml",
+    "config_sha256": "ea4c81c884d4d840a64eea8e5e959024a8f6b40be1ee23fb28fa3d848afc5696",
+    "preparation_sha256": "b3b5143f8f52dd813f5a6c12ab57ee6b5f1ec7076d1d1fe692b32ca55deeddc8",
+    "profiles": {
+      "F4-H0": {"profile_sha256": "59f39c09034cd03359ae4cf72cf10eb084432f1891ff955bb615f1680af87c2f", "manifest_sha256": "bb1929ab6aa034b69d04f84c93b200400862ecba6854549fe141352cf16a2850"},
+      "F4-32": {"profile_sha256": "07ca8030aa327649862001bb787e9af6415a4446f7e449a0230b5d7944d281a4", "manifest_sha256": "9ac8ca5a17d410d8c1353c2a92cc8095a79178cac52221d80bf1356e665f0505"},
+      "F4-128": {"profile_sha256": "c9092bf22a6cd96d28c2a2f836605b24537ae9db3b127cf4a38821f95afd6268", "manifest_sha256": "46c95c1cc8f958aaa43a51c834a5931b0e1f32ccca0e87b7457d31752eb3e7bf"}
+    },
+    "profile_queue_state_sha256": "eb146de2ca45f978b127a1cbe60f596cdad8d4ef370d934a204087f1ee038612",
+    "v3_pinned_sources_unchanged_at_registration": true
+  },
+  "sources": {
+    "experiments/pitchmdp/pitchmdp/matrix_observed_context_cache.py": "e16d7bbf393190ad7edc5e42c491f3ce227c39f42a6f94415b409787bcf69c58",
+    "experiments/pitchmdp/tests/test_observed_context_cache.py": "2d61f1b2cde4c6bca0422d1de816475ab4aeb68faeb6e8e4333144a260c401d6",
+    "experiments/pitchmdp/pitchmdp/matrix_long_history.py": "fd97088c83693ddf4fc477dbd78d83fb9ed4d51708d2e60d93562afd2bd3ecd1",
+    "experiments/pitchmdp/pitchmdp/matrix_lazy_model.py": "4203aa36099c0fb315b40a541b25d7cd475023025a90d8a557f490cabb86fb78",
+    "experiments/pitchmdp/pitchmdp/matrix_sharing.py": "30d9b0344bed8f0d8afd9aeb736e5f81e5fb0e98229813423bd2c17669f406b7",
+    "experiments/pitchmdp/pitchmdp/sequence_model.py": "af26aa645d7b6f0df7e8bf7a0d48035883ea8d4bf354106da10afdb58615145b",
+    "experiments/pitchmdp/pitchmdp/archetypes.py": "9c248dae916bd7c301883815176a307ff2043b0a7f52b5f39e6b0408caeaae49",
+    "experiments/pitchmdp/scripts/run_ml_long_history.py": "625f952c027e8d97bf3eddb3f26af80ce97701f29ee667d81e5f85ebf7a73bc5",
+    "experiments/pitchmdp/scripts/audit_ml_long_equivalence.py": "4965f1a298d3cd8a77571b2fadda8289218545947e2ee5b6d788a2e08ccd3ce5",
+    "experiments/pitchmdp/configs/local.json": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"
+  },
+  "device": "mps",
+  "arms": ["F4-H0", "F4-32", "F4-128"],
+  "samples": {
+    "rule": "same as v3 profile: chronological_linspace_no_shrink",
+    "train": {"n": 65536, "rows_sha256": "e109cb5f9816583eaf5dd223b8d037007c39f631f72922b0c8a05b3acc933a4e"},
+    "train_evaluation": {"n": 2048, "source": "TRAIN only, v3 warmup evaluation_train selector", "rows_sha256": "83f1959ec23cfa68bc1958f407d898b00dde49161683f23c3cf86e5350e47f4a"},
+    "earlystop": {"n": 2048, "rows_sha256": "2e73bb09492e1b10f6fe0e1249d663df659d7109920abf7849bec72180068a27"},
+    "may_calibration": {"n": 16, "draws": 400, "rows_sha256": "d8ace249500f8ba289ca64ec90e38badf5489fea5cbafdcce863bdd3e3e36194"},
+    "dev_or_june_cache": "forbidden (resource-only audit); DEV metrics not computed"
+  },
+  "stage1_context": {
+    "orders": ["original", "repeated", "reverse", "uneven_chunks"],
+    "overrides": ["candidate pitch_type", "current physical vector replacement"],
+    "must_fail": ["synthetic count change", "synthetic style change", "undeclared row"],
+    "tolerance": "bitwise identical float32 (0 differing bits)",
+    "timing": ["construction", "context transform/lookup", "whole LazyPitchBatch.gather"],
+    "timing_protocol": "each path warmed once; alternate original/cached order"
+  },
+  "stage2_backend": {
+    "seed": 0, "width": 128, "identical_initialization_and_minibatch_order": true,
+    "input_context_tolerance": "bitwise identical",
+    "tolerances_from_precedent": {
+      "source": "EXP-P4-002-equivalence/registered_config.json (ml_long_equivalence_v1)",
+      "forward_logits": 2e-05,
+      "probability": 2e-06,
+      "probability_sum": 1e-06,
+      "loss_objective": 2e-06
+    },
+    "gradient_and_updated_weight_tolerance": "not present in precedent; unregistered - must be registered by the lead before any stage-2 execution; not relaxable afterwards",
+    "rng_state": "must be identical before/after the explicit training step for both paths"
+  },
+  "stage3_resource_fit": {
+    "epochs": 4, "patience": 4, "batch_size": 256, "learning_rate": 0.0005, "scientific_budget": "30/5/256/.0005 unchanged for full run",
+    "delivery": "May16 x 400 draws calibration/inference",
+    "record": ["whole-process wall", "peak RSS", "MPS allocator snapshots", "cache value bytes", "row lookup bytes", "exact-input guard DataFrame.memory_usage(deep=True)", "construction seconds"],
+    "profile_models_reused_in_full_experiment": false
+  },
+  "limits": {
+    "profile_wall_limit_seconds": 600,
+    "single_member_wall_limit_seconds": 7200,
+    "family_wall_budget_seconds": 28800,
+    "no_seed_data_epoch_batch_draw_reduction": true,
+    "full_fit_started": false
+  },
+  "execution_prerequisite": "No runner or audit command in the repository constructs FrozenObservedContext on real data (only experiments/pitchmdp/tests/test_observed_context_cache.py imports it). Stages 1-3 require an audited command that does not exist; this config registers selectors/tolerances only.",
+  "adoption": null
+}

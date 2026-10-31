@@ -1,0 +1,63 @@
+{
+ "date": "2026-09-30",
+ "features": {
+  "profile_reference": {
+   "enabled": true
+  },
+  "provisional": true,
+  "step5_expectation": {
+   "enabled": false
+  },
+  "viewer_delay": {
+   "default_s": 30,
+   "enabled": false,
+   "fold_actual_until_synced": false,
+   "sync_prompt": false
+  }
+ },
+ "games": [
+  {
+   "away_abbr": "AWY",
+   "away_score": 0,
+   "away_team": "Away Club",
+   "date_kst": "2026-09-30",
+   "double_header": false,
+   "double_header_code": "N",
+   "embargoed": false,
+   "game_number": 1,
+   "game_pk": 900101,
+   "game_type": "F",
+   "games_in_series": null,
+   "half": null,
+   "has_history": true,
+   "home_abbr": "HOM",
+   "home_score": 1,
+   "home_team": "Home Club",
+   "inning": null,
+   "live": false,
+   "official_date": "2026-09-30",
+   "probable_pitchers": {
+    "away": null,
+    "home": null
+   },
+   "series_description": null,
+   "series_game_number": null,
+   "start": "2026-09-30T02:00:00Z",
+   "start_kst": "2026-09-30T11:00:00+09:00",
+   "status": "final",
+   "status_text": "Final",
+   "venue": null
+  }
+ ],
+ "live_ok": true,
+ "publish": {
+  "contract": "v1",
+  "published_at": "2026-10-05T10:20:30Z",
+  "sequence": 1
+ },
+ "schema": "pitcheezy-service-games-v2",
+ "source": {
+  "kind": "archive",
+  "session_id": null
+ }
+}

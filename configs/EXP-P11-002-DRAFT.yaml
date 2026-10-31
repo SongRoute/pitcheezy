@@ -1,0 +1,149 @@
+{
+  "experiment_id": "EXP-P11-002",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002",
+  "stage2": {
+    "experiment_id": "EXP-P11-001",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+    "config_file": "configs/EXP-P11-001.yaml",
+    "config_sha256": null,
+    "source_commit": null,
+    "required_files": [
+      "preparation.json",
+      "analysis/manifest.json",
+      "analysis/results.json",
+      "analysis/predictions.npz"
+    ]
+  },
+  "c1": {
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001",
+    "files": {
+      "registered_config.json": null,
+      "preparation.json": null,
+      "analysis/manifest.json": null,
+      "analysis/results.json": null,
+      "analysis/predictions.npz": null,
+      "parent_baseline_predictions.npz": null
+    }
+  },
+  "g": {
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+    "files": {
+      "registered_config.json": null,
+      "preparation.json": null,
+      "panel.json": null,
+      "baseline_predictions.npz": null,
+      "blend_metadata.parquet": null,
+      "mlb_dev_metadata.parquet": null
+    }
+  },
+  "calibration": {
+    "spec_version": "g0-calibration-stage3-v1",
+    "n_classes": 10,
+    "predictors": [
+      "ensemble",
+      "seed0",
+      "seed1",
+      "seed2",
+      "seed3",
+      "seed4"
+    ],
+    "fit_split_token": "june_cpanel",
+    "fit_rows": 4821,
+    "simplex_atol": 1e-06,
+    "i1_class_bias": {
+      "probability_floor": 1e-12,
+      "bias_lower": -0.5,
+      "bias_upper": 0.5,
+      "penalty": 0.01,
+      "initialization": "zeros",
+      "optimizer": "SLSQP",
+      "ftol": 1e-10,
+      "maxiter": 500,
+      "objective_tolerance": 1e-09,
+      "feasibility_tolerance": 1e-09
+    },
+    "i2_volume_blend": {
+      "groups": [
+        "zero",
+        "low",
+        "middle",
+        "high"
+      ],
+      "shrinkage_pitches": 1000,
+      "min_games": 30,
+      "min_pitches": 500,
+      "blend_objective": "log_loss",
+      "blend_optimizer_source": "scripts/run_sequence_calibration.py",
+      "blend_optimizer_function": "fit_blend",
+      "blend_optimizer_sha256": "951bada57ea33f34cc5440d9420943df7dc9cb782b27e9359c582e55b5cfa6bc"
+    },
+    "indicators": {
+      "i1_min_class_events": 30,
+      "i1_min_abs_prevalence_gap": 0.001,
+      "i2_positive_groups": [
+        "low",
+        "middle",
+        "high"
+      ],
+      "i2_min_supported_groups": 2,
+      "i2_min_games": 30,
+      "i2_min_pitches": 500,
+      "i2_min_nll_range": 0.003
+    },
+    "fit_population": {
+      "ordered_keys_sha256": null,
+      "labels_sha256": null
+    }
+  },
+  "source_commit": null,
+  "sources": {
+    "pitchmdp/data.py": null,
+    "pitchmdp/matrix_g0_calibration.py": null,
+    "pitchmdp/matrix_g0_whole_metrics.py": null,
+    "pitchmdp/matrix_group_metrics.py": null,
+    "pitchmdp/matrix_metrics.py": null,
+    "pitchmdp/matrix_panel.py": null,
+    "scripts/run_ml_benchmark.py": null,
+    "scripts/run_ml_g0_calibration.py": null,
+    "scripts/run_ml_matrix.py": null,
+    "scripts/run_sequence_calibration.py": null,
+    "scripts/score_ml_g0_whole.py": null,
+    "scripts/score_ml_matrix.py": null
+  },
+  "contract": {
+    "path": "docs/contracts/ML-G0-WHOLE-MLB-v1.md",
+    "sha256": null
+  },
+  "budget_seconds": 3600,
+  "scoring": {
+    "protocol": "g0_calibration_scoring_v1",
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "primary_slots": [
+      "I1",
+      "I2"
+    ],
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 20260924,
+    "holm_alpha": 0.05,
+    "nll_delta_max": -0.003,
+    "nll_ci_upper_max": 0.0,
+    "brier_ci_upper_max": 0.001,
+    "negative_seeds_required": 4,
+    "minimum_games": 30,
+    "minimum_pitches": 500,
+    "R": {
+      "family_size": 52,
+      "draws": 100000,
+      "alpha": 0.05,
+      "nll_margin": 0.01,
+      "brier_margin": 0.002
+    },
+    "inactive_p": 1.0
+  }
+}

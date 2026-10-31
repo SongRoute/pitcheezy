@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "975cb0ec343aa8159700651bb5d72294da339f800ac82eb37c011be397bf22ce",
+  "stage": "census",
+  "registered_inputs": {
+    "census": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a1/census.json",
+      "file_sha256": "1a0cd9bfcaf1953af52771157c9b20c4af89cf000234aab1aae87458e0f21506"
+    }
+  },
+  "note": "D96/D97: addendum 1 pins the sealed S0-census-a1 census.json; D-3 no-pitch list kept (automatic_ball/automatic_strike) on S0 structural counts."
+}

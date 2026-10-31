@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "audited_utc": "2026-09-27T11:45:45.480566+00:00",
+  "unresolved_blockers": [],
+  "execution_code_commit": "5e82bebc239ced378911919de48c106034ee24b0",
+  "independent_bootstrap_comparisons": [
+    "whole_g0_minus_frequency",
+    "non_cpanel_g0_minus_frequency",
+    "I1_minus_g0"
+  ],
+  "primary_bootstrap_max_ci_error": 0.0,
+  "primary_p_values_exact": true,
+  "activation": {
+    "I1": true,
+    "I2": false
+  },
+  "conclusions": {
+    "G0_whole": "development_advantage_over_frequency,5/5 negative seeds,R24 passed",
+    "G0_nonpanel": "development_advantage_over_frequency,5/5 negative seeds",
+    "I1": "worse_or_guardrail_failure; positive NLL95% interval,0/5 negative seeds; active candidate R bounds pass within registered52-slot family",
+    "I2": "not_activated; only high-volume June group meets30games/500pitches; no correction fit or quality comparison"
+  },
+  "official_seconds": {
+    "evaluation": 1821.2459352919832,
+    "improvement": 34.42338987579569
+  },
+  "outer_queue_seconds": 1857.4866603328846,
+  "audit_seconds_separate_from_experiment": {
+    "point_hash_chain_full_command": 3.6285189997870475,
+    "independent_primary_bootstrap_full_command": 1.6285015000030398,
+    "total": 5.257020499790087
+  },
+  "evidence_sha256": {
+    "postrun-independent-result-v1.json": "6c7251ffc96cbdc506acd045fc6214e989f9934af13a9295fd97024e2cf2c460",
+    "primary-bootstrap-independent-result-v1.json": "6c2a27010c34e324718c79e2cb0208d59e55c9ec906dc1dc0333515b632b9a5a",
+    "postrun-independent-command-v1.json": "83022e190436f4e382c684a642b9b671459ade529aebe3b1fe6d9fa2da6f8ffc",
+    "primary-bootstrap-independent-command-v1.json": "eeb9926d6e47ee61955b4dc3484c6e05131c76d9f8eba3199eb4ff68d7c63878"
+  },
+  "limitations": [
+    "Independent10000-draw game-bootstrap recomputation covers all three active primary comparisons, including NLL and Brier; no simultaneous R-bound or absolute-loss CI numerical recomputation.",
+    "R24/R52 reporting/alpha/margin/status checked against hashed outputs.",
+    "I1 June fit parameters, solver-success and constraints checked; no optimizer refit. I2 inactive, hence no I2 fit/application to audit.",
+    "Previously exposed development populations, including328games shared by Cpanel and complement; no independent confirmation or policy claim.",
+    "No sealed sources, models, or experimental artifacts changed."
+  ]
+}

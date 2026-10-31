@@ -1,0 +1,30 @@
+{
+ "schema": "pitcheezy.live-recorded-replay-check.v1",
+ "game_pk": 849844,
+ "code_commit": "0b65788",
+ "note": "The 372 raw snapshots recorded live on 2026-10-02 served again through the whole observer (route, state parser, worker cache, frozen policy) one per 5 s feed poll; service regression check, not an evaluation.",
+ "polls": 2122,
+ "poll_errors": 0,
+ "http_5xx": 0,
+ "status_and_recommendation": {
+  "ready/computing": 25,
+  "ready/ready": 1542,
+  "resolving/None": 110,
+  "between_innings/None": 370,
+  "ready/unsupported": 75
+ },
+ "feed_timestamps_served": 371,
+ "decisions": 273,
+ "decisions_ready": 261,
+ "decisions_unsupported": 12,
+ "rebind_events": [
+  {
+   "key": "849844:1:1",
+   "bind_s": 4.92
+  },
+  {
+   "key": "849844:6:4",
+   "bind_s": 5.01
+  }
+ ]
+}

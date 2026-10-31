@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example only (NOT installed). Every day at 07:00 local time (the Mac mini runs on KST) it runs
+     ws_operate.py start with today's KST date. On a date without a World Series game, start refuses (exit 2) and
+     nothing runs; on a game date it leaves a detached supervisor that sleeps until first pitch - 30 min.
+     07:00 KST is before every expected WS first pitch (~09:00 KST for an 8 pm ET game); a day game would need an
+     earlier time. Check `ws_operate.py plan` first.
+     start retries a failed schedule request (every 60 s, up to 30 min) and, if it still refuses, writes
+     status.json (state refused, urgent start_refused) so the alert watcher reports it. A date with nothing to run
+     (no WS game, all final, past the hard end) writes nothing and alerts nothing. A rehearsal (another publisher or
+     rehearsal supervisor) running at 07:00 makes start retry 30 min and then refuse urgently: do not schedule a
+     rehearsal over the daily start, or bootout this job for that day.
+
+     Install (only after Song approves):
+       cp apps/observer/ops/com.pitcheezy.ws-operate.plist.example ~/Library/LaunchAgents/com.pitcheezy.ws-operate.plist
+       # fix the paths below; keep upload off unless approved (add the upload flag to the command)
+       plutil -lint ~/Library/LaunchAgents/com.pitcheezy.ws-operate.plist
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pitcheezy.ws-operate.plist
+     Remove:
+       launchctl bootout gui/$(id -u)/com.pitcheezy.ws-operate
+     Credentials: never put the token in this file. For upload, put the token in a file outside any git checkout
+     (chmod 600) and give its PATH in PITCHEEZY_WS_OPS_TOKEN_FILE; the host address goes in
+     PITCHEEZY_WS_OPS_UPLOAD_BASE_URL (this plist lives in ~/Library, not in the repository).
+     AbandonProcessGroup: the supervisor runs in its own session and must outlive the short `start` job. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pitcheezy.ws-operate</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string><string>-c</string>
+    <string>exec /usr/bin/python3 -I -B /Users/song/Projects/pitcheezy/apps/observer/ops/ws_operate.py start --date "$(TZ=Asia/Seoul /bin/date +%Y-%m-%d)"</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PITCHEEZY_OBSERVER_PROFILE_SOURCES</key>
+    <string>/Users/song/Projects/pitcheezy-pm-jobs/profile-refresh-daily/profiles/LATEST.json</string>
+    <!-- upload only, after approval:
+    <key>PITCHEEZY_WS_OPS_TOKEN_FILE</key><string>/Users/song/.config/pitcheezy/publish_token</string>
+    <key>PITCHEEZY_WS_OPS_UPLOAD_BASE_URL</key><string>https://HOST/_publish</string>
+    -->
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>AbandonProcessGroup</key><true/>
+  <key>StandardOutPath</key><string>/Users/song/Library/Logs/pitcheezy-ws-operate.log</string>
+  <key>StandardErrorPath</key><string>/Users/song/Library/Logs/pitcheezy-ws-operate.log</string>
+</dict>
+</plist>

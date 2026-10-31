@@ -1,0 +1,66 @@
+{
+  "artifact_id": "C-D-API-001",
+  "verified_at": "2026-09-23T09:01:18.897272+00:00",
+  "implementation_commit": "9c6d8f9",
+  "contract_commit": "f821b55",
+  "database": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-API-001/observer.sqlite3",
+  "database_sha256": "5fbf977e1fd6b99e50792f76e1a84b72d51c5d35c304919fb5a43eb173bc2631",
+  "table_row_counts": {
+    "inning_decisions": 1,
+    "sessions": 0,
+    "recommendations": 0,
+    "event_results": 0,
+    "jobs": 0
+  },
+  "source_sha256": {
+    "/Users/song/Projects/pitcheezy/results/EXP-C-INNING-001/conditional_keep_777063.json": "8c2d700508fd98c41bba04d94f09114f5f60e627259ab63f976a7147c4af56b2",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/decision_anchor_777063.json": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c"
+  },
+  "code_sha256": {
+    "docs/contracts/inning-decision-api-v1.md": "e0c005715c495afefa866775eb709d23f37e5de0d3541877dd361a59df0b7c38",
+    "apps/observer/backend/observer_app/inning_decision_store.py": "7fb9024b78fd8bc031628bc37534688130ffee7435473c42594b9e544e37d2db",
+    "apps/observer/backend/observer_app/service.py": "6089b1b8be2aa2b21200cacabbf1e73fc640870c117f982be6208f0e4a6b4660",
+    "apps/observer/backend/observer_app/main.py": "18d24840efc7d37cb1e7a8a18dbe75bb06ab61485234660042a2d006469aabaf",
+    "scripts/import_inning_decision.py": "4d07eb2881dda225ae6f84bad47e7afdf3eb919e343a6323f78905ca8e6f2cf5",
+    "scripts/verify_inning_decision_api.py": "d2ee85a491f4456fe4056fb22b00c22e6d0d20ffd3ec12444d5f9f19cca8647a",
+    "apps/observer/web/tests/inning-result-contract.mjs": "6942fa27d15c5d48464e64c61b04158deed1dbc4a4b03565e7a76bb63f27af9f"
+  },
+  "result_sha256": {
+    "audit.json": "7c5bc2b023972492223b0730b870c3e25c82752735a6b9a438f2974b96670177",
+    "resolved.json": "33e860697b9a38a7538110c0d86e3abd15b0cd1986e4a215849e175bc22bec00",
+    "d_presentation.json": "4648d03effaa25d01d243e85eadcc3d6e187a8ae88743a30a50c33a113f84a9a",
+    "mismatches.json": "952639fed12a4a45f99627fcea35fd068a3901e9f56f3ddf67393318978821f1",
+    "catalog.json": "c8a31834b3414cccfc91f466c96f03ef77d09440c1bcd6dc7a1871c1639993ab"
+  },
+  "logs_sha256": {
+    "import.log": "76da9e76a95e1be0c05ae7e8d129dc124277cd268fc8583030abf295d8fd0810",
+    "api-integration.log": "1356b86812a690636db0092df24f11e38c757a87755e6229a87681ff3723ee45",
+    "pytest.log": "ef53846011de12f8fb0c1e70ddd34af8fe317b141f659822402e7332b105ac88",
+    "pytest-final.log": "4a64cf0c989f452c76ee18c877bca1fe88f1bb911ff1e5721d08aa48c5ab35d7",
+    "d-consumer.log": "20b14a2b66ce33c05967f20943b004e68fc4895561f382230f654be70cdcc8e5"
+  },
+  "checks": {
+    "python_passed": 105,
+    "python_seconds": 1.22,
+    "d_api_result_consumer": "passed",
+    "restart": "passed",
+    "context_mismatch_conflicts": 7,
+    "initial_check_failure": "Test runner lacked pitchmdp import path; corrected PYTHONPATH, no product code change"
+  },
+  "default_database_modified": false,
+  "http_transport": "FastAPI ASGI TestClient (no listening server)",
+  "new_model_calls": 0,
+  "new_training_runs": 0,
+  "new_source_fetches": 0,
+  "cv": "excluded",
+  "final_holdout_accessed": false,
+  "new_2026_data_accessed": false,
+  "roles": {
+    "root": "Astra role; exact runtime model ID not exposed",
+    "inning_decision_store": "gpt-6-sol medium",
+    "inning_decision_api": "gpt-6-sol medium"
+  },
+  "tokens": null,
+  "cost": null,
+  "remaining": "Explicit separate decision selection and display in UI; actual substitute availability/value unknown"
+}

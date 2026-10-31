@@ -1,0 +1,306 @@
+{
+ "$id": "pitcheezy-publish-v1-games",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "Inferred from 10 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block and the optional next.reference card (publish_schema.REFERENCE) are hand-written. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "properties": {
+  "date": {
+   "type": "string"
+  },
+  "features": {
+   "properties": {
+    "profile_reference": {
+     "properties": {
+      "enabled": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "enabled"
+     ],
+     "type": "object"
+    },
+    "provisional": {
+     "type": "boolean"
+    },
+    "step5_expectation": {
+     "properties": {
+      "enabled": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "enabled"
+     ],
+     "type": "object"
+    },
+    "viewer_delay": {
+     "properties": {
+      "default_s": {
+       "type": "integer"
+      },
+      "enabled": {
+       "type": "boolean"
+      },
+      "fold_actual_until_synced": {
+       "type": "boolean"
+      },
+      "sync_prompt": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "default_s",
+      "enabled",
+      "fold_actual_until_synced",
+      "sync_prompt"
+     ],
+     "type": "object"
+    }
+   },
+   "required": [
+    "profile_reference",
+    "provisional",
+    "step5_expectation",
+    "viewer_delay"
+   ],
+   "type": "object"
+  },
+  "games": {
+   "items": {
+    "properties": {
+     "away_abbr": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "away_score": {
+      "type": "integer"
+     },
+     "away_team": {
+      "type": "string"
+     },
+     "date_kst": {
+      "type": "string"
+     },
+     "double_header": {
+      "type": "boolean"
+     },
+     "double_header_code": {
+      "type": "string"
+     },
+     "embargoed": {
+      "type": "boolean"
+     },
+     "game_number": {
+      "type": "integer"
+     },
+     "game_pk": {
+      "type": "integer"
+     },
+     "game_type": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "games_in_series": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "half": {
+      "type": "null"
+     },
+     "has_history": {
+      "type": "boolean"
+     },
+     "home_abbr": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "home_score": {
+      "type": "integer"
+     },
+     "home_team": {
+      "type": "string"
+     },
+     "inning": {
+      "type": "null"
+     },
+     "live": {
+      "type": "boolean"
+     },
+     "official_date": {
+      "type": "string"
+     },
+     "probable_pitchers": {
+      "properties": {
+       "away": {
+        "properties": {
+         "id": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "id",
+         "name"
+        ],
+        "type": [
+         "object",
+         "null"
+        ]
+       },
+       "home": {
+        "properties": {
+         "id": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "id",
+         "name"
+        ],
+        "type": [
+         "object",
+         "null"
+        ]
+       }
+      },
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "series_description": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "series_game_number": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "start": {
+      "type": "string"
+     },
+     "start_kst": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "status_text": {
+      "type": "string"
+     },
+     "venue": {
+      "type": "null"
+     }
+    },
+    "required": [
+     "away_abbr",
+     "away_score",
+     "away_team",
+     "date_kst",
+     "double_header",
+     "double_header_code",
+     "embargoed",
+     "game_number",
+     "game_pk",
+     "half",
+     "has_history",
+     "home_abbr",
+     "home_score",
+     "home_team",
+     "inning",
+     "live",
+     "official_date",
+     "start",
+     "start_kst",
+     "status",
+     "status_text",
+     "venue"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "live_ok": {
+   "type": "boolean"
+  },
+  "publish": {
+   "properties": {
+    "contract": {
+     "const": "v1"
+    },
+    "published_at": {
+     "type": "string"
+    },
+    "sequence": {
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "contract",
+    "published_at",
+    "sequence"
+   ],
+   "type": "object"
+  },
+  "schema": {
+   "enum": [
+    "pitcheezy-service-games-v2"
+   ]
+  },
+  "source": {
+   "properties": {
+    "kind": {
+     "type": "string"
+    },
+    "session_id": {
+     "type": "null"
+    }
+   },
+   "required": [
+    "kind",
+    "session_id"
+   ],
+   "type": "object"
+  }
+ },
+ "required": [
+  "date",
+  "games",
+  "live_ok",
+  "publish",
+  "schema",
+  "source"
+ ],
+ "title": "Pitcheezy public publish v1: games",
+ "type": "object"
+}

@@ -1,0 +1,32 @@
+{
+  "passed": true,
+  "base": "http://127.0.0.1:8771",
+  "checks": {
+    "desktop": {
+      "real_api": true,
+      "explicit_selection": true,
+      "session_untouched": true,
+      "width": 1440,
+      "scroll": 1440
+    },
+    "desktop_conflict_retry": true,
+    "mobile": {
+      "real_api": true,
+      "explicit_selection": true,
+      "session_untouched": true,
+      "width": 390,
+      "scroll": 390
+    },
+    "mobile_conflict_retry": true,
+    "empty": true,
+    "invalid_200_hidden": true,
+    "synthetic_unavailable_no_numbers": true,
+    "late_result_after_selection_hidden": true,
+    "offline_retry": true,
+    "home_navigation": {
+      "width": 390,
+      "scroll": 390
+    }
+  },
+  "errors": []
+}

@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "241a87901759c2183c22bda3ee3899466b02553140413e0e0d01a64eebeb6a97",
+  "stage": "v5-denominators",
+  "registered_inputs": {
+    "v5": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S4-v5-a1/v5.json",
+      "file_sha256": "dead62ec2ce5faeaab98d09b331cff6606501f8e586edefa79994e4eb30fc7b2"
+    }
+  },
+  "note": "D110: addendum 6 pins the sealed S4-v5-a1 DEV denominators (87,759 PAs handled = census; 341,659 requests; E0 inside 79,682). Re-chained as d112."
+}

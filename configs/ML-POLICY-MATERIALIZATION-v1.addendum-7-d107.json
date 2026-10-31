@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "62dcddeaff2930edf2c75a28a510799e42c5440cdbe57764cf6bf39052450630",
+  "stage": "v2-world",
+  "registered_inputs": {
+    "v2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S5-v2-a1/v2.json",
+      "file_sha256": "c113e59c32424bb7506039c995d7053e1d86f2247a5ddf7c8ed0ea526ac6d003"
+    }
+  },
+  "note": "D111: addendum 7 pins the sealed S5-v2-a1 (V2 accept on seeds 0,1,2; max delta_gap_se 0.00106 <= 0.005)."
+}

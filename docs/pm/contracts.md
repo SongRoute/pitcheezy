@@ -1,0 +1,12 @@
+# 연구·서비스 공통 계약
+
+책임: 통합 PM. 변경은 양쪽 영향 검토 후 기록 작업자 한 명이 반영한다.
+
+- 연구 비교 기준 G15 mix, 서비스 G0 유지. 예측 개선과 추천 정책 우위는 별도다. D131 NO_EVIDENCE_OF_IMPROVEMENT, D155 WITHIN_SEARCH_NOISE를 임의로 바꾸지 않는다.
+- **2026-10-09 Song 승인:** 월드시리즈 서비스 적응 연구는2026자료 학습·튜닝·모델 선택을 허용한다. [현행 권한](research/ws-adaptation/authorization.md) · [시간·역할 계약](research/ws-adaptation/data-roles.md) · [A/B/C 비교안](research/ws-adaptation/methods.md). 실행 전 exact자료/역할/노출/분할/예산·독립 검토가 필요하며 권한 자체를 다시 묻지 않는다. 기존 논문 재현·B1/B2·봉인 결과와 완료 OPE 추가 실행/열람 경계는 보존한다. 현재는 계약 갱신만 수행했고 원시2026·OPE 접근/새fit는 없다.
+- configs, source commit, seeds, data version, 분할, 비용/예산, 새 attempt 경로와 결과 해시를 보존한다. 반복 노출 DEV 결과를 새로운 독립 검증으로 부르지 않는다. 봉인 산출물은 덮어쓰지 않는다.
+- 모델 인계 필수: 모델/소스/config/데이터 식별자, 입력·출력 스키마와 단위, 지원 범위·결측 처리, 성능·비교 기준·노출 한계, 추론 지연·메모리, 재현 명령, 복귀 모델.
+- 서비스는 선택한 투구 직전 맥락, 공개 시점, 실시간/과거 탐색, 추천 출처를 보존한다. 정답/미래 정보로 투구 전 추천을 만들지 않는다. 사후 정정 공식 피드와 당시 실제 관측 스냅샷은 구분한다.
+- CV M3: 86장 중 AI58/기권28. 약1.1인치는 같은 변환의 판독 일치도, 물리 정확도·의도 검증 아님. 849843의 좌표 있는27구는 실제 공개 후 x만; 높이/zone9 채택 게이트는 별도. 비공개 MLB 비교 그림은 공개 배포하지 않는다.
+- 실시간 입력 일치율, 모델 예측 정확도, 추천 제공률, 정책 개선, 종단 지연은 다른 지표다. 테스트 수와 fit 수는 중복 합산하지 않는다.
+- 실제 데이터/API 상세는 [interface-spec](../interface-spec.md), 현재 서비스 [데이터 계약](/Users/song/Projects/pitcheezy-pm-jobs/20261005-ui-live-redesign/pregame-data-032/DATA-CONTRACT.md)을 따른다.

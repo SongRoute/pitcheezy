@@ -1,0 +1,186 @@
+{
+ "metaData": {
+  "timeStamp": "20260929_195940"
+ },
+ "gameData": {
+  "game": {
+   "pk": 849845,
+   "type": "F",
+   "season": "2026"
+  },
+  "datetime": {
+   "officialDate": "2026-09-29"
+  },
+  "status": {
+   "abstractGameState": "Live",
+   "detailedState": "In Progress"
+  },
+  "teams": {
+   "away": {
+    "id": 143,
+    "name": "Philadelphia Phillies",
+    "abbreviation": "PHI"
+   },
+   "home": {
+    "id": 144,
+    "name": "Atlanta Braves",
+    "abbreviation": "ATL"
+   }
+  },
+  "players": {
+   "ID519242": {
+    "id": 519242,
+    "fullName": "Chris Sale",
+    "batSide": {
+     "code": "L",
+     "description": "Left"
+    },
+    "pitchHand": {
+     "code": "L",
+     "description": "Left"
+    }
+   },
+   "ID681082": {
+    "id": 681082,
+    "fullName": "Bryson Stott",
+    "batSide": {
+     "code": "L",
+     "description": "Left"
+    },
+    "pitchHand": {
+     "code": "R",
+     "description": "Right"
+    }
+   }
+  }
+ },
+ "liveData": {
+  "linescore": {
+   "currentInning": 7,
+   "inningHalf": "Top",
+   "isTopInning": true,
+   "inningState": "Top",
+   "balls": 1,
+   "strikes": 1,
+   "outs": 1,
+   "teams": {
+    "away": {
+     "runs": 1
+    },
+    "home": {
+     "runs": 2
+    }
+   },
+   "offense": {
+    "batter": {
+     "id": 681082,
+     "fullName": "Bryson Stott"
+    },
+    "first": {
+     "id": 650559,
+     "fullName": "Bryan De La Cruz"
+    }
+   },
+   "defense": {
+    "pitcher": {
+     "id": 519242,
+     "fullName": "Chris Sale"
+    }
+   }
+  },
+  "plays": {
+   "currentPlay": {
+    "about": {
+     "atBatIndex": 51,
+     "halfInning": "top",
+     "isTopInning": true,
+     "inning": 7,
+     "isComplete": false
+    },
+    "count": {
+     "balls": 1,
+     "strikes": 1,
+     "outs": 1
+    },
+    "matchup": {
+     "batter": {
+      "id": 681082,
+      "fullName": "Bryson Stott",
+      "link": "/api/v1/people/681082"
+     },
+     "batSide": {
+      "code": "L",
+      "description": "Left"
+     },
+     "pitcher": {
+      "id": 519242,
+      "fullName": "Chris Sale",
+      "link": "/api/v1/people/519242"
+     },
+     "pitchHand": {
+      "code": "L",
+      "description": "Left"
+     }
+    },
+    "playEvents": [
+     {
+      "index": 0,
+      "isPitch": true,
+      "pitchNumber": 1,
+      "count": {
+       "balls": 0,
+       "strikes": 1,
+       "outs": 1
+      },
+      "details": {
+       "description": "Foul Bunt",
+       "call": {
+        "code": "L",
+        "description": "Foul Bunt"
+       },
+       "type": {
+        "code": "FF",
+        "description": "Four-Seam Fastball"
+       }
+      },
+      "pitchData": {
+       "startSpeed": 97.8,
+       "coordinates": {
+        "pX": 1.8864509267874248,
+        "pZ": 3.1792493768437486
+       }
+      }
+     },
+     {
+      "index": 1,
+      "isPitch": true,
+      "pitchNumber": 2,
+      "count": {
+       "balls": 1,
+       "strikes": 1,
+       "outs": 1
+      },
+      "details": {
+       "description": "Ball",
+       "call": {
+        "code": "B",
+        "description": "Ball"
+       },
+       "type": {
+        "code": "SL",
+        "description": "Slider"
+       }
+      },
+      "pitchData": {
+       "startSpeed": 75.2,
+       "coordinates": {
+        "pX": -0.9581211820388954,
+        "pZ": 0.8401912044169354
+       }
+      }
+     }
+    ]
+   }
+  }
+ }
+}

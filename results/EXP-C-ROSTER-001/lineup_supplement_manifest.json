@@ -1,0 +1,12 @@
+{
+  "experiment_id": "EXP-C-ROSTER-001",
+  "selection_sha256": "d1c01b5876e2e9d76c881d7b6c2474bff22927874761bb92df049f5c2d8e4da8",
+  "original_packet_sha256": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+  "script_sha256": "16f16afb861abe03e18b9f2940becf1fe2168b0a1208c22afdf4df1decf8f340",
+  "output_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/lineup_supplement.json",
+  "output_sha256": "d8e40749e45ee4d64daff94803c61d545724885c6468ad812c98ebceec26b5a6",
+  "verified_lineup_count": 2,
+  "raw_response_count": 6,
+  "actual_manager_availability": null,
+  "policy_value": null
+}

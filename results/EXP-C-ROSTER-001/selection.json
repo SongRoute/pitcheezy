@@ -1,0 +1,287 @@
+{
+  "experiment_id": "EXP-C-ROSTER-001",
+  "phase": "prepared_before_roster_extraction",
+  "selection": [
+    {
+      "game_pk": 777063,
+      "status": "selected",
+      "game_date": "2025-07-21",
+      "decision_first_observed_pitch_id": "777063:49:1",
+      "decision_timestamp": null,
+      "decision_time_status": "first_observed_pitch_proxy_actual_decision_time_unknown",
+      "fielding_team": "PHI",
+      "fielding_side": "home",
+      "keep_pitcher_id": 554430,
+      "observed_incoming_pitcher_id_audit_only": 621383,
+      "state_at_first_observed_pitch": {
+        "inning": 7,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 2,
+        "away_score": 2,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 663853,
+        "current_batter_stand": "R"
+      },
+      "same_game_prior_pitch_counts": {
+        "554430": 105
+      },
+      "same_game_prior_pitcher_ids": [
+        554430
+      ],
+      "observed_prior_batter_ids": [
+        680776,
+        608324,
+        701350,
+        596115,
+        677800,
+        678882,
+        691785,
+        665966,
+        647351
+      ],
+      "lineup_as_of": null,
+      "lineup_missing_reason": "Complete slot-preserving batting order and predecision substitutions not verified from predecision evidence",
+      "selection_exposure": "Conditioned on observed replacement; descriptive input example, not policy-effect sample"
+    },
+    {
+      "game_pk": 777094,
+      "status": "selected",
+      "game_date": "2025-07-19",
+      "decision_first_observed_pitch_id": "777094:50:1",
+      "decision_timestamp": null,
+      "decision_time_status": "first_observed_pitch_proxy_actual_decision_time_unknown",
+      "fielding_team": "TOR",
+      "fielding_side": "home",
+      "keep_pitcher_id": 641778,
+      "observed_incoming_pitcher_id_audit_only": 643338,
+      "state_at_first_observed_pitch": {
+        "inning": 7,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 4,
+        "away_score": 2,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 527038,
+        "current_batter_stand": "R"
+      },
+      "same_game_prior_pitch_counts": {
+        "641778": 81
+      },
+      "same_game_prior_pitcher_ids": [
+        641778
+      ],
+      "observed_prior_batter_ids": [
+        671218,
+        646240,
+        527038,
+        656305,
+        642715,
+        669477,
+        808982,
+        682641,
+        672275
+      ],
+      "lineup_as_of": null,
+      "lineup_missing_reason": "Complete slot-preserving batting order and predecision substitutions not verified from predecision evidence",
+      "selection_exposure": "Conditioned on observed replacement; descriptive input example, not policy-effect sample"
+    },
+    {
+      "game_pk": 777126,
+      "status": "selected",
+      "game_date": "2025-07-12",
+      "decision_first_observed_pitch_id": "777126:53:1",
+      "decision_timestamp": null,
+      "decision_time_status": "first_observed_pitch_proxy_actual_decision_time_unknown",
+      "fielding_team": "SD",
+      "fielding_side": "home",
+      "keep_pitcher_id": 663773,
+      "observed_incoming_pitcher_id_audit_only": 593974,
+      "state_at_first_observed_pitch": {
+        "inning": 7,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 4,
+        "away_score": 4,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 669016,
+        "current_batter_stand": "L"
+      },
+      "same_game_prior_pitch_counts": {
+        "506433": 83,
+        "663773": 15
+      },
+      "same_game_prior_pitcher_ids": [
+        506433,
+        663773
+      ],
+      "observed_prior_batter_ids": [
+        607208,
+        656941,
+        547180,
+        664761,
+        592206,
+        681082,
+        592663,
+        596146,
+        669016,
+        624641
+      ],
+      "lineup_as_of": null,
+      "lineup_missing_reason": "Complete slot-preserving batting order and predecision substitutions not verified from predecision evidence",
+      "selection_exposure": "Conditioned on observed replacement; descriptive input example, not policy-effect sample"
+    },
+    {
+      "game_pk": 777143,
+      "status": "selected",
+      "game_date": "2025-07-11",
+      "decision_first_observed_pitch_id": "777143:54:1",
+      "decision_timestamp": null,
+      "decision_time_status": "first_observed_pitch_proxy_actual_decision_time_unknown",
+      "fielding_team": "LAD",
+      "fielding_side": "away",
+      "keep_pitcher_id": 607455,
+      "observed_incoming_pitcher_id_audit_only": 676263,
+      "state_at_first_observed_pitch": {
+        "inning": 6,
+        "half": "Bot",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 8,
+        "away_score": 6,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 672275,
+        "current_batter_stand": "R"
+      },
+      "same_game_prior_pitch_counts": {
+        "607455": 21,
+        "669160": 85
+      },
+      "same_game_prior_pitcher_ids": [
+        607455,
+        669160
+      ],
+      "observed_prior_batter_ids": [
+        573262,
+        671218,
+        646240,
+        656305,
+        642715,
+        808982,
+        669477,
+        642086,
+        672275
+      ],
+      "lineup_as_of": null,
+      "lineup_missing_reason": "Complete slot-preserving batting order and predecision substitutions not verified from predecision evidence",
+      "selection_exposure": "Conditioned on observed replacement; descriptive input example, not policy-effect sample"
+    },
+    {
+      "game_pk": 777217,
+      "status": "selected",
+      "game_date": "2025-07-06",
+      "decision_first_observed_pitch_id": "777217:42:1",
+      "decision_timestamp": null,
+      "decision_time_status": "first_observed_pitch_proxy_actual_decision_time_unknown",
+      "fielding_team": "CIN",
+      "fielding_side": "away",
+      "keep_pitcher_id": 594580,
+      "observed_incoming_pitcher_id_audit_only": 605130,
+      "state_at_first_observed_pitch": {
+        "inning": 6,
+        "half": "Bot",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 1,
+        "away_score": 1,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 664761,
+        "current_batter_stand": "R"
+      },
+      "same_game_prior_pitch_counts": {
+        "594580": 9,
+        "695505": 91
+      },
+      "same_game_prior_pitcher_ids": [
+        594580,
+        695505
+      ],
+      "observed_prior_batter_ids": [
+        607208,
+        656941,
+        547180,
+        664761,
+        592206,
+        596146,
+        592663,
+        681082,
+        669016
+      ],
+      "lineup_as_of": null,
+      "lineup_missing_reason": "Complete slot-preserving batting order and predecision substitutions not verified from predecision evidence",
+      "selection_exposure": "Conditioned on observed replacement; descriptive input example, not policy-effect sample"
+    },
+    {
+      "game_pk": 777227,
+      "status": "selected",
+      "game_date": "2025-07-05",
+      "decision_first_observed_pitch_id": "777227:65:1",
+      "decision_timestamp": null,
+      "decision_time_status": "first_observed_pitch_proxy_actual_decision_time_unknown",
+      "fielding_team": "ATH",
+      "fielding_side": "home",
+      "keep_pitcher_id": 686993,
+      "observed_incoming_pitcher_id_audit_only": 663687,
+      "state_at_first_observed_pitch": {
+        "inning": 8,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 2,
+        "away_score": 7,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 689172,
+        "current_batter_stand": "L"
+      },
+      "same_game_prior_pitch_counts": {
+        "622663": 94,
+        "656794": 20,
+        "686993": 29
+      },
+      "same_game_prior_pitcher_ids": [
+        622663,
+        656794,
+        686993
+      ],
+      "observed_prior_batter_ids": [
+        573262,
+        671218,
+        646240,
+        656305,
+        808982,
+        642715,
+        642086,
+        672275,
+        689172
+      ],
+      "lineup_as_of": null,
+      "lineup_missing_reason": "Complete slot-preserving batting order and predecision substitutions not verified from predecision evidence",
+      "selection_exposure": "Conditioned on observed replacement; descriptive input example, not policy-effect sample"
+    }
+  ],
+  "sha256": {
+    "config": "94bbf0bfa2dc441edfe8c063a82176769e60047cc2c6c691e7bd54eff69c6fbc",
+    "source_selection_manifest": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+    "source_dev_parquet": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+    "source_event_packets": "a01102ba5c5b06b5e484b2cceb422e9d142e63eed4240e9838000388f2e9a779"
+  }
+}

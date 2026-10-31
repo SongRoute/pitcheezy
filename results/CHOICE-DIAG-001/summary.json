@@ -1,0 +1,117 @@
+{
+  "scope": "Only revealed unique pitches in active demo DB; includes automated QA and user sessions, selected convenience sample, not performance evaluation",
+  "database": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-FULL-001/observer.sqlite3",
+  "dataset_sha256": "8ad2b369884265bb5197137499e002a32354930cce036253f92b91671dde479b",
+  "session_count": 21,
+  "unique_revealed": 16,
+  "ready_known_actual": 16,
+  "top1_match": 4,
+  "top3_action_types_match": 8,
+  "all_top3_same_type": 8,
+  "actual_counts": {
+    "ST": 2,
+    "FF": 3,
+    "SI": 10,
+    "SV": 1
+  },
+  "recommended_counts": {
+    "ST": 6,
+    "CH": 4,
+    "SV": 1,
+    "SI": 4,
+    "FF": 1
+  },
+  "conflicting_recommendation_ids": [],
+  "code_commit": "1926234",
+  "source_artifact": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/CHOICE-DIAG-001/revealed_choices.json",
+  "source_sha256": "afd70fe1ce2bfbf0da1c03d7d403e2e420a84a5cfcaa4eddc2d67532536cdb45",
+  "sample_rows": [
+    {
+      "pitch_id": "776703:3:2",
+      "date": "2025-08-17",
+      "pitcher": "Logan Webb",
+      "pitcher_id": 657277,
+      "batter": "Brandon Lowe",
+      "count": "0-1",
+      "actual": "FF",
+      "status": "ready",
+      "recommendation_id": "6ba0a40db72c99a4f17a5a26df8cbb607b344b5b116b6f9c88a13ce497b30b17",
+      "recommended": "CH",
+      "top3_types": [
+        "CH",
+        "FF",
+        "CH"
+      ],
+      "top3_zones": [
+        "low_left",
+        "high_left",
+        "low_right"
+      ],
+      "top3_values": [
+        0.573386125209532,
+        0.5732128166376594,
+        0.5731779065122153
+      ],
+      "top3_support": [
+        192.4,
+        188.3,
+        140.3
+      ],
+      "gap_1_to_2_pp": 0.017330857187258797,
+      "repertoire_counts": {
+        "SI": 478,
+        "CH": 385,
+        "ST": 365,
+        "FF": 105,
+        "FC": 128
+      }
+    },
+    {
+      "pitch_id": "776703:2:4",
+      "date": "2025-08-17",
+      "pitcher": "Logan Webb",
+      "pitcher_id": 657277,
+      "batter": "Yandy Díaz",
+      "count": "3-0",
+      "actual": "SI",
+      "status": "ready",
+      "recommendation_id": "386ad36a898cf7c4384ea209c155bc0a18960db1672bfadb73246fa259e63f54",
+      "recommended": "CH",
+      "top3_types": [
+        "CH",
+        "SI",
+        "SI"
+      ],
+      "top3_zones": [
+        "middle_middle",
+        "middle_middle",
+        "low_middle"
+      ],
+      "top3_values": [
+        0.5261027024801823,
+        0.5258624421479917,
+        0.5255412667330679
+      ],
+      "top3_support": [
+        124.4,
+        188.1,
+        166.8
+      ],
+      "gap_1_to_2_pp": 0.02402603321906005,
+      "repertoire_counts": {
+        "SI": 478,
+        "CH": 385,
+        "ST": 365,
+        "FF": 105,
+        "FC": 128
+      }
+    }
+  ],
+  "ui_feedback": [
+    "too much information",
+    "confusing layout",
+    "not user friendly"
+  ],
+  "policy_quality": "not established by agreement statistics",
+  "next_task": "Pre-register recommendation realism and rank stability diagnostic; no automatic model adoption"
+}

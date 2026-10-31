@@ -4,6 +4,7 @@
     python scripts/fetch_data.py --seasons 2023 2024 2025 --holdout 2026 --tag s2325 --out data/raw
     python scripts/fetch_data.py --seasons 2023 2024 2025 --holdout 2026 --tag s2325 --dry-run   # 시즌마다 첫 하루만
     python scripts/fetch_data.py --verify d20260910-s2325 --out data/raw                          # sha256·행 수 대조
+    python scripts/fetch_data.py --postseason-six REGISTRATION.json --postseason-six-grant GRANT.json
 
 규칙:
     - 버전 ID = d{오늘 YYYYMMDD}-{tag}. 시즌 날짜·청크(월)·정렬 키·dtype 은 코드 상수 (statcast_fetch.py).
@@ -75,12 +76,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--verify", metavar="VERSION",
         help="수집하지 않고 장부의 sha256·행 수와 {out}/{VERSION}/ 의 파일을 대조",
     )
+    parser.add_argument("--postseason-six", type=Path, metavar="REGISTRATION",
+                        help="고정 2026-10-12..15 L 경기 6개만 경기 ID별 수집; 별도 등록 필수")
+    parser.add_argument("--postseason-six-grant", type=Path, metavar="GRANT",
+                        help="postseason six의 독립 검토와 Root grant 기록")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    raw_argv = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(argv)
+
+    if args.postseason_six is not None:
+        if (args.postseason_six_grant is None or args.seasons or args.holdout or args.tag
+                or args.dry_run or args.freeze or args.date or args.verify
+                or any(x in ("--out", "--versions-file") or x.startswith(("--out=", "--versions-file=")) for x in raw_argv)):
+            parser.error("--postseason-six 는 grant가 필요하며 기존 시즌 옵션과 함께 쓸 수 없음")
+        from pitcheezy.data import postseason_six
+        try:
+            result = postseason_six.gated(args.postseason_six, args.postseason_six_grant)
+        except postseason_six.CollectionStop as exc:
+            print(f"postseason STOP: {exc}", file=sys.stderr)
+            return 2
+        print(f"postseason six: {result['projected']['rows']}행")
+        return 0
+    if args.postseason_six_grant is not None:
+        parser.error("--postseason-six-grant 는 --postseason-six 와 함께 필요")
 
     if args.verify:
         if args.seasons or args.holdout or args.tag or args.dry_run or args.freeze:

@@ -1,0 +1,21 @@
+{
+  "base": "http://127.0.0.1:8766/",
+  "passed": true,
+  "checks": {
+    "outcome_fields_excluded_from_search": true,
+    "team_player_and_date_filter": true,
+    "server_grounded_basis_and_explicit_model_values": true,
+    "saved_pre_pitch_comparison_preserved": true,
+    "adjacent_pa_new_session_and_existing_resume": true,
+    "restart_is_distinct_and_reload_resumes": true,
+    "empty_search_preserves_current_view": true,
+    "batter_search_and_mobile_layout": {
+      "viewport": 390,
+      "scrollWidth": 390
+    }
+  },
+  "issues": [],
+  "game_id": 776703,
+  "public_catalog_games": 12,
+  "public_game_pas": 23
+}

@@ -1,0 +1,16 @@
+source identity: ok
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: detail: 해가 없다는 증명도 아닙니다
+    at file:///Users/song/Projects/pitcheezy-worktrees/codex-model-evidence-review-1004/apps/observer/web/tests/model-evidence-smoke.mjs:83:7 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v25.9.0

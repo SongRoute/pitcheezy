@@ -1,0 +1,3222 @@
+{
+  "arm_order": "config order",
+  "decision": null,
+  "family": "EXP-P24-001",
+  "format": "cuda_direct_score_v1",
+  "limits": [
+    "Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only",
+    "Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)",
+    "Prediction only; no 2026 rows; no policy or service claim"
+  ],
+  "provenance": {
+    "bootstrap": {
+      "draws": 10000,
+      "function": "matrix_metrics.paired_game_comparison",
+      "seed": 20260924
+    },
+    "config": {
+      "digest": "c2376032770219e4c29aaec37ef188794dc51e8175779c17d5d29c08e3f97ff8",
+      "experiment_id": "EXP-P24-001",
+      "file_sha256": "12b04ccc5b1a5f06a1b2a1d9374d3a11a37a176a1eba88dab54dbc5c56a7b03f",
+      "path": "/home/sds733/pitcheezy-autonomy/20261004/EXP-P24-001.yaml"
+    },
+    "created_utc": "2026-10-03T15:55:39.527414+00:00",
+    "export": {
+      "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+      "path": "/home/sds733/pitcheezy-autonomy/20261004/export-49097109",
+      "scored_arrays_sha256": {
+        "dev/game_pk": "b5170409d9688cd8c7c5ec303eff6f61c8f2f50ce8dbed306d9a268c1e93a458",
+        "dev/keys": "596b37e9a268ac19d5d3fa52e073f96f68a2db61732033aca96d7807be1d9937",
+        "dev/y": "8868672932b0c850a1c5fa5321b4ba0e82f06d213ef4f34c21ef194b4e20bda6",
+        "mlb_dev/game_pk": "a7d2da2fd7046af5bf8712bf7b06795a83640b31f1c5d166cf2ee4be47b3c10a",
+        "mlb_dev/keys": "39fefe14df60c31beedfb8519589d5aa0e5b6490427227468f466e69af0b7c00",
+        "mlb_dev/y": "9d43b52d91160c77f52409ec7099a57461c8db8204625894e3223b33cbf15d71"
+      }
+    },
+    "scorer_runtime": {
+      "hostname": "fire-detection",
+      "numpy": "2.3.5",
+      "platform": "Linux-6.8.0-117-generic-x86_64-with-glibc2.39",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
+    },
+    "scorer_sources_sha256": {
+      "pitchmdp/matrix_metrics.py": "dc54b9105b9c6d94f690550847b858fc732404c0f41739441874c861e29b29e3",
+      "scripts/run_cuda_direct.py": "4a148bb798625a966fd93ea2c8411b1ab6c88a5d610dfc5b5f02032ec3a19eb5",
+      "scripts/score_cuda_direct.py": "73f6a2847723d1886ccb66a80e8759a46af45882c28a8ffddafaf5881d8c4f69"
+    },
+    "task_runtime_signature": {
+      "cudnn": 90100,
+      "device_capability": [
+        8,
+        6
+      ],
+      "device_name": "NVIDIA RTX A5000",
+      "device_total_memory": 25315180544,
+      "numpy": "2.3.5",
+      "scipy": "1.17.1",
+      "torch": "2.5.1+cu121",
+      "torch_cuda": "12.1"
+    },
+    "task_sources": {
+      "kind": "source_manifest",
+      "label": "Root verified immutable edfd4cc source for EXP-P24-001",
+      "path": "/home/sds733/pitcheezy-autonomy/20261004/p24-source-manifest.json",
+      "sha256": "84fa58032d6700ceb45754c2dec6a2d151cf27d3c60ead32009111ffd812ec07",
+      "source_sha256": {
+        "pitchmdp/direct_periodic_model.py": "18f0b96a9b8a0d9eb39af2de4b0cc1b7a10a0dd42ca92977f726042e1aec80d3",
+        "pitchmdp/direct_residual_model.py": "7feb9cfdcad85f4cb02c50a75e2ba2b528dd5546e600526b0334dcf0cf8e2d59",
+        "pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+        "scripts/run_cuda_direct.py": "03d8f82eb7acb814630c4af622c5f6c6ef800a79136f957f11ed5d5daa696c8a"
+      }
+    },
+    "tasks": {
+      "block": {
+        "0": {
+          "delivery_temperature": 0.9619447117839581,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "f529258892df633caa9a9a13a47331a933b334170260c16633d7eb2da5a47325"
+        },
+        "1": {
+          "delivery_temperature": 0.9774391806261641,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "0beb0d3896de15af06db99eb81b729d98bf23db2b1bed99c2f5b112b9f0d624f"
+        },
+        "2": {
+          "delivery_temperature": 1.004439078879276,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "d72b569237895b48e357b276acacf0e058df19057c010645420f0534f8f8e0e4"
+        }
+      },
+      "control": {
+        "0": {
+          "delivery_temperature": 0.9742756846450964,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "5401f7392bbe8d6e1d7b2ae28b691633fb52f01ecc6b09353e417e8d050e3c0a"
+        },
+        "1": {
+          "delivery_temperature": 0.9869630621239626,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "83d4984458132e48916d93747e1bf464e31a93458c37d809b3947090bd6c41ac"
+        },
+        "2": {
+          "delivery_temperature": 1.010093407152636,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "81263d4eca14077c3b2c86230282b4811af8af7bab536c7576900e1e569dc57c"
+        }
+      },
+      "counts": {
+        "0": {
+          "delivery_temperature": 0.9712972270132575,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "b621b12b9f491ef14bc6c546350cd859e1a9bb28d741a40b8420045da494cbf9"
+        },
+        "1": {
+          "delivery_temperature": 0.975784231624041,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "907f16d3080dd633d3f915153d51c8f4714fc5e449bf1292549d1336fea0c044"
+        },
+        "2": {
+          "delivery_temperature": 1.007458820382388,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "31441f5b9ff3eef741ba82b6ac075fc0ea627c6e49c80ece6b04caefb7993158"
+        }
+      },
+      "periodic": {
+        "0": {
+          "delivery_temperature": 1.0277032684076017,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "0ba4ea43c30c17c67e5cfd0bc973119534530d983e2bc39e54766225c9b5b399"
+        },
+        "1": {
+          "delivery_temperature": 0.9799497894207849,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "e1f2f08efe112eede30066c87dd7a152e7a5e0363e3f7d3edaf90038c0d1542b"
+        },
+        "2": {
+          "delivery_temperature": 1.0058685374147034,
+          "device_uuid": "ae803a24-0d38-791d-ed7c-3f233fcecf99",
+          "state_sha256": "9f2458fedd91ea2f2474e13b8c28ff5be69060d89248b7478da42aa56b0deca6"
+        }
+      },
+      "residual": {
+        "0": {
+          "delivery_temperature": 1.001292319462659,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "b23549ad774bae0167bfd290a85875c7f8ea048132fa9714b871885b5b3e23ff"
+        },
+        "1": {
+          "delivery_temperature": 0.9916858146780635,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "7733453aee19a5004bc25273e9ab2cea1b2c781cb308d9a51802086745f84907"
+        },
+        "2": {
+          "delivery_temperature": 1.0237024847039666,
+          "device_uuid": "c334d905-8ec9-0029-b206-46ce3ac49cd9",
+          "state_sha256": "1ff0039885fc6f0b7658417fefb62bd9dce59f9d72b152842590e444dea4118b"
+        }
+      }
+    }
+  },
+  "ranking": null,
+  "scope": "unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; not G15 mix, not policy; descriptive repeated-DEV; no decision, ranking or winner",
+  "splits": {
+    "dev": {
+      "block": {
+        "ensemble": {
+          "accuracy": 0.3764391113993838,
+          "brier_multiclass": 0.7230451495734802,
+          "classes": [
+            {
+              "brier": 0.2266043616675589,
+              "class": 0,
+              "ece": 0.014966623694466682,
+              "f1": 0.4824112165225422,
+              "observed_rate": 0.36160207556348306,
+              "precision": 0.38558582740571734,
+              "predicted_count": 7451,
+              "predicted_rate": 0.34667926668787397,
+              "recall": 0.6441704035874439,
+              "support": 4460
+            },
+            {
+              "brier": 0.19064797418285165,
+              "class": 1,
+              "ece": 0.0049704303032732655,
+              "f1": 0.3986974373495682,
+              "observed_rate": 0.27971461002107995,
+              "precision": 0.3897038472183781,
+              "predicted_count": 3613,
+              "predicted_rate": 0.2833522549627785,
+              "recall": 0.4081159420289855,
+              "support": 3450
+            },
+            {
+              "brier": 0.1402486381526474,
+              "class": 2,
+              "ece": 0.009944024781878294,
+              "f1": 0.2090962787950384,
+              "observed_rate": 0.17553105237554728,
+              "precision": 0.28992628992628994,
+              "predicted_count": 1221,
+              "predicted_rate": 0.18480256409893855,
+              "recall": 0.16351039260969977,
+              "support": 2165
+            },
+            {
+              "brier": 0.10314151192910229,
+              "class": 3,
+              "ece": 0.003849158135456228,
+              "f1": 0.010561056105610561,
+              "observed_rate": 0.11885844008431977,
+              "precision": 0.16326530612244897,
+              "predicted_count": 49,
+              "predicted_rate": 0.11729239997136046,
+              "recall": 0.005457025920873124,
+              "support": 1466
+            },
+            {
+              "brier": 0.03509811137498237,
+              "class": 4,
+              "ece": 0.0025028581632633488,
+              "f1": 0.0,
+              "observed_rate": 0.036646667747689314,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.039149525910952665,
+              "recall": 0.0,
+              "support": 452
+            },
+            {
+              "brier": 0.01088426199060163,
+              "class": 5,
+              "ece": 0.0007439890145590124,
+              "f1": 0.0,
+              "observed_rate": 0.011026431003729529,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011770420018288541,
+              "recall": 0.0,
+              "support": 136
+            },
+            {
+              "brier": 0.0006484005952060334,
+              "class": 6,
+              "ece": 0.0003467156041195231,
+              "f1": 0.0,
+              "observed_rate": 0.0006486135884546781,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0009953291925742013,
+              "recall": 0.0,
+              "support": 8
+            },
+            {
+              "brier": 0.007952384957542006,
+              "class": 7,
+              "ece": 0.0002258799158114267,
+              "f1": 0.0,
+              "observed_rate": 0.008026593157126642,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008252473072938069,
+              "recall": 0.0,
+              "support": 99
+            },
+            {
+              "brier": 0.003226005491131013,
+              "class": 8,
+              "ece": 0.0007241003716939643,
+              "f1": 0.0,
+              "observed_rate": 0.0032430679422733905,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.002518967570579426,
+              "recall": 0.0,
+              "support": 40
+            },
+            {
+              "brier": 0.004593499231856936,
+              "class": 9,
+              "ece": 0.00048434999741924726,
+              "f1": 0.0,
+              "observed_rate": 0.004702448516296417,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.005186798513715663,
+              "recall": 0.0,
+              "support": 58
+            }
+          ],
+          "log_loss": 1.4817561072268821,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.11007659887727594,
+          "n": 12334,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.2895845875978326,
+              "bin": 2,
+              "confidence": 0.2793865222897789,
+              "n": 1661
+            },
+            {
+              "accuracy": 0.3555588192098693,
+              "bin": 3,
+              "confidence": 0.3506124938448788,
+              "n": 6809
+            },
+            {
+              "accuracy": 0.4378680800942285,
+              "bin": 4,
+              "confidence": 0.4379186524103052,
+              "n": 3396
+            },
+            {
+              "accuracy": 0.516209476309227,
+              "bin": 5,
+              "confidence": 0.5309619963679097,
+              "n": 401
+            },
+            {
+              "accuracy": 0.6833333333333333,
+              "bin": 6,
+              "confidence": 0.640296314590994,
+              "n": 60
+            },
+            {
+              "accuracy": 0.8571428571428571,
+              "bin": 7,
+              "confidence": 0.7142673372702999,
+              "n": 7
+            },
+            {
+              "accuracy": null,
+              "bin": 8,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 9,
+              "confidence": null,
+              "n": 0
+            }
+          ],
+          "top_label_ece10": 0.004887981983093411
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.00036028253601284784,
+                0.00045437629143420277
+              ],
+              "delta": 4.7691711352241503e-05,
+              "p_less": 0.5841415858414158
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 328,
+            "n": 12334,
+            "nll": {
+              "ci95": [
+                -0.001032551614293696,
+                0.001235617875002685
+              ],
+              "delta": 9.322883469169686e-05,
+              "p_less": 0.559044095590441
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -0.000581048406139184,
+                  0.0007451439047599684
+                ],
+                "delta": 8.121529017928746e-05,
+                "p_less": 0.5829417058294171
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0018209205578285875,
+                  0.0017854332982681505
+                ],
+                "delta": 8.306054855024594e-06,
+                "p_less": 0.48985101489851013
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.0006025896290702968,
+                  0.0007493985123040555
+                ],
+                "delta": 7.613499800662778e-05,
+                "p_less": 0.5857414258574143
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.001229379916358055,
+                  0.002331242057173699
+                ],
+                "delta": 0.0005489217511148604,
+                "p_less": 0.7281271872812719
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.0003172420787626529,
+                  0.0006260867378091172
+                ],
+                "delta": 0.00015604881271969397,
+                "p_less": 0.7431256874312568
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0011020128742651536,
+                  0.0013983801849939998
+                ],
+                "delta": 0.00016603575533922599,
+                "p_less": 0.5993400659934006
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.3728717366628831,
+            "brier_multiclass": 0.723978549376901,
+            "log_loss": 1.4843190376186404,
+            "n": 12334,
+            "top_label_ece10": 0.003838413502779586
+          },
+          "1": {
+            "accuracy": 0.37603372790659967,
+            "brier_multiclass": 0.7236810570621081,
+            "log_loss": 1.4842919454633214,
+            "n": 12334,
+            "top_label_ece10": 0.0029208889374689293
+          },
+          "2": {
+            "accuracy": 0.37700664828928165,
+            "brier_multiclass": 0.7236643790809404,
+            "log_loss": 1.4834633459989224,
+            "n": 12334,
+            "top_label_ece10": 0.006082773088148246
+          }
+        }
+      },
+      "control": {
+        "ensemble": {
+          "accuracy": 0.3743311172369061,
+          "brier_multiclass": 0.7229974578621279,
+          "classes": [
+            {
+              "brier": 0.22660789356079497,
+              "class": 0,
+              "ece": 0.013295522698235876,
+              "f1": 0.482655601659751,
+              "observed_rate": 0.36160207556348306,
+              "precision": 0.38313570487483534,
+              "predicted_count": 7590,
+              "predicted_rate": 0.34834830339779865,
+              "recall": 0.6520179372197309,
+              "support": 4460
+            },
+            {
+              "brier": 0.1906418400372347,
+              "class": 1,
+              "ece": 0.005355989371347677,
+              "f1": 0.3941293815901966,
+              "observed_rate": 0.27971461002107995,
+              "precision": 0.3876121076233184,
+              "predicted_count": 3568,
+              "predicted_rate": 0.28347990786862,
+              "recall": 0.4008695652173913,
+              "support": 3450
+            },
+            {
+              "brier": 0.1402461915144638,
+              "class": 2,
+              "ece": 0.008575704200521651,
+              "f1": 0.19148936170212766,
+              "observed_rate": 0.17553105237554728,
+              "precision": 0.28,
+              "predicted_count": 1125,
+              "predicted_rate": 0.18267304553851352,
+              "recall": 0.14549653579676675,
+              "support": 2165
+            },
+            {
+              "brier": 0.10313529943937326,
+              "class": 3,
+              "ece": 0.004037662346264261,
+              "f1": 0.014502307185234015,
+              "observed_rate": 0.11885844008431977,
+              "precision": 0.21568627450980393,
+              "predicted_count": 51,
+              "predicted_rate": 0.11690587991933475,
+              "recall": 0.007503410641200546,
+              "support": 1466
+            },
+            {
+              "brier": 0.03507095484239595,
+              "class": 4,
+              "ece": 0.002781128428243153,
+              "f1": 0.0,
+              "observed_rate": 0.036646667747689314,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.03942779617593247,
+              "recall": 0.0,
+              "support": 452
+            },
+            {
+              "brier": 0.010885173545215834,
+              "class": 5,
+              "ece": 0.0010231278136057162,
+              "f1": 0.0,
+              "observed_rate": 0.011026431003729529,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.012049558817335245,
+              "recall": 0.0,
+              "support": 136
+            },
+            {
+              "brier": 0.0006484761118471958,
+              "class": 6,
+              "ece": 0.0003655590486941558,
+              "f1": 0.0,
+              "observed_rate": 0.0006486135884546781,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.001014172637148834,
+              "recall": 0.0,
+              "support": 8
+            },
+            {
+              "brier": 0.007952554091342035,
+              "class": 7,
+              "ece": 0.00024931504389338714,
+              "f1": 0.0,
+              "observed_rate": 0.008026593157126642,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008275908201020029,
+              "recall": 0.0,
+              "support": 99
+            },
+            {
+              "brier": 0.00322650758441745,
+              "class": 8,
+              "ece": 0.0006266353029943618,
+              "f1": 0.0,
+              "observed_rate": 0.0032430679422733905,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0026164326392790287,
+              "recall": 0.0,
+              "support": 40
+            },
+            {
+              "brier": 0.004582567135042783,
+              "class": 9,
+              "ece": 0.0005065462887210351,
+              "f1": 0.0,
+              "observed_rate": 0.004702448516296417,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.005208994805017452,
+              "recall": 0.0,
+              "support": 58
+            }
+          ],
+          "log_loss": 1.4816628783921904,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10827766521373094,
+          "n": 12334,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.26744186046511625,
+              "bin": 2,
+              "confidence": 0.27912293974099806,
+              "n": 1634
+            },
+            {
+              "accuracy": 0.35427061931317877,
+              "bin": 3,
+              "confidence": 0.3508064578881858,
+              "n": 6814
+            },
+            {
+              "accuracy": 0.4416715031921068,
+              "bin": 4,
+              "confidence": 0.43687597827377317,
+              "n": 3446
+            },
+            {
+              "accuracy": 0.517426273458445,
+              "bin": 5,
+              "confidence": 0.5304896746270973,
+              "n": 373
+            },
+            {
+              "accuracy": 0.7333333333333333,
+              "bin": 6,
+              "confidence": 0.637729264740042,
+              "n": 60
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 7,
+              "confidence": 0.7179275834586536,
+              "n": 7
+            },
+            {
+              "accuracy": null,
+              "bin": 8,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 9,
+              "confidence": null,
+              "n": 0
+            }
+          ],
+          "top_label_ece10": 0.005821344091338145
+        },
+        "role": "control",
+        "seeds": {
+          "0": {
+            "accuracy": 0.37425004053834926,
+            "brier_multiclass": 0.7238973340867216,
+            "log_loss": 1.4843107315637851,
+            "n": 12334,
+            "top_label_ece10": 0.0050228413410288416
+          },
+          "1": {
+            "accuracy": 0.3748175774282471,
+            "brier_multiclass": 0.7236049220641013,
+            "log_loss": 1.4837430237122067,
+            "n": 12334,
+            "top_label_ece10": 0.004809499736889618
+          },
+          "2": {
+            "accuracy": 0.3736014269498946,
+            "brier_multiclass": 0.7235083302682206,
+            "log_loss": 1.4832973102435831,
+            "n": 12334,
+            "top_label_ece10": 0.003118836032826861
+          }
+        }
+      },
+      "counts": {
+        "ensemble": {
+          "accuracy": 0.3727095832657694,
+          "brier_multiclass": 0.7229012259187525,
+          "classes": [
+            {
+              "brier": 0.2265717005810122,
+              "class": 0,
+              "ece": 0.014285340287728671,
+              "f1": 0.4816136797542957,
+              "observed_rate": 0.36160207556348306,
+              "precision": 0.38236457097667065,
+              "predicted_count": 7587,
+              "predicted_rate": 0.34736122131675395,
+              "recall": 0.6504484304932735,
+              "support": 4460
+            },
+            {
+              "brier": 0.1906479300901215,
+              "class": 1,
+              "ece": 0.005061091460561322,
+              "f1": 0.39017382559977015,
+              "observed_rate": 0.27971461002107995,
+              "precision": 0.38678439191113645,
+              "predicted_count": 3511,
+              "predicted_rate": 0.28233210802673303,
+              "recall": 0.3936231884057971,
+              "support": 3450
+            },
+            {
+              "brier": 0.14023319721268693,
+              "class": 2,
+              "ece": 0.010580063476030192,
+              "f1": 0.19420376456528235,
+              "observed_rate": 0.17553105237554728,
+              "precision": 0.2749576988155668,
+              "predicted_count": 1182,
+              "predicted_rate": 0.18397840450300085,
+              "recall": 0.15011547344110854,
+              "support": 2165
+            },
+            {
+              "brier": 0.10309280719245956,
+              "class": 3,
+              "ece": 0.0042500560981367855,
+              "f1": 0.017105263157894738,
+              "observed_rate": 0.11885844008431977,
+              "precision": 0.24074074074074073,
+              "predicted_count": 54,
+              "predicted_rate": 0.11811607889859416,
+              "recall": 0.008867667121418827,
+              "support": 1466
+            },
+            {
+              "brier": 0.035073552583487426,
+              "class": 4,
+              "ece": 0.00265139738724725,
+              "f1": 0.0,
+              "observed_rate": 0.036646667747689314,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.03929806513493657,
+              "recall": 0.0,
+              "support": 452
+            },
+            {
+              "brier": 0.010881413617624517,
+              "class": 5,
+              "ece": 0.0008612250348842138,
+              "f1": 0.0,
+              "observed_rate": 0.011026431003729529,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011887656038613742,
+              "recall": 0.0,
+              "support": 136
+            },
+            {
+              "brier": 0.0006482023943857851,
+              "class": 6,
+              "ece": 0.000331194087631674,
+              "f1": 0.0,
+              "observed_rate": 0.0006486135884546781,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0009798076760863521,
+              "recall": 0.0,
+              "support": 8
+            },
+            {
+              "brier": 0.007949190207819258,
+              "class": 7,
+              "ece": 0.00014517279835972972,
+              "f1": 0.0,
+              "observed_rate": 0.008026593157126642,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008171765955486372,
+              "recall": 0.0,
+              "support": 99
+            },
+            {
+              "brier": 0.0032274124287698987,
+              "class": 8,
+              "ece": 0.0007264891513941137,
+              "f1": 0.0,
+              "observed_rate": 0.0032430679422733905,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0025165787908792768,
+              "recall": 0.0,
+              "support": 40
+            },
+            {
+              "brier": 0.004575819610385389,
+              "class": 9,
+              "ece": 0.0006558651426192702,
+              "f1": 0.0,
+              "observed_rate": 0.004702448516296417,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.005358313658915687,
+              "recall": 0.0,
+              "support": 58
+            }
+          ],
+          "log_loss": 1.4810678430629287,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10830965330772428,
+          "n": 12334,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.27576112412177983,
+              "bin": 2,
+              "confidence": 0.2792798421204392,
+              "n": 1708
+            },
+            {
+              "accuracy": 0.34998526377836725,
+              "bin": 3,
+              "confidence": 0.3506787791899672,
+              "n": 6786
+            },
+            {
+              "accuracy": 0.4424778761061947,
+              "bin": 4,
+              "confidence": 0.43815945000981193,
+              "n": 3390
+            },
+            {
+              "accuracy": 0.5310880829015544,
+              "bin": 5,
+              "confidence": 0.5320390595153979,
+              "n": 386
+            },
+            {
+              "accuracy": 0.6949152542372882,
+              "bin": 6,
+              "confidence": 0.6460634360975909,
+              "n": 59
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 7,
+              "confidence": 0.719417266105396,
+              "n": 5
+            },
+            {
+              "accuracy": null,
+              "bin": 8,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 9,
+              "confidence": null,
+              "n": 0
+            }
+          ],
+          "top_label_ece10": 0.0024329397036017405
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.0004302017035924102,
+                0.00023723982019975936
+              ],
+              "delta": -9.623194337558115e-05,
+              "p_less": 0.28357164283571645
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 328,
+            "n": 12334,
+            "nll": {
+              "ci95": [
+                -0.0015367427444711668,
+                0.000338264309948783
+              ],
+              "delta": -0.0005950353292614874,
+              "p_less": 0.10868913108689131
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -0.0004804477940911515,
+                  0.0006505682533183956
+                ],
+                "delta": 8.689964872304734e-05,
+                "p_less": 0.6105389461053895
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0012995153695722942,
+                  0.0018209165381766386
+                ],
+                "delta": 0.0002613344676615011,
+                "p_less": 0.6172382761723828
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.0006627045103511769,
+                  0.0005695101219822203
+                ],
+                "delta": -5.364778235890408e-05,
+                "p_less": 0.4373562643735626
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0028134622468794983,
+                  0.0004255036536776905
+                ],
+                "delta": -0.001185211231023921,
+                "p_less": 0.07789221077892211
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.0005395683211929996,
+                  0.000430525790749205
+                ],
+                "delta": -6.066456321298342e-05,
+                "p_less": 0.40455954404559547
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0015096708324532607,
+                  0.0009232014947977979
+                ],
+                "delta": -0.0003013659069084255,
+                "p_less": 0.3204679532046795
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.37514188422247446,
+            "brier_multiclass": 0.7239842337354446,
+            "log_loss": 1.4845720660314468,
+            "n": 12334,
+            "top_label_ece10": 0.005762532508756453
+          },
+          "1": {
+            "accuracy": 0.37635803470082696,
+            "brier_multiclass": 0.7235512742817426,
+            "log_loss": 1.4825578124811825,
+            "n": 12334,
+            "top_label_ece10": 0.007122476808157901
+          },
+          "2": {
+            "accuracy": 0.3740878871412356,
+            "brier_multiclass": 0.7234476657050075,
+            "log_loss": 1.482995944336675,
+            "n": 12334,
+            "top_label_ece10": 0.004506237418468518
+          }
+        }
+      },
+      "periodic": {
+        "ensemble": {
+          "accuracy": 0.38041186962866874,
+          "brier_multiclass": 0.7221780035367238,
+          "classes": [
+            {
+              "brier": 0.22609325285714418,
+              "class": 0,
+              "ece": 0.007323251306234378,
+              "f1": 0.4997223764575236,
+              "observed_rate": 0.36160207556348306,
+              "precision": 0.38664539094145084,
+              "predicted_count": 8147,
+              "predicted_rate": 0.3550617741758952,
+              "recall": 0.7062780269058296,
+              "support": 4460
+            },
+            {
+              "brier": 0.19038311093338547,
+              "class": 1,
+              "ece": 0.007516860982657987,
+              "f1": 0.3797506840985102,
+              "observed_rate": 0.27971461002107995,
+              "precision": 0.39929667519181583,
+              "predicted_count": 3128,
+              "predicted_rate": 0.28040649652574656,
+              "recall": 0.3620289855072464,
+              "support": 3450
+            },
+            {
+              "brier": 0.14018677569212115,
+              "class": 2,
+              "ece": 0.0033497719534422263,
+              "f1": 0.17993079584775087,
+              "observed_rate": 0.17553105237554728,
+              "precision": 0.28205128205128205,
+              "predicted_count": 1014,
+              "predicted_rate": 0.17837128756421528,
+              "recall": 0.13210161662817552,
+              "support": 2165
+            },
+            {
+              "brier": 0.10316735172171793,
+              "class": 3,
+              "ece": 0.004708280568992032,
+              "f1": 0.009265387160820648,
+              "observed_rate": 0.11885844008431977,
+              "precision": 0.15555555555555556,
+              "predicted_count": 45,
+              "predicted_rate": 0.11595204564480698,
+              "recall": 0.0047748976807639835,
+              "support": 1466
+            },
+            {
+              "brier": 0.03507673564323069,
+              "class": 4,
+              "ece": 0.0039176767371640105,
+              "f1": 0.0,
+              "observed_rate": 0.036646667747689314,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.04056434448485333,
+              "recall": 0.0,
+              "support": 452
+            },
+            {
+              "brier": 0.010879637244339116,
+              "class": 5,
+              "ece": 0.0012609146477761662,
+              "f1": 0.0,
+              "observed_rate": 0.011026431003729529,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.012287345651505695,
+              "recall": 0.0,
+              "support": 136
+            },
+            {
+              "brier": 0.0006485126797779934,
+              "class": 6,
+              "ece": 0.0004713724787123721,
+              "f1": 0.0,
+              "observed_rate": 0.0006486135884546781,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0011199860671670502,
+              "recall": 0.0,
+              "support": 8
+            },
+            {
+              "brier": 0.00795069400243442,
+              "class": 7,
+              "ece": 0.0005225320464608951,
+              "f1": 0.0,
+              "observed_rate": 0.008026593157126642,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008549125203587537,
+              "recall": 0.0,
+              "support": 99
+            },
+            {
+              "brier": 0.0032244252215579724,
+              "class": 8,
+              "ece": 0.0006128280866284416,
+              "f1": 0.0,
+              "observed_rate": 0.0032430679422733905,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.002630239855644949,
+              "recall": 0.0,
+              "support": 40
+            },
+            {
+              "brier": 0.004567507541014934,
+              "class": 9,
+              "ece": 0.0003549063102811635,
+              "f1": 0.0,
+              "observed_rate": 0.004702448516296417,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.00505735482657758,
+              "recall": 0.0,
+              "support": 58
+            }
+          ],
+          "log_loss": 1.4798815176345572,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10686692435646053,
+          "n": 12334,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.27357320099255583,
+              "bin": 2,
+              "confidence": 0.27910453922842204,
+              "n": 1612
+            },
+            {
+              "accuracy": 0.35707817687896165,
+              "bin": 3,
+              "confidence": 0.35176310676179756,
+              "n": 6626
+            },
+            {
+              "accuracy": 0.44591549295774646,
+              "bin": 4,
+              "confidence": 0.438324995641405,
+              "n": 3550
+            },
+            {
+              "accuracy": 0.5256410256410257,
+              "bin": 5,
+              "confidence": 0.5319263877614563,
+              "n": 468
+            },
+            {
+              "accuracy": 0.6901408450704225,
+              "bin": 6,
+              "confidence": 0.6335672453828199,
+              "n": 71
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 7,
+              "confidence": 0.7204433355271994,
+              "n": 7
+            },
+            {
+              "accuracy": null,
+              "bin": 8,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 9,
+              "confidence": null,
+              "n": 0
+            }
+          ],
+          "top_label_ece10": 0.006485779877334909
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.00147522622406023,
+                -0.00016675712044766233
+              ],
+              "delta": -0.0008194543254041477,
+              "p_less": 0.006799320067993201
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 328,
+            "n": 12334,
+            "nll": {
+              "ci95": [
+                -0.003358912441062756,
+                -0.0002049133977313791
+              ],
+              "delta": -0.0017813607576331414,
+              "p_less": 0.014098590140985901
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -0.0021149054894028427,
+                  -0.00011193855335381349
+                ],
+                "delta": -0.0011265521051249108,
+                "p_less": 0.013498650134986502
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.004883699322003216,
+                  2.2477656269739204e-05
+                ],
+                "delta": -0.0024351543220370187,
+                "p_less": 0.025997400259974
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.001022112273260138,
+                  0.0007039387679642365
+                ],
+                "delta": -0.00016110894866111158,
+                "p_less": 0.3565643435656434
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.002700650177705142,
+                  0.0016523019002345255
+                ],
+                "delta": -0.0005462237852656097,
+                "p_less": 0.3113688631136886
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.001626720727958192,
+                  0.00021721424943656808
+                ],
+                "delta": -0.000690173364920182,
+                "p_less": 0.0735926407359264
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0038072366437860512,
+                  0.00034049804455813345
+                ],
+                "delta": -0.0017172063941461844,
+                "p_less": 0.055894410558944105
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.38227663369547593,
+            "brier_multiclass": 0.7227707819815966,
+            "log_loss": 1.4818755772417485,
+            "n": 12334,
+            "top_label_ece10": 0.00982668416305587
+          },
+          "1": {
+            "accuracy": 0.37700664828928165,
+            "brier_multiclass": 0.7234438131154403,
+            "log_loss": 1.483196799926941,
+            "n": 12334,
+            "top_label_ece10": 0.006304508805001135
+          },
+          "2": {
+            "accuracy": 0.3817901735041349,
+            "brier_multiclass": 0.7228181569033004,
+            "log_loss": 1.4815801038494372,
+            "n": 12334,
+            "top_label_ece10": 0.004354314332246817
+          }
+        }
+      },
+      "residual": {
+        "ensemble": {
+          "accuracy": 0.375385114318145,
+          "brier_multiclass": 0.7231232801925334,
+          "classes": [
+            {
+              "brier": 0.226741572872259,
+              "class": 0,
+              "ece": 0.018581677949743705,
+              "f1": 0.474025974025974,
+              "observed_rate": 0.36160207556348306,
+              "precision": 0.3894175317185698,
+              "predicted_count": 6936,
+              "predicted_rate": 0.34317065469528235,
+              "recall": 0.6056053811659193,
+              "support": 4460
+            },
+            {
+              "brier": 0.19079386349884947,
+              "class": 1,
+              "ece": 0.01288952666023842,
+              "f1": 0.4146341463414634,
+              "observed_rate": 0.27971461002107995,
+              "precision": 0.38202247191011235,
+              "predicted_count": 4094,
+              "predicted_rate": 0.2904120360677395,
+              "recall": 0.4533333333333333,
+              "support": 3450
+            },
+            {
+              "brier": 0.1401707470790681,
+              "class": 2,
+              "ece": 0.009025473980147051,
+              "f1": 0.20982272595175822,
+              "observed_rate": 0.17553105237554728,
+              "precision": 0.2829153605015674,
+              "predicted_count": 1276,
+              "predicted_rate": 0.18449955539967636,
+              "recall": 0.16674364896073904,
+              "support": 2165
+            },
+            {
+              "brier": 0.10307412646784953,
+              "class": 3,
+              "ece": 0.005100830437098759,
+              "f1": 0.00535475234270415,
+              "observed_rate": 0.11885844008431977,
+              "precision": 0.14285714285714285,
+              "predicted_count": 28,
+              "predicted_rate": 0.11390771830551061,
+              "recall": 0.002728512960436562,
+              "support": 1466
+            },
+            {
+              "brier": 0.03507638472215867,
+              "class": 4,
+              "ece": 0.0026636434959981543,
+              "f1": 0.0,
+              "observed_rate": 0.036646667747689314,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.03931031124368747,
+              "recall": 0.0,
+              "support": 452
+            },
+            {
+              "brier": 0.010882967077119889,
+              "class": 5,
+              "ece": 0.0007893141289470069,
+              "f1": 0.0,
+              "observed_rate": 0.011026431003729529,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011815745132676535,
+              "recall": 0.0,
+              "support": 136
+            },
+            {
+              "brier": 0.0006485167519286926,
+              "class": 6,
+              "ece": 0.00037918528071780575,
+              "f1": 0.0,
+              "observed_rate": 0.0006486135884546781,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.001027798869172484,
+              "recall": 0.0,
+              "support": 8
+            },
+            {
+              "brier": 0.007946210230560398,
+              "class": 7,
+              "ece": 0.00025757457743653955,
+              "f1": 0.0,
+              "observed_rate": 0.008026593157126642,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008284167734563181,
+              "recall": 0.0,
+              "support": 99
+            },
+            {
+              "brier": 0.003222707940456854,
+              "class": 8,
+              "ece": 0.0006753314283017395,
+              "f1": 0.0,
+              "observed_rate": 0.0032430679422733905,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.002567736513971651,
+              "recall": 0.0,
+              "support": 40
+            },
+            {
+              "brier": 0.004566183552282871,
+              "class": 9,
+              "ece": 0.00030182752142336906,
+              "f1": 0.0,
+              "observed_rate": 0.004702448516296417,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.005004276037719786,
+              "recall": 0.0,
+              "support": 58
+            }
+          ],
+          "log_loss": 1.481009190136472,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.11038375986618998,
+          "n": 12334,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.29305312317571514,
+              "bin": 2,
+              "confidence": 0.27919740028183554,
+              "n": 1713
+            },
+            {
+              "accuracy": 0.34872775408148254,
+              "bin": 3,
+              "confidence": 0.3509730302689183,
+              "n": 6799
+            },
+            {
+              "accuracy": 0.4467774861475649,
+              "bin": 4,
+              "confidence": 0.43595240393327533,
+              "n": 3429
+            },
+            {
+              "accuracy": 0.5337423312883436,
+              "bin": 5,
+              "confidence": 0.5305643291733897,
+              "n": 326
+            },
+            {
+              "accuracy": 0.7419354838709677,
+              "bin": 6,
+              "confidence": 0.645486810932401,
+              "n": 62
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 7,
+              "confidence": 0.7187977206840086,
+              "n": 5
+            },
+            {
+              "accuracy": null,
+              "bin": 8,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 9,
+              "confidence": null,
+              "n": 0
+            }
+          ],
+          "top_label_ece10": 0.006854349832709294
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.0004941128222289901,
+                0.0007626827421124983
+              ],
+              "delta": 0.0001258223304054293,
+              "p_less": 0.6524347565243476
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 328,
+            "n": 12334,
+            "nll": {
+              "ci95": [
+                -0.002236249310129105,
+                0.0009384787595220833
+              ],
+              "delta": -0.0006536882557187437,
+              "p_less": 0.20637936206379362
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -0.000245158592209767,
+                  0.0015624788043854065
+                ],
+                "delta": 0.000649289453704413,
+                "p_less": 0.9178082191780822
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0019576525442253205,
+                  0.002628044362898478
+                ],
+                "delta": 0.0002881203944471978,
+                "p_less": 0.5853414658534146
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.0007800986903862284,
+                  0.0010942971414984448
+                ],
+                "delta": 0.00014739801409952336,
+                "p_less": 0.6295370462953704
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0028488071936008446,
+                  0.00217466416887806
+                ],
+                "delta": -0.0003377665199664827,
+                "p_less": 0.3982601739826017
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.0001845605166814618,
+                  0.0012289799486941478
+                ],
+                "delta": 0.000529102049959994,
+                "p_less": 0.928007199280072
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 328,
+              "n": 12334,
+              "nll": {
+                "ci95": [
+                  -0.0011126417753803551,
+                  0.0025323972115693406
+                ],
+                "delta": 0.0006998224733995858,
+                "p_less": 0.7744225577442255
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.3714934327874169,
+            "brier_multiclass": 0.7245466235404262,
+            "log_loss": 1.4845988519582325,
+            "n": 12334,
+            "top_label_ece10": 0.004651878222811122
+          },
+          "1": {
+            "accuracy": 0.3764391113993838,
+            "brier_multiclass": 0.7237523200782008,
+            "log_loss": 1.4834052571922398,
+            "n": 12334,
+            "top_label_ece10": 0.00452795103872282
+          },
+          "2": {
+            "accuracy": 0.3710069725960759,
+            "brier_multiclass": 0.7240374323181805,
+            "log_loss": 1.4839971327169825,
+            "n": 12334,
+            "top_label_ece10": 0.006031481614669546
+          }
+        }
+      }
+    },
+    "mlb_dev": {
+      "block": {
+        "ensemble": {
+          "accuracy": 0.3758809961471957,
+          "brier_multiclass": 0.7248389759762033,
+          "classes": [
+            {
+              "brier": 0.22382841306947807,
+              "class": 0,
+              "ece": 0.0038210670332843324,
+              "f1": 0.4849865383046422,
+              "observed_rate": 0.3537201535988913,
+              "precision": 0.3787972247569623,
+              "predicted_count": 196163,
+              "predicted_rate": 0.3515172472118767,
+              "recall": 0.6739039741706118,
+              "support": 110262
+            },
+            {
+              "brier": 0.19412831865300068,
+              "class": 1,
+              "ece": 0.005452284991297553,
+              "f1": 0.39164529297527445,
+              "observed_rate": 0.28523583589171086,
+              "precision": 0.39434467818254376,
+              "predicted_count": 87705,
+              "predicted_rate": 0.28012681135638634,
+              "recall": 0.3889826124119936,
+              "support": 88914
+            },
+            {
+              "brier": 0.14318474528233271,
+              "class": 2,
+              "ece": 0.002107256519643679,
+              "f1": 0.19135466221205408,
+              "observed_rate": 0.18017714558852307,
+              "precision": 0.29887317552749,
+              "predicted_count": 26446,
+              "predicted_rate": 0.18228440210816674,
+              "recall": 0.14072821151962966,
+              "support": 56165
+            },
+            {
+              "brier": 0.09900691504314231,
+              "class": 3,
+              "ece": 0.004413681459552877,
+              "f1": 0.02023426299131658,
+              "observed_rate": 0.11409240955854755,
+              "precision": 0.26676176890156916,
+              "predicted_count": 1402,
+              "predicted_rate": 0.11850315131469037,
+              "recall": 0.010515956699001827,
+              "support": 35565
+            },
+            {
+              "brier": 0.03610128958104127,
+              "class": 4,
+              "ece": 0.0013505020012437039,
+              "f1": 0.0,
+              "observed_rate": 0.037780579428399116,
+              "precision": 0.0,
+              "predicted_count": 2,
+              "predicted_rate": 0.03913108142964282,
+              "recall": 0.0,
+              "support": 11777
+            },
+            {
+              "brier": 0.011474036528826906,
+              "class": 5,
+              "ece": 0.0001858322979240611,
+              "f1": 0.0,
+              "observed_rate": 0.011622572749349578,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011436740451425516,
+              "recall": 0.0,
+              "support": 3623
+            },
+            {
+              "brier": 0.000871720305753573,
+              "class": 6,
+              "ece": 0.00016029492397070838,
+              "f1": 0.0,
+              "observed_rate": 0.0008725751553472496,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.001032870079317958,
+              "recall": 0.0,
+              "support": 272
+            },
+            {
+              "brier": 0.00862101051446265,
+              "class": 7,
+              "ece": 0.0005833874573397679,
+              "f1": 0.0,
+              "observed_rate": 0.00871612756278852,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008132740105448752,
+              "recall": 0.0,
+              "support": 2717
+            },
+            {
+              "brier": 0.002826357335924942,
+              "class": 8,
+              "ece": 0.00013647446572050706,
+              "f1": 0.0,
+              "observed_rate": 0.0028358692548785614,
+              "precision": 0.0,
+              "predicted_count": 1,
+              "predicted_rate": 0.002706470998548522,
+              "recall": 0.0,
+              "support": 884
+            },
+            {
+              "brier": 0.0047961696622401745,
+              "class": 9,
+              "ece": 0.00018175373293216336,
+              "f1": 0.0,
+              "observed_rate": 0.004946731211564187,
+              "precision": 0.0,
+              "predicted_count": 2,
+              "predicted_rate": 0.00512848494449635,
+              "recall": 0.0,
+              "support": 1542
+            }
+          ],
+          "log_loss": 1.4877021167835152,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10882207564832873,
+          "n": 311721,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.0,
+              "bin": 1,
+              "confidence": 0.1913875540208229,
+              "n": 5
+            },
+            {
+              "accuracy": 0.28007903981264637,
+              "bin": 2,
+              "confidence": 0.27872619942297977,
+              "n": 40992
+            },
+            {
+              "accuracy": 0.3528025696499274,
+              "bin": 3,
+              "confidence": 0.3523806035458884,
+              "n": 165937
+            },
+            {
+              "accuracy": 0.4360171225679427,
+              "bin": 4,
+              "confidence": 0.4384209080649868,
+              "n": 90407
+            },
+            {
+              "accuracy": 0.5263779527559055,
+              "bin": 5,
+              "confidence": 0.5319524817565187,
+              "n": 12700
+            },
+            {
+              "accuracy": 0.6113002042205582,
+              "bin": 6,
+              "confidence": 0.6367714820694109,
+              "n": 1469
+            },
+            {
+              "accuracy": 0.6564102564102564,
+              "bin": 7,
+              "confidence": 0.7251819094215687,
+              "n": 195
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 8,
+              "confidence": 0.8598457360010929,
+              "n": 6
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 9,
+              "confidence": 0.9239995197711736,
+              "n": 10
+            }
+          ],
+          "top_label_ece10": 0.0014980595598363226
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.00019633011232471747,
+                -3.9376641734563185e-05
+              ],
+              "delta": -0.00011831735013619173,
+              "p_less": 0.0016998300169983002
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 1161,
+            "n": 311721,
+            "nll": {
+              "ci95": [
+                -0.0005943410345996332,
+                -0.0001631753384637445
+              ],
+              "delta": -0.00037600680896810037,
+              "p_less": 0.00039996000399960006
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -4.598812340160195e-05,
+                  0.000205784167930845
+                ],
+                "delta": 8.127909298147627e-05,
+                "p_less": 0.8974102589741025
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.00023772318234599937,
+                  0.00045332731516281355
+                ],
+                "delta": 0.00011691871361490993,
+                "p_less": 0.7495250474952505
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.00035160584796725127,
+                  -0.0001056807013790739
+                ],
+                "delta": -0.00022801995815683413,
+                "p_less": 0.00019998000199980003
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.0011250473448768455,
+                  -0.0004612197942255511
+                ],
+                "delta": -0.0007893889845501291,
+                "p_less": 9.999000099990002e-05
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.0001338269975613993,
+                  7.372728860528555e-05
+                ],
+                "delta": -2.9572185477451747e-05,
+                "p_less": 0.28887111288871115
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.00020538885833647148,
+                  0.00034155684281392474
+                ],
+                "delta": 6.701660255545155e-05,
+                "p_less": 0.6854314568543146
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.3741550938178692,
+            "brier_multiclass": 0.7257359379171194,
+            "log_loss": 1.4906065672728612,
+            "n": 311721,
+            "top_label_ece10": 0.0027914441172796687
+          },
+          "1": {
+            "accuracy": 0.3751303248738455,
+            "brier_multiclass": 0.7256814969980927,
+            "log_loss": 1.4900251319666211,
+            "n": 311721,
+            "top_label_ece10": 0.007869472548193455
+          },
+          "2": {
+            "accuracy": 0.37479990119369566,
+            "brier_multiclass": 0.7252954270884532,
+            "log_loss": 1.4894273942412208,
+            "n": 311721,
+            "top_label_ece10": 0.0017913467733283912
+          }
+        }
+      },
+      "control": {
+        "ensemble": {
+          "accuracy": 0.37552811648878326,
+          "brier_multiclass": 0.7249572933263394,
+          "classes": [
+            {
+              "brier": 0.22386294191290848,
+              "class": 0,
+              "ece": 0.0026846209171944085,
+              "f1": 0.4857765780730897,
+              "observed_rate": 0.3537201535988913,
+              "precision": 0.3781735888705913,
+              "predicted_count": 197962,
+              "predicted_rate": 0.35252005278105025,
+              "recall": 0.678964647838784,
+              "support": 110262
+            },
+            {
+              "brier": 0.19415530293500247,
+              "class": 1,
+              "ece": 0.0045763074675942905,
+              "f1": 0.3890888856081856,
+              "observed_rate": 0.28523583589171086,
+              "precision": 0.39291284403669724,
+              "predicted_count": 87200,
+              "predicted_rate": 0.28086589715820715,
+              "recall": 0.385338641833682,
+              "support": 88914
+            },
+            {
+              "brier": 0.1432189026537318,
+              "class": 2,
+              "ece": 0.001096188089866514,
+              "f1": 0.18619622103737193,
+              "observed_rate": 0.18017714558852307,
+              "precision": 0.30032100820354296,
+              "predicted_count": 25233,
+              "predicted_rate": 0.18035988130357208,
+              "recall": 0.1349238849817502,
+              "support": 56165
+            },
+            {
+              "brier": 0.09903531854370469,
+              "class": 3,
+              "ece": 0.0037352929927759165,
+              "f1": 0.019301669919757104,
+              "observed_rate": 0.11409240955854755,
+              "precision": 0.2690854119425548,
+              "predicted_count": 1323,
+              "predicted_rate": 0.11782525715067405,
+              "recall": 0.010009841135948263,
+              "support": 35565
+            },
+            {
+              "brier": 0.03609487321368153,
+              "class": 4,
+              "ece": 0.001536447346938794,
+              "f1": 0.0,
+              "observed_rate": 0.037780579428399116,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.039316085412295275,
+              "recall": 0.0,
+              "support": 11777
+            },
+            {
+              "brier": 0.011473516781757235,
+              "class": 5,
+              "ece": 0.00011870753118197776,
+              "f1": 0.0,
+              "observed_rate": 0.011622572749349578,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011741280280531556,
+              "recall": 0.0,
+              "support": 3623
+            },
+            {
+              "brier": 0.0008717584669701069,
+              "class": 6,
+              "ece": 0.00020596237521636348,
+              "f1": 0.0,
+              "observed_rate": 0.0008725751553472496,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.001078537530563613,
+              "recall": 0.0,
+              "support": 272
+            },
+            {
+              "brier": 0.008620864128754277,
+              "class": 7,
+              "ece": 0.0004050887743427545,
+              "f1": 0.0,
+              "observed_rate": 0.00871612756278852,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008311038788445765,
+              "recall": 0.0,
+              "support": 2717
+            },
+            {
+              "brier": 0.0028265830128630584,
+              "class": 8,
+              "ece": 2.510015728132552e-05,
+              "f1": 0.0,
+              "observed_rate": 0.0028358692548785614,
+              "precision": 0.0,
+              "predicted_count": 2,
+              "predicted_rate": 0.002860969412159886,
+              "recall": 0.0,
+              "support": 884
+            },
+            {
+              "brier": 0.004797231676965897,
+              "class": 9,
+              "ece": 0.0001742689709361427,
+              "f1": 0.0,
+              "observed_rate": 0.004946731211564187,
+              "precision": 0.0,
+              "predicted_count": 1,
+              "predicted_rate": 0.00512100018250033,
+              "recall": 0.0,
+              "support": 1542
+            }
+          ],
+          "log_loss": 1.4880781235924834,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10803633546384044,
+          "n": 311721,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.0,
+              "bin": 1,
+              "confidence": 0.1973926513101377,
+              "n": 1
+            },
+            {
+              "accuracy": 0.28029714507671394,
+              "bin": 2,
+              "confidence": 0.2786749019831471,
+              "n": 41192
+            },
+            {
+              "accuracy": 0.3517600980078575,
+              "bin": 3,
+              "confidence": 0.3526126552474846,
+              "n": 165701
+            },
+            {
+              "accuracy": 0.4375055119499074,
+              "bin": 4,
+              "confidence": 0.43800920275463145,
+              "n": 90712
+            },
+            {
+              "accuracy": 0.5219081558273265,
+              "bin": 5,
+              "confidence": 0.5324672693346554,
+              "n": 12347
+            },
+            {
+              "accuracy": 0.6131713554987213,
+              "bin": 6,
+              "confidence": 0.6363387986219625,
+              "n": 1564
+            },
+            {
+              "accuracy": 0.6436170212765957,
+              "bin": 7,
+              "confidence": 0.7255532584675328,
+              "n": 188
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 8,
+              "confidence": 0.8575828431905226,
+              "n": 5
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 9,
+              "confidence": 0.9246939104992683,
+              "n": 11
+            }
+          ],
+          "top_label_ece10": 0.0014036043079653949
+        },
+        "role": "control",
+        "seeds": {
+          "0": {
+            "accuracy": 0.37487689311916744,
+            "brier_multiclass": 0.7256546588241379,
+            "log_loss": 1.4904896485592463,
+            "n": 311721,
+            "top_label_ece10": 0.0020520041989507227
+          },
+          "1": {
+            "accuracy": 0.37448551749801906,
+            "brier_multiclass": 0.7259095169562496,
+            "log_loss": 1.4908145209511714,
+            "n": 311721,
+            "top_label_ece10": 0.007665173958899223
+          },
+          "2": {
+            "accuracy": 0.3751207008831615,
+            "brier_multiclass": 0.7253249992739306,
+            "log_loss": 1.489360377638665,
+            "n": 311721,
+            "top_label_ece10": 0.0010864244693841803
+          }
+        }
+      },
+      "counts": {
+        "ensemble": {
+          "accuracy": 0.37579117223414527,
+          "brier_multiclass": 0.7248847713836659,
+          "classes": [
+            {
+              "brier": 0.22381196677229986,
+              "class": 0,
+              "ece": 0.0034496296888416435,
+              "f1": 0.48612224107557095,
+              "observed_rate": 0.3537201535988913,
+              "precision": 0.378440633445306,
+              "predicted_count": 197965,
+              "predicted_rate": 0.3520684087830928,
+              "recall": 0.6794543904518329,
+              "support": 110262
+            },
+            {
+              "brier": 0.1941514540404226,
+              "class": 1,
+              "ece": 0.006094944226630363,
+              "f1": 0.3890325563871144,
+              "observed_rate": 0.28523583589171086,
+              "precision": 0.3950196501234654,
+              "predicted_count": 86259,
+              "predicted_rate": 0.27955673723823066,
+              "recall": 0.3832242391524394,
+              "support": 88914
+            },
+            {
+              "brier": 0.1432120207397472,
+              "class": 2,
+              "ece": 0.001943176383711233,
+              "f1": 0.18913955609607783,
+              "observed_rate": 0.18017714558852307,
+              "precision": 0.29838833461243286,
+              "predicted_count": 26060,
+              "predicted_rate": 0.1817023623871361,
+              "recall": 0.13844921214279354,
+              "support": 56165
+            },
+            {
+              "brier": 0.09902036618430173,
+              "class": 3,
+              "ece": 0.00458574812611563,
+              "f1": 0.020217309043732094,
+              "observed_rate": 0.11409240955854755,
+              "precision": 0.26099092812281927,
+              "predicted_count": 1433,
+              "predicted_rate": 0.11867815768466318,
+              "recall": 0.010515956699001827,
+              "support": 35565
+            },
+            {
+              "brier": 0.03609633407250448,
+              "class": 4,
+              "ece": 0.0014318169597787394,
+              "f1": 0.0,
+              "observed_rate": 0.037780579428399116,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.03920992891712079,
+              "recall": 0.0,
+              "support": 11777
+            },
+            {
+              "brier": 0.011474141145829885,
+              "class": 5,
+              "ece": 5.2540108145851874e-05,
+              "f1": 0.0,
+              "observed_rate": 0.011622572749349578,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011570032641203726,
+              "recall": 0.0,
+              "support": 3623
+            },
+            {
+              "brier": 0.0008726069383173481,
+              "class": 6,
+              "ece": 0.00017026390808279804,
+              "f1": 0.0,
+              "observed_rate": 0.0008725751553472496,
+              "precision": 0.0,
+              "predicted_count": 1,
+              "predicted_rate": 0.0010428390634300475,
+              "recall": 0.0,
+              "support": 272
+            },
+            {
+              "brier": 0.008620715179793539,
+              "class": 7,
+              "ece": 0.0005419202505323271,
+              "f1": 0.0,
+              "observed_rate": 0.00871612756278852,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008174207312256192,
+              "recall": 0.0,
+              "support": 2717
+            },
+            {
+              "brier": 0.0028277100086320796,
+              "class": 8,
+              "ece": 0.0001095213191214687,
+              "f1": 0.0,
+              "observed_rate": 0.0028358692548785614,
+              "precision": 0.0,
+              "predicted_count": 1,
+              "predicted_rate": 0.0027355404520825783,
+              "recall": 0.0,
+              "support": 884
+            },
+            {
+              "brier": 0.004797456301817226,
+              "class": 9,
+              "ece": 0.00031505430921970404,
+              "f1": 0.0,
+              "observed_rate": 0.004946731211564187,
+              "precision": 0.0,
+              "predicted_count": 2,
+              "predicted_rate": 0.0052617855207838906,
+              "recall": 0.0,
+              "support": 1542
+            }
+          ],
+          "log_loss": 1.487942669482642,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10845116626024953,
+          "n": 311721,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.2775955487523386,
+              "bin": 2,
+              "confidence": 0.27864524053525674,
+              "n": 41157
+            },
+            {
+              "accuracy": 0.35340558862733035,
+              "bin": 3,
+              "confidence": 0.35234403458420904,
+              "n": 165801
+            },
+            {
+              "accuracy": 0.43639353670919606,
+              "bin": 4,
+              "confidence": 0.43830443953675174,
+              "n": 90604
+            },
+            {
+              "accuracy": 0.5231028397240494,
+              "bin": 5,
+              "confidence": 0.5316989222349857,
+              "n": 12466
+            },
+            {
+              "accuracy": 0.6214953271028038,
+              "bin": 6,
+              "confidence": 0.6380675458979699,
+              "n": 1498
+            },
+            {
+              "accuracy": 0.6460674157303371,
+              "bin": 7,
+              "confidence": 0.7252707313676108,
+              "n": 178
+            },
+            {
+              "accuracy": 0.9,
+              "bin": 8,
+              "confidence": 0.8623065297536103,
+              "n": 10
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 9,
+              "confidence": 0.9113050413183997,
+              "n": 7
+            }
+          ],
+          "top_label_ece10": 0.0017304713648876194
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.00015022774724561528,
+                4.045349068498297e-06
+              ],
+              "delta": -7.252194267358223e-05,
+              "p_less": 0.032896710328967106
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 1161,
+            "n": 311721,
+            "nll": {
+              "ci95": [
+                -0.000348429352007604,
+                7.286717951556384e-05
+              ],
+              "delta": -0.00013545410984125975,
+              "p_less": 0.10618938106189381
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -4.6729730447192545e-05,
+                  0.00020870340003444854
+                ],
+                "delta": 8.173212750985352e-05,
+                "p_less": 0.8986101389861014
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.00018999496121178584,
+                  0.00047437040827918097
+                ],
+                "delta": 0.0001421003359646462,
+                "p_less": 0.8021197880211979
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.000278314891503649,
+                  -2.5839161406369177e-05
+                ],
+                "delta": -0.00015034381064158746,
+                "p_less": 0.010698930106989302
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.00094246330402899,
+                  -0.00026544243529839586
+                ],
+                "delta": -0.0006011481054013311,
+                "p_less": 0.00039996000399960006
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.00010040268440412405,
+                  0.00010843629357941112
+                ],
+                "delta": 4.282167367154846e-06,
+                "p_less": 0.527947205279472
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -8.90182783565074e-06,
+                  0.0005309344146490837
+                ],
+                "delta": 0.00026659956839105505,
+                "p_less": 0.9759024097590241
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.37493142906637666,
+            "brier_multiclass": 0.7257363909516478,
+            "log_loss": 1.490631748895211,
+            "n": 311721,
+            "top_label_ece10": 0.0019031904137703105
+          },
+          "1": {
+            "accuracy": 0.37428341369365553,
+            "brier_multiclass": 0.725759173145608,
+            "log_loss": 1.49021337284577,
+            "n": 311721,
+            "top_label_ece10": 0.00989863672130907
+          },
+          "2": {
+            "accuracy": 0.3752650607434212,
+            "brier_multiclass": 0.7253292814412979,
+            "log_loss": 1.4896269772070563,
+            "n": 311721,
+            "top_label_ece10": 0.002023892895880117
+          }
+        }
+      },
+      "periodic": {
+        "ensemble": {
+          "accuracy": 0.3756564363645696,
+          "brier_multiclass": 0.7247288186156685,
+          "classes": [
+            {
+              "brier": 0.2237533213424473,
+              "class": 0,
+              "ece": 0.005529352469796045,
+              "f1": 0.4943286061387415,
+              "observed_rate": 0.3537201535988913,
+              "precision": 0.37546725672049336,
+              "predicted_count": 212410,
+              "predicted_rate": 0.35910598406510286,
+              "recall": 0.7233044929350093,
+              "support": 110262
+            },
+            {
+              "brier": 0.194114613979828,
+              "class": 1,
+              "ece": 0.008847980402829234,
+              "f1": 0.36864781130111707,
+              "observed_rate": 0.28523583589171086,
+              "precision": 0.3989966467567851,
+              "predicted_count": 76344,
+              "predicted_rate": 0.27657205881114566,
+              "recall": 0.34258946847515576,
+              "support": 88914
+            },
+            {
+              "brier": 0.1431978343634634,
+              "class": 2,
+              "ece": 0.003360962002993269,
+              "f1": 0.1689729022660528,
+              "observed_rate": 0.18017714558852307,
+              "precision": 0.3020355767467449,
+              "predicted_count": 21812,
+              "predicted_rate": 0.17734738134047134,
+              "recall": 0.11729724917653343,
+              "support": 56165
+            },
+            {
+              "brier": 0.09898731167977427,
+              "class": 3,
+              "ece": 0.00244370185903305,
+              "f1": 0.016230936819172113,
+              "observed_rate": 0.11409240955854755,
+              "precision": 0.258008658008658,
+              "predicted_count": 1155,
+              "predicted_rate": 0.11653082107820809,
+              "recall": 0.008379024321664558,
+              "support": 35565
+            },
+            {
+              "brier": 0.036096255435790224,
+              "class": 4,
+              "ece": 0.00275698431769858,
+              "f1": 0.0,
+              "observed_rate": 0.037780579428399116,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.040537563746097696,
+              "recall": 0.0,
+              "support": 11777
+            },
+            {
+              "brier": 0.011474803885321745,
+              "class": 5,
+              "ece": 0.0003492157652747376,
+              "f1": 0.0,
+              "observed_rate": 0.011622572749349578,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011971788514624316,
+              "recall": 0.0,
+              "support": 3623
+            },
+            {
+              "brier": 0.000871876482817778,
+              "class": 6,
+              "ece": 0.0002919323593117331,
+              "f1": 0.0,
+              "observed_rate": 0.0008725751553472496,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0011645075146589827,
+              "recall": 0.0,
+              "support": 272
+            },
+            {
+              "brier": 0.008620510789349367,
+              "class": 7,
+              "ece": 0.00013611008839823323,
+              "f1": 0.0,
+              "observed_rate": 0.00871612756278852,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008580017474390286,
+              "recall": 0.0,
+              "support": 2717
+            },
+            {
+              "brier": 0.002824159656319227,
+              "class": 8,
+              "ece": 0.0002339715183818031,
+              "f1": 0.0,
+              "observed_rate": 0.0028358692548785614,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0030698407732603645,
+              "recall": 0.0,
+              "support": 884
+            },
+            {
+              "brier": 0.004788131000557182,
+              "class": 9,
+              "ece": 0.0001733054704762272,
+              "f1": 0.0,
+              "observed_rate": 0.004946731211564187,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.005120036682040415,
+              "recall": 0.0,
+              "support": 1542
+            }
+          ],
+          "log_loss": 1.4873361263805907,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.10481802565250835,
+          "n": 311721,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.27741090012076985,
+              "bin": 2,
+              "confidence": 0.2789302659132637,
+              "n": 38917
+            },
+            {
+              "accuracy": 0.35027746677700433,
+              "bin": 3,
+              "confidence": 0.353188678641508,
+              "n": 164344
+            },
+            {
+              "accuracy": 0.4355053334191831,
+              "bin": 4,
+              "confidence": 0.4383049107615377,
+              "n": 93186
+            },
+            {
+              "accuracy": 0.524031007751938,
+              "bin": 5,
+              "confidence": 0.5327642931169078,
+              "n": 13545
+            },
+            {
+              "accuracy": 0.604381443298969,
+              "bin": 6,
+              "confidence": 0.6342263568659169,
+              "n": 1552
+            },
+            {
+              "accuracy": 0.639751552795031,
+              "bin": 7,
+              "confidence": 0.724050520410784,
+              "n": 161
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 8,
+              "confidence": 0.8265733959405919,
+              "n": 2
+            },
+            {
+              "accuracy": 1.0,
+              "bin": 9,
+              "confidence": 0.937247256493304,
+              "n": 14
+            }
+          ],
+          "top_label_ece10": 0.0031369717053355214
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.00035349267811049637,
+                -9.881930585884658e-05
+              ],
+              "delta": -0.00022847471067103815,
+              "p_less": 0.00019998000199980003
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 1161,
+            "n": 311721,
+            "nll": {
+              "ci95": [
+                -0.0010580997525875147,
+                -0.0004237080445899308
+              ],
+              "delta": -0.0007419972118927302,
+              "p_less": 9.999000099990002e-05
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  -0.00027555409343918744,
+                  0.00012394393670006973
+                ],
+                "delta": -7.56659777804426e-05,
+                "p_less": 0.23447655234476553
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.0013682118870922224,
+                  -0.0003283765251727373
+                ],
+                "delta": -0.0008429164883077784,
+                "p_less": 0.0005999400059994001
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.0007560926777050592,
+                  -0.000418098847476114
+                ],
+                "delta": -0.0005884018152288779,
+                "p_less": 9.999000099990002e-05
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.0021029803118670087,
+                  -0.0012978880759408641
+                ],
+                "delta": -0.0017061043049851762,
+                "p_less": 9.999000099990002e-05
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  2.2679533577817774e-05,
+                  0.00040959212757569547
+                ],
+                "delta": 0.0002157392669873049,
+                "p_less": 0.9849015098490151
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  9.520809513325101e-05,
+                  0.0010427099878252213
+                ],
+                "delta": 0.0005652155385984313,
+                "p_less": 0.9894010598940106
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.3741037658675546,
+            "brier_multiclass": 0.7255789928463576,
+            "log_loss": 1.4896467320709386,
+            "n": 311721,
+            "top_label_ece10": 0.0070627462318337
+          },
+          "1": {
+            "accuracy": 0.3746779973116986,
+            "brier_multiclass": 0.7253211151410207,
+            "log_loss": 1.489108416646186,
+            "n": 311721,
+            "top_label_ece10": 0.003522870991356919
+          },
+          "2": {
+            "accuracy": 0.375069372932847,
+            "brier_multiclass": 0.7255407385409179,
+            "log_loss": 1.4899255931772637,
+            "n": 311721,
+            "top_label_ece10": 0.005616004027513157
+          }
+        }
+      },
+      "residual": {
+        "ensemble": {
+          "accuracy": 0.3757334282900414,
+          "brier_multiclass": 0.7246048990999802,
+          "classes": [
+            {
+              "brier": 0.22378852781105385,
+              "class": 0,
+              "ece": 0.007632081233420826,
+              "f1": 0.47555440860215054,
+              "observed_rate": 0.3537201535988913,
+              "precision": 0.38313844857315527,
+              "predicted_count": 180363,
+              "predicted_rate": 0.3460984851307629,
+              "recall": 0.6267254357802325,
+              "support": 110262
+            },
+            {
+              "brier": 0.19402514636676618,
+              "class": 1,
+              "ece": 0.0021584403713605714,
+              "f1": 0.41133502455078136,
+              "observed_rate": 0.28523583589171086,
+              "precision": 0.38727617609962955,
+              "predicted_count": 100693,
+              "predicted_rate": 0.2867899731948471,
+              "recall": 0.43858110083901297,
+              "support": 88914
+            },
+            {
+              "brier": 0.1431744075390067,
+              "class": 2,
+              "ece": 0.0037596727991579576,
+              "f1": 0.20574279250536573,
+              "observed_rate": 0.18017714558852307,
+              "precision": 0.2952713952713953,
+              "predicted_count": 30030,
+              "predicted_rate": 0.18393681838768103,
+              "recall": 0.15787412089379507,
+              "support": 56165
+            },
+            {
+              "brier": 0.09896731880391182,
+              "class": 3,
+              "ece": 0.0016097472496471505,
+              "f1": 0.00867403314917127,
+              "observed_rate": 0.11409240955854755,
+              "precision": 0.247244094488189,
+              "predicted_count": 635,
+              "predicted_rate": 0.11497719425977487,
+              "recall": 0.004414452411078307,
+              "support": 35565
+            },
+            {
+              "brier": 0.03608478940950839,
+              "class": 4,
+              "ece": 0.0015187711504563361,
+              "f1": 0.0,
+              "observed_rate": 0.037780579428399116,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.03929935057885545,
+              "recall": 0.0,
+              "support": 11777
+            },
+            {
+              "brier": 0.01147223072168976,
+              "class": 5,
+              "ece": 1.3368501144583878e-05,
+              "f1": 0.0,
+              "observed_rate": 0.011622572749349578,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.011635941250494162,
+              "recall": 0.0,
+              "support": 3623
+            },
+            {
+              "brier": 0.0008716748131858778,
+              "class": 6,
+              "ece": 0.00019260019771192216,
+              "f1": 0.0,
+              "observed_rate": 0.0008725751553472496,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.0010651753530591718,
+              "recall": 0.0,
+              "support": 272
+            },
+            {
+              "brier": 0.008620407303125065,
+              "class": 7,
+              "ece": 0.0003440765540780634,
+              "f1": 0.0,
+              "observed_rate": 0.00871612756278852,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.008372051008710456,
+              "recall": 0.0,
+              "support": 2717
+            },
+            {
+              "brier": 0.0028214420608176955,
+              "class": 8,
+              "ece": 3.1679213593431305e-05,
+              "f1": 0.0,
+              "observed_rate": 0.0028358692548785614,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.00280419004128513,
+              "recall": 0.0,
+              "support": 884
+            },
+            {
+              "brier": 0.0047789542709147015,
+              "class": 9,
+              "ece": 7.40895829655335e-05,
+              "f1": 0.0,
+              "observed_rate": 0.004946731211564187,
+              "precision": null,
+              "predicted_count": 0,
+              "predicted_rate": 0.005020820794529721,
+              "recall": 0.0,
+              "support": 1542
+            }
+          ],
+          "log_loss": 1.486263313482586,
+          "macro_f1_class_count": 10,
+          "macro_f1_observed_classes": 0.11013062588074689,
+          "n": 311721,
+          "reliability": [
+            {
+              "accuracy": null,
+              "bin": 0,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 1,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": 0.2785717547143966,
+              "bin": 2,
+              "confidence": 0.27855451656111363,
+              "n": 43802
+            },
+            {
+              "accuracy": 0.3537224980529595,
+              "bin": 3,
+              "confidence": 0.352065165048498,
+              "n": 164352
+            },
+            {
+              "accuracy": 0.440118167106535,
+              "bin": 4,
+              "confidence": 0.437501424067923,
+              "n": 92073
+            },
+            {
+              "accuracy": 0.5312718903232263,
+              "bin": 5,
+              "confidence": 0.5302464119465301,
+              "n": 9993
+            },
+            {
+              "accuracy": 0.6303418803418803,
+              "bin": 6,
+              "confidence": 0.6387575061417451,
+              "n": 1404
+            },
+            {
+              "accuracy": 0.7216494845360825,
+              "bin": 7,
+              "confidence": 0.718252702998716,
+              "n": 97
+            },
+            {
+              "accuracy": null,
+              "bin": 8,
+              "confidence": null,
+              "n": 0
+            },
+            {
+              "accuracy": null,
+              "bin": 9,
+              "confidence": null,
+              "n": 0
+            }
+          ],
+          "top_label_ece10": 0.0017209782888671183
+        },
+        "paired_vs_control": {
+          "ensemble": {
+            "brier": {
+              "ci95": [
+                -0.00047789150693822874,
+                -0.0002249211560209202
+              ],
+              "delta": -0.0003523942263593929,
+              "p_less": 9.999000099990002e-05
+            },
+            "draws": 10000,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "games": 1161,
+            "n": 311721,
+            "nll": {
+              "ci95": [
+                -0.0021349777733624085,
+                -0.0014887979968052822
+              ],
+              "delta": -0.0018148101098974412,
+              "p_less": 9.999000099990002e-05
+            },
+            "seed": 20260924,
+            "status": "measured",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+          },
+          "seeds": {
+            "0": {
+              "brier": {
+                "ci95": [
+                  0.0001397797126911092,
+                  0.0004999410871632708
+                ],
+                "delta": 0.00032120169310859446,
+                "p_less": 0.9999000099990001
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.0008638056148179794,
+                  8.491668983997281e-05
+                ],
+                "delta": -0.00038437017270208335,
+                "p_less": 0.056694330566943306
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "1": {
+              "brier": {
+                "ci95": [
+                  -0.0007306826753507112,
+                  -0.00032581456440821993
+                ],
+                "delta": -0.0005300997285116746,
+                "p_less": 9.999000099990002e-05
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.002720947600222256,
+                  -0.00171851342312539
+                ],
+                "delta": -0.0022214103783634626,
+                "p_less": 9.999000099990002e-05
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            },
+            "2": {
+              "brier": {
+                "ci95": [
+                  -0.00011567602836975535,
+                  0.00017759824490491506
+                ],
+                "delta": 2.9072000314173443e-05,
+                "p_less": 0.6419358064193581
+              },
+              "draws": 10000,
+              "estimand": "pitch-weighted mean paired loss difference",
+              "games": 1161,
+              "n": 311721,
+              "nll": {
+                "ci95": [
+                  -0.0010714587767117407,
+                  -0.00030375583977249103
+                ],
+                "delta": -0.0006955970539438561,
+                "p_less": 0.0004999500049995
+              },
+              "seed": 20260924,
+              "status": "measured",
+              "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+              "uncertainty": "conditional on fixed predictions; whole-game bootstrap"
+            }
+          }
+        },
+        "role": "arm",
+        "seeds": {
+          "0": {
+            "accuracy": 0.3739722379948736,
+            "brier_multiclass": 0.7259758605172466,
+            "log_loss": 1.4901052783865443,
+            "n": 311721,
+            "top_label_ece10": 0.0011700680281782332
+          },
+          "1": {
+            "accuracy": 0.3749859650135859,
+            "brier_multiclass": 0.7253794172277379,
+            "log_loss": 1.4885931105728079,
+            "n": 311721,
+            "top_label_ece10": 0.003892911881797839
+          },
+          "2": {
+            "accuracy": 0.3743507816284434,
+            "brier_multiclass": 0.7253540712742448,
+            "log_loss": 1.4886647805847213,
+            "n": 311721,
+            "top_label_ece10": 0.0014759635258945222
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "protocol": "ml_policy_execution_v1",
+  "experiment_id": "EXP-P8-001",
+  "preparation_sha256": "7f911ad639eccaac3bc703b9f4f4682e501bfe2f43eadec27487e6c6567f10eb",
+  "profile_result_sha256": "63cf00fd6b72ca16ef00f5ac73924f1287f88a717d3e7a62e7bbb09b48b152af",
+  "requested_starts": {
+    "blend": 128,
+    "dev": 128
+  },
+  "search_rollouts": 2,
+  "search_cap": 8,
+  "evaluation_rollouts": 4,
+  "evaluation_cap": 8,
+  "row_budget": 460000,
+  "seconds_budget": 1500,
+  "planning_seed": 701,
+  "evaluation_seed": 1701,
+  "tau_grid": [
+    0.001,
+    0.003,
+    0.01,
+    0.03
+  ],
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 20260924,
+  "registration": {
+    "status": "draft_not_executed",
+    "document": "docs/contracts/ML-POLICY-EXECUTION-REGISTRATION-v1.md",
+    "preparation_config": "configs/EXP-P8-001.yaml",
+    "budget_scope": "row_budget and seconds_budget apply per policy-run stage invocation (one TimedBudget per stage in run_ml_policy.policy_run); sized as 2x the largest extrapolated stage (blend-control)",
+    "stage_order": [
+      "p0-evaluate",
+      "policy-run --split blend --world control",
+      "policy-run --split dev --world control",
+      "policy-run --split dev --world candidate"
+    ],
+    "stage_wall_limit_seconds": 7200,
+    "family_wall_limit_seconds": 14400,
+    "tau_selection": "June blend-control: largest original unpenalized mean defensive WE; exact ties prefer larger tau",
+    "primary_family": "DEV control world: P1-P0, P2-P1, P3-P2; Holm alpha .05",
+    "inference_minimum": "30 distinct games and 50 supported PA starts, else all three Holm slots null",
+    "preliminary_screen": "mean imputed dWE >= 0.0001 (0.01 percentage points) per PA, game-bootstrap lower bound > 0, Holm <= .05",
+    "strong_model_internal": "additionally worst-case mean > 0, both CI lower bounds > 0, Holm over max(imputed_p, worst_case_p) <= .05",
+    "candidate_world": "sensitivity only; not a second success family",
+    "subgroup_report": "docs/contracts/ML-POLICY-SUBGROUP-REPORT-v1.md; descriptive only",
+    "claims": {
+      "observational_ope": null,
+      "causal_effect": null,
+      "policy_adoption": null
+    }
+  }
+}

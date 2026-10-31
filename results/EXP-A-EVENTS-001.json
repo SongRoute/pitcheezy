@@ -1,0 +1,20 @@
+{
+  "experiment_id": "EXP-A-EVENTS-001",
+  "config_sha256": "7c2fd2d98f0631a76bdf922506a36d65893f9682fcf9d3bd85aaf99aacaaa5b4",
+  "code_sha256": "3899dfdb7fc5b24489f0ad8237c69e634745d3b4b7e0de5afd9ae8450bbefbce",
+  "code_commit": "d4392b15bb1e46c9362e239aa830419d1cbea1fd",
+  "source_manifest_sha256": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+  "selected_games_sha256": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+  "output_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-events-v1/event_packets.json",
+  "output_sha256": "a01102ba5c5b06b5e484b2cceb422e9d142e63eed4240e9838000388f2e9a779",
+  "event_count": 115,
+  "event_counts": {
+    "strikeout": 102,
+    "home_run": 13
+  },
+  "observed_substitution_count": 38,
+  "missing_next_state_count": 1,
+  "available_roster_status": "unmeasured",
+  "real_intent_status": "unavailable",
+  "use": "C event linkage and replacement input boundaries, not model training or causal validation"
+}

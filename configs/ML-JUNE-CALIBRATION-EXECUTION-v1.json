@@ -1,0 +1,712 @@
+{
+  "protocol": "ml_june_calibration_execution_v1",
+  "family_id": "ML-JUNE-CALIBRATION-v1",
+  "enabled": true,
+  "code_commit_c": "1002f57ea09d14df279212c68100da755bc573dc",
+  "scientific_config": {
+    "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-v1.json",
+    "sha256": "a0bff3b34079ac736b2dff7c69a29faa5a5268316b53ad06e113945684ba6ab8"
+  },
+  "contract": {
+    "path": "/Users/song/Projects/pitcheezy/docs/contracts/ML-JUNE-CALIBRATION-v1.md",
+    "sha256": "e155315dcf732c55009755443f4db8117f260851273d7c54c760e2f29c701d4c"
+  },
+  "source_hashes": {
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/archetypes.py": "9c248dae916bd7c301883815176a307ff2043b0a7f52b5f39e6b0408caeaae49",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/data.py": "5fb3a385985aecc9db1a1145b2a2ab0d6d9dd34e7faa8c44ca50f7eb79810608",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_benchmark.py": "e468f843f1eb5eae4f5ae22baed5783bcc5a181ea9483da57c1d31c14d6af9ad",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_data.py": "439912ef3adb52bfdbe6916b9fde464dd9fc9ef019e1066b2c32e4571b52d29b",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": "b39b8236aeb904627d531d3201f85a79da33e8c69bbe320b22f1e92e35f2ff83",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_group_metrics.py": "1e718cacbde7c13bf77e7f4ebd53f8cf72696ac9ec0a7e5a60cae9774d06d851",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_june_calibration.py": "4c060b74318b0e9c648b7351ccda928cd686c1240baaa32d2c90c74f9c35c6fb",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_june_calibration_metrics.py": "62c3fc1678bb67bbb4118f3ae7d3302dc02f2be7bb2552c458d083a459c61678",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_metrics.py": "dc54b9105b9c6d94f690550847b858fc732404c0f41739441874c861e29b29e3",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_panel.py": "4292647a83af4798c3b2c520209bbbdb6a571ee9d0558e316c00a42cef1516b8",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_policy_artifacts.py": "a8a0992858372e58e17ca8aa067386a398c457da20e5cb1a93142e55668d2b7c",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/matrix_sharing.py": "30d9b0344bed8f0d8afd9aeb736e5f81e5fb0e98229813423bd2c17669f406b7",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/model.py": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/sequence_data.py": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/pitchmdp/sequence_model.py": "af26aa645d7b6f0df7e8bf7a0d48035883ea8d4bf354106da10afdb58615145b",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/audit_sequence_robustness.py": "2bf038492bb8b150323c5f6479567e30722a4d3f57a9ffc7b45f985e529ab1b7",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/diagnose_sequence_legality.py": "4988e85c0c46d9d839688a86a9c69df16d5fa485c0ff43a46d10ffb390e4b428",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_ml_june_calibration.py": "820ca7c571df2ea7f892d2f00931a4b31697e146aa54beb460e3db4bc7e58e8f",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_sequence_ablations.py": "2a6452b96de9bd641d16827167ecd8ac1f66258a2893b23d64b8d4b0710919eb",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_sequence_calibration.py": "951bada57ea33f34cc5440d9420943df7dc9cb782b27e9359c582e55b5cfa6bc",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_sequence_context_frequency.py": "ad2706c3906109a2a2d74c236b0057a1462af1ff6ab3df94bfbcb47a355b5bb1",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_sequence_frequency_blend.py": "52466d0c9056ae58c3af3dfc80d480c4888fb0b3285c74f73e12a8f563d18e9f",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_sequence_pilot.py": "06f6f41db49a86b4eeaf2c9e558908ea1917478883f0d5cceb2b21878ef415dc",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/run_temporal_blend.py": "e5f66eada969d28531ed0fc4483fe71210a0e60aaf6f8b6d8017c6e8e3e567c4",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp/scripts/score_ml_matrix.py": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112",
+    "/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/scripts/supervise_june_calibration.py": "ef08675deb6adf85a0d52e64b9551e279c42ab769cc4d77050f4beea3d541473",
+    "/Users/song/Projects/pitcheezy/.venv/bin/python": "30b2a6bf9706029b609327ca5db722cd458239df96efc87e1f8e37beed49db2e",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy-2.5.3.dist-info/METADATA": "451a9b8028000588e66b0b415587b6aef0bbc51a96d8e8a0cba0dc23acf64f99",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy-2.5.3.dist-info/RECORD": "d63c795c79f60469898758a7359a06c279a27d5bbee1a0f3751d79fce45ec953",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy-2.5.3.dist-info/WHEEL": "26726246f91715a154e07973ca8a82029674ee3cba86914a77f2e47c1a566739",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_multiarray_tests.cpython-312-darwin.so": "083ab89907471d9d6af7337ae44f6acbde5e5e23ef173394dc6251c925fc08ba",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-darwin.so": "3432cd9093d7e84b4080015b6a889598fea4c305da967063cb916215193bf85d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_operand_flag_tests.cpython-312-darwin.so": "e910e6642301f2f28a986d819a3249d5d1013b2ee6ce4e5e9a95082ecc4d3627",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_rational_tests.cpython-312-darwin.so": "73d0f8c90654dd97fa2b0ed6c45882eb8fe83a8c4256e38bfc31713e5e07841b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_simd.cpython-312-darwin.so": "e78efa667e9cd2d0f319968a7feae06adf7f0945efde8bbcad3bd0f75e199541",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_struct_ufunc_tests.cpython-312-darwin.so": "24218eec682f48246b450903e270be19eca1c6c2d828235ddef29949f2cc8950",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/_umath_tests.cpython-312-darwin.so": "1c55454c29a1a5f500fc22cf095e862b0af0f17e14c2a1fbe7140832c21a0d66",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py": "09b04d56271fa78c43f6aca66ec06c802b0b22b026ae2fa6153575459b6dab53",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/fft/_pocketfft_umath.cpython-312-darwin.so": "51add49e0b523ae7b20a10a879a77e0998afb795d6d233ef8936f0a58ce4e36f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/linalg/_umath_linalg.cpython-312-darwin.so": "dbaefc13a7379c877dee2618ea6f96d69560743d3ad392d57f3a866f1378728d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/linalg/lapack_lite.cpython-312-darwin.so": "a7895a9c0d4afdf3fbbdc2456e016590aa0fbd8d7e203079debee39bd0269b5c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_bounded_integers.cpython-312-darwin.so": "1215997585debe5651a77a52563dc32508e67414ef35761c49afa150ce1f8e1f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_common.cpython-312-darwin.so": "884ecb8d16bbb1572816a89fff6b2b5722bb8210273ff744ec0db5c0496de5fd",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_generator.cpython-312-darwin.so": "87a6dfcf15b6107936915f76e1a52b00d68f2e539169aee194af7a3e5bbacc1b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_mt19937.cpython-312-darwin.so": "9779d38f6e586d845f2ee652959f3edf1acb44fbeff6f4ee16ec7fb58f23dd6d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_pcg64.cpython-312-darwin.so": "39fbdcf07c23901f4ae0b6ab3be3e05829a83495819a69cda8ddbd11d06ff136",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_philox.cpython-312-darwin.so": "5a74868b1a98c3d0a776cf275c88959871376bab0ff15ef0d882229ddd5a2a56",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/_sfc64.cpython-312-darwin.so": "6bb290611b7fa2304d28f3c8ddb0156f435ead1aa0f5a997ddfe4e8a6762c200",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/bit_generator.cpython-312-darwin.so": "88bbb27d3f58e12c9be2ff6af6eff4e409599a3e6cece3b4144d4aa8878b149b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/numpy/random/mtrand.cpython-312-darwin.so": "0e52c63a090850119f67a570ae2fd094861fcff3a0bad00cbf3a0c86faa82510",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas-3.0.5.dist-info/METADATA": "119bd5541f4e2d413f440c82ad75b7b0457602f368b4b02efb467297c3c4a5b1",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas-3.0.5.dist-info/RECORD": "60989779d7ebb1a11d3ed0e127a89603606d109073039cfc0f8c9135f7775f61",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas-3.0.5.dist-info/WHEEL": "1a77459ac1909217ac24c074f71779c72d4915ac0a2650d9b7a00c320a89f8fc",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/_cyutility.cpython-312-darwin.so": "82131ec3558187298439e8daec670515e01e2a9dfdb960729f5b14b52d444300",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/algos.cpython-312-darwin.so": "b96d9039f4e609fca4e20ceaa72d9d78d446529c2e82337365ca538f5f0ba6c1",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/arrays.cpython-312-darwin.so": "98bc678064a1b8237d057864d10a61245632ef48df8b1f9ae1a5ae595cc42cb5",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/byteswap.cpython-312-darwin.so": "cf09bdbc6513e8a4606a808677034241ad276f14552cd2aeb77b145bbc73cb08",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/groupby.cpython-312-darwin.so": "85804a2a00f0fbb050956394ef6fa1702e498e9995f51f1cd1ab116096122b90",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/hashing.cpython-312-darwin.so": "8de1bec8008c9b44fa7f8871ef8131093f401c66837fb91ff272c08327c0d9fe",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/hashtable.cpython-312-darwin.so": "5c732b8e8b91b557a4bd21195529d86df11f00396bdd649089d6933620d6853f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/index.cpython-312-darwin.so": "faea00e3988119a541188fa9cead201cdca9f53138f4adabf3091f66e4c2f618",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/indexing.cpython-312-darwin.so": "0bcd71e18f8d39cd305faa4417bdac1e21f15f4c7c938cbcb5757889e93fac98",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/internals.cpython-312-darwin.so": "325eed839290936007276233cac1be2bb1fdb84979a7d12159cb126d3f708170",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/interval.cpython-312-darwin.so": "144f9c44b243c111b6d7bf133e7b49c050c9f5ff58b29996af190132313f2850",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/join.cpython-312-darwin.so": "8efdf6a73ccad5b23e50494cf3178235d833d174e9992c98577dd29ff988b010",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/json.cpython-312-darwin.so": "49a0848878d8824c2b271563c80c4a3db34072f97f5f30b99658cb521c71d92a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/lib.cpython-312-darwin.so": "03d2a17ed2f5f05f82f9ff524e6183f0c28e0c535d972345394636d4c41c9847",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/missing.cpython-312-darwin.so": "3628f4f28b63cbf913e7b0760b169b953f34f5c5916d51194c5647bd5bc05d35",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/ops.cpython-312-darwin.so": "36465c37f9406e9996dad7685a1d36883441b5d2ee99fe3afe8a8892e9a8158e",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/ops_dispatch.cpython-312-darwin.so": "266ad856ae4d19c4ebcf9e73615620e4cb71b966d2ff72e1ed7dfc7c55e50a32",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/pandas_datetime.cpython-312-darwin.so": "b1558cbd0227172b3f28739371961a92b0af91ccf1079dcf1bba623da02f833a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/pandas_parser.cpython-312-darwin.so": "9c88cb23ddfbeb56a88e1d576ad2d54dae6dffe5996842b8d2ad75be7001d127",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/parsers.cpython-312-darwin.so": "dd53eceddca086e4c9da45f64f4a6651dca614a8b6fddddcd4a302c0990ee39e",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/properties.cpython-312-darwin.so": "e53fa042da3387a0abb7bef9e8156074043518aea04eab5c27b5b1e0f603ea11",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/reshape.cpython-312-darwin.so": "2d6417f75a5ccd42a42027463904326ed94382186d5aba8f7fcf143e0a192c3e",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/sas.cpython-312-darwin.so": "4240b01a63948be1074bb3222ddc03706c0b83905caef37447387dc94a2309fc",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/sparse.cpython-312-darwin.so": "23b2cc6a756bc2530dca388e4e80a95497df788a1afcac8e3496a638f3d895a7",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/testing.cpython-312-darwin.so": "e7ad0340d02cf399a60dd430938e9af6b16610769add20785636c8f9297cd42a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslib.cpython-312-darwin.so": "bd55964878e67f1c8f149de1cecc99dceca1ff3c5c959b68f6bd0a7ec534dd4b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/base.cpython-312-darwin.so": "6ea3762523ff28cc2cb67deb56374ae36ad32c1e2bc0fd2e6f37a61e66f8ed91",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/ccalendar.cpython-312-darwin.so": "70c4303d83655c00d23cbde2977d747b7e6f261038e26feb442e306f7ac2bfaf",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/conversion.cpython-312-darwin.so": "c35bf2c7e93c9b14353110c5bbe786e465761249ec45022b0b8ad63d4685eb0d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/dtypes.cpython-312-darwin.so": "68469fb5dd0a07da8c64e8f39aec79129a01a3383a5ea64eb87835825b1e86c8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/fields.cpython-312-darwin.so": "76d81ba885449ce0eaffe3832c3f764dfece4da968fb1af356ebb80bdc4f73ee",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/nattype.cpython-312-darwin.so": "89334667c69b4ed9cdc18bb85356edb0edc3b907e1b143561465700b9c45328b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/np_datetime.cpython-312-darwin.so": "84e175d7756b0f711bd276e3098f960c5794ffdb1e013977dcf1367d6930acce",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/offsets.cpython-312-darwin.so": "04e1d262318b332a1d00b21062f1734858204b92bcf2dfaabf0887dacdd2d8b1",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/parsing.cpython-312-darwin.so": "b1f92a55c4b06c61ff3ac574a1c2cd28a77e690d91e3ad72725e122192945e13",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/period.cpython-312-darwin.so": "53915ff092c29b4fbeb9ebee1eee6b3eadd17a85f6fa278c1f0d69a74833970b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/strptime.cpython-312-darwin.so": "33c751cc22f51a67a06162e3c80e22ff19b5e00d94adbf69223bc29b9aea4f21",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/timedeltas.cpython-312-darwin.so": "507e731f2c22ad6fad2719602c925f4afa2dd709146e9ead85fa3ec5f7fa1f9b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/timestamps.cpython-312-darwin.so": "4acec2bcb241a78927127897e37e4e3bcc7d6ffd6b8f16c49407d29004812e9c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/timezones.cpython-312-darwin.so": "ba8a73a9307c00f5d72daec24e65ba092b7d9c4566b4a8126c925ef8071339b0",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/tzconversion.cpython-312-darwin.so": "f76480db5930b0139351b513e39eec79f286abcf4da31adc11f6eb85e384fedd",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/tslibs/vectorized.cpython-312-darwin.so": "4cc4c8c68aeef4d0248592602cda5b4b46e1ea3e190d5808aae0a19289497cbe",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/window/aggregations.cpython-312-darwin.so": "88e9bbf0d493ca3369252d25776accc3cebecfa6d8f52581273c2640a5fdc516",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/window/indexers.cpython-312-darwin.so": "caad6a646b8b6413229433b364404eb7f174555289df804144cb47d103ce4261",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/_libs/writers.cpython-312-darwin.so": "2f317c77648411e8432db92e3551b09b7e470d432b08933c74197f45bb31fa93",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pandas/io/parquet.py": "fe2991ff93fd8cb8bd13f75d7bed1cfe63e42c9a0779e58f426ed8f74f2a56e9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow-25.0.1.dist-info/METADATA": "12ed8d0988a6f7153fec923ee47b7fc1d6134463a86b1b89fa36f24c250163ff",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow-25.0.1.dist-info/RECORD": "1cbd6a24e72dbd1d7a54bc926eedba28bea38d51ed8036f35f32c2942ff30af7",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow-25.0.1.dist-info/WHEEL": "b2b7c32d132e328b671a2f09cf5cbf67ffd6038cceaeda61f8ba4080f9dee494",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_acero.cpython-312-darwin.so": "772b39e293dd7d6acd4e4e63715d7ba1637d9577c3866f27d59b53afa8ecb214",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_azurefs.cpython-312-darwin.so": "7182694e3ef929f976759b1764439be5e0bd0fcc994ccdef2a77919e1ea99ffa",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_compute.cpython-312-darwin.so": "37ec7ccffdcfd1b06c44dc20a9274072769c5cc4e114c812a7ee0dd77a7155db",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_csv.cpython-312-darwin.so": "f64c390eebafa5c4aad23f1e64cc8a3b48a8db3d9f95bb8a18deade6c994cb92",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_dataset.cpython-312-darwin.so": "392cd9caa6e80541c1e68785642d0fa59fb72b13a57c33ed73c1016820092b5c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_dataset_orc.cpython-312-darwin.so": "a86e0a135fbe0b85f0a18ad7c05a45ec23f5ad821765b6f2a6305e8ae6d22a54",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_dataset_parquet.cpython-312-darwin.so": "4c11baafb4c51605cbcb4dbbe94d04234cdcad4055d9f87f9ddd2bdb34dd57df",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_dataset_parquet_encryption.cpython-312-darwin.so": "98e372d2f14b05a50d14666b82c5d6fec79bb67f5d5431fc511d4fa9fd199e7b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_feather.cpython-312-darwin.so": "c089040d863206b5f42c0654cb89ca948e561a31b19128c2678ab653026cb475",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_flight.cpython-312-darwin.so": "13297db08a8ea63b84ded451c4f707909018a7f9b6677dba9185a42b54170e5b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_fs.cpython-312-darwin.so": "378da9b85e119ec55e5ff500ec0b93aeddc496ed1a8b9a6bf897793c2bc46456",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_gcsfs.cpython-312-darwin.so": "d9422b43d5a37232a1a5552515836eb2fa5aa8a97c70dd9aba37834f75369e48",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_hdfs.cpython-312-darwin.so": "db6215afcd72e1ea3db88f58559690c1c440c92e8e68ab30c3f3e9c58cf44fd3",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_json.cpython-312-darwin.so": "9f6763410f692348ff371427677160aad506987d0556a4ba501cc84e845fffa7",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_orc.cpython-312-darwin.so": "8af9de12b8d59cede5a6e9e23122721a318dff38e5c67d46d6ce4c3d1321f7d1",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_parquet.cpython-312-darwin.so": "62a055dd1155f3d2ee0622a4948661ee7ef4cc877b17450ae28ef9d65525d0d2",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_parquet_encryption.cpython-312-darwin.so": "def92467f88f7a86d3af5b080a865f62c94e763af05fb5bff134abc3b2515c23",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_pyarrow_cpp_tests.cpython-312-darwin.so": "48c100b4b7f6f0cfef6ff93582e104e448245dcc396175b4bc4b081a69d4ceda",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_s3fs.cpython-312-darwin.so": "21cb3bad32b7919ad874527bb2a97e41facb8a175e936812dbe59f4768717944",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/_substrait.cpython-312-darwin.so": "79ee04a15ae2e460bba17dd3988295be99d54811e985b0743740129db9b3fa44",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/lib.cpython-312-darwin.so": "c6b7d2ec76cf2bba27fdbbeee091c93d4b13b8a7df50c9e7452935d2022918cd",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow.2500.dylib": "62e92d48029f44fd08c7ce637071bebdedc05af8e499baa1788ecbfda9ee25e7",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_acero.2500.dylib": "65dd12d418e4bf1edb1ab7e9eb1430f9367805676597d712814b24f7f01877aa",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_compute.2500.dylib": "689b7d2606cdeda727101d9742f47c8cccfa512b3c9f47d5c1f089182a6bcbc4",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_dataset.2500.dylib": "4c26ab9f42fc477d5b73a0322e6f63b556c1f32fd23744b049e61cf4607f71cd",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_flight.2500.dylib": "da6e600fdd3244ab039536d8fd30fe4bb483068f0d6be0aee84deb2747940c69",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python.2500.1.0.dylib": "d7af0ced2fc5cf34f755932f6dce50539be9cb048d7b0dfbb5ea589b09b3d657",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python.2500.dylib": "d7af0ced2fc5cf34f755932f6dce50539be9cb048d7b0dfbb5ea589b09b3d657",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python.dylib": "d7af0ced2fc5cf34f755932f6dce50539be9cb048d7b0dfbb5ea589b09b3d657",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python_flight.2500.1.0.dylib": "201c72bf4dd080947c82e5a61abf1a58434496514254ae7ecd7ed60d10dfb714",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python_flight.2500.dylib": "201c72bf4dd080947c82e5a61abf1a58434496514254ae7ecd7ed60d10dfb714",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python_flight.dylib": "201c72bf4dd080947c82e5a61abf1a58434496514254ae7ecd7ed60d10dfb714",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python_parquet_encryption.2500.1.0.dylib": "1e317c3119b8606c4307ff46a0b53467a0ed4fc1d57b5ba4e1788345bcdf788b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python_parquet_encryption.2500.dylib": "1e317c3119b8606c4307ff46a0b53467a0ed4fc1d57b5ba4e1788345bcdf788b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_python_parquet_encryption.dylib": "1e317c3119b8606c4307ff46a0b53467a0ed4fc1d57b5ba4e1788345bcdf788b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libarrow_substrait.2500.dylib": "a53fd7317d945f787cff57dc4481d3598ad8bd9c9a17091210fdef2c10396eaa",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/libparquet.2500.dylib": "b625bb4c009c67ac2ec59684da1127765c442c96f703ea43c2d64df249e46854",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/pyarrow/parquet/core.py": "149cfca45f9767541a6b6a9c002da5becc35d106f6eac35eb08b6878b153858b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy-1.18.1.dist-info/METADATA": "1adfbde8be136cbf348b889c51028e7e1824cdb90d29a26d8e81501948864fae",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy-1.18.1.dist-info/RECORD": "523a08100bfb1badc27a1c04c34d94b311ebf8214d32692377e383397b6c58fc",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy-1.18.1.dist-info/WHEEL": "26726246f91715a154e07973ca8a82029674ee3cba86914a77f2e47c1a566739",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/.dylibs/libgcc_s.1.1.dylib": "76ef5f8847dbf656bc2b2cb91f8a08f47589259151e809b11fb30334485503a9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/.dylibs/libgfortran.5.dylib": "309aa581ea231790ecd99932f5be4b77e99e3fb820d2b127ab8ec3993160095f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/.dylibs/libquadmath.0.dylib": "240cd8c9bc65a7f61f8f0c69db2699eb1fdb7f5dc226ebfce01559f9a33ade6d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_cyutility.cpython-312-darwin.so": "c48927d1c3b75d3715df4470cbd4c12f0d49d5f9dd3ff375248927048d3498c8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/_ccallback_c.cpython-312-darwin.so": "3495ad924881f2ad827ba0d74a91f9184c6696a16fce71e4d265b929ff54df96",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/_fpumode.cpython-312-darwin.so": "7402df5e1a2197acbf6fc8b7558d72e30b9116fdb7aa204f2ac9278fa90cc56f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/_test_ccallback.cpython-312-darwin.so": "d459b377de85187cb09df2b02af86e896f186628ba946a864895d3a5468215ad",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/_test_deprecation_call.cpython-312-darwin.so": "167fd48a00d90af0f579a2c5b36f2b9124bdf312e3968eeb3a3132d51200932f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/_test_deprecation_def.cpython-312-darwin.so": "90aef02368898a3e4f1d7b61fecd3a6c2d8125886e2bcef924a5064d68fe2436",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/_uarray/_uarray.cpython-312-darwin.so": "9047dbd782d4d3a95c337a45951ebfa14dfc115ae14b366b028fe067b8549961",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/_lib/messagestream.cpython-312-darwin.so": "51c9ff6f33fa4671f8094247ce16d1a961fdf37bab28642dd3e0535110813400",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/cluster/hierarchy/_hierarchy.cpython-312-darwin.so": "4a57fe6ef2f4e16b8dbd5f55eb3e7f0ab6df093a6603f2ae329dabb646f6c7d8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/cluster/hierarchy/_optimal_leaf_ordering.cpython-312-darwin.so": "b04c19bd6d5ca1a614239c33f1f727dd9c1b7f0506460ecd486b03b7e30b79c9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/cluster/vq/_vq.cpython-312-darwin.so": "7ebfbd7a6ab8fa0dea9a2d7bf309cfbcfccb9e876227f70166407abb01ab4724",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/fft/_duccfft/pyduccfft.cpython-312-darwin.so": "1d38cbdec88af07005a72f70b295ef85e9bdacc0f035f3e44cd8ce4b67263cdb",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/fftpack/convolve.cpython-312-darwin.so": "da0844f732ff40768fc36d9f9d0db5c023d7ca092d1a6706123490ca4b198bb4",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/integrate/_dop.cpython-312-darwin.so": "72c4e031e1c563439c57afd57393b3a07a2e623255a2e224019b58ea44d784a6",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/integrate/_odepack.cpython-312-darwin.so": "c449592a4819ec6e38077cd0317eb4ef895384c34970af3c2dd5e9afc872defa",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/integrate/_quadpack.cpython-312-darwin.so": "7858f1e79afc97eb2004eae6bffc73c7a3c11671216d22d5037123f5ffe2b414",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/integrate/_test_multivariate.cpython-312-darwin.so": "8afd6032c31c8f54b566f80888e22a1a75921f919878cb46e6bcdeefddf7b7d9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/integrate/_vode.cpython-312-darwin.so": "731f47738d8da5d86181d4a1f8389bda96be23c789cc9fb753b27dc797d62c87",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/interpolate/_dierckx.cpython-312-darwin.so": "094e7392d78cea32d8fb6ba94e26a45f8c3f788af3c5c31bdf629be6cec5fbe6",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/interpolate/_fitpack.cpython-312-darwin.so": "da383717421eea2dd08541449e651ad667f660ac75e68fb3320dd4436f477434",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/interpolate/_interpnd.cpython-312-darwin.so": "3a3867ba342d277ddf8da8430295d9821787bdd5792a3e221c612548fb18f968",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/interpolate/_ppoly.cpython-312-darwin.so": "c8139dcb012c867067a514fa2ca0f264459aad6f43e0a5e77f72201bf483b50d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/interpolate/_rbfinterp_pythran.cpython-312-darwin.so": "a95e09931139a11c910f8844f81cfdf971df0d57c53cc18fbcdd15dd755a431e",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/interpolate/_rgi_cython.cpython-312-darwin.so": "713f34d6a7984ab50e1c4c608c0ec804889e03b144740d7133ce114d5997405b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/io/_fast_matrix_market/_fmm_core.cpython-312-darwin.so": "6cf17722e80f93a95b1ef571d04a82a440187b11f188fb33a40676d1474de9b4",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/io/matlab/_mio5_utils.cpython-312-darwin.so": "a4f4fadb35a77aa6ff3d0848933c9063f5070d2b6e11c6829bc8685778c87b14",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/io/matlab/_mio_utils.cpython-312-darwin.so": "ebc11d51d7d5c99e45b1f0cf8fd1155c12108e326fb33d3bb7b769b093d50275",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/io/matlab/_streams.cpython-312-darwin.so": "ab594111cf87c55ff4dcc9c8a48a1fc0d1d5501165999d9781528813b1b3fc68",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_batched_linalg.cpython-312-darwin.so": "f343ce939a78ac27ed272569e3a52756e01ccdbaaf7b118c1fd37c0850b2e0d0",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_cythonized_array_utils.cpython-312-darwin.so": "c506ebb3d3353437e81a7ea769ef387faaddda6d2fef6560d25952b9176e58ac",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_decomp_interpolative.cpython-312-darwin.so": "3f87c958e79023b933a42f33110aa1408b8a8e75dd76d578f4898fb2340defdc",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_decomp_update.cpython-312-darwin.so": "d1ea68338dc2dff4056f9c661f7ee2fb913a6479173639f177d7ffeb975806ea",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_fblas.cpython-312-darwin.so": "6502e4e093d03932479317d45bfea018ef0999bc5c4bd46687253322c13e9448",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_flapack.cpython-312-darwin.so": "430d25bffa6a2d20794bd36289064101af7d58b77a5a9d3ce561df60329eff7b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_internal_matfuncs.cpython-312-darwin.so": "3fb1cf17a2ade6a5f2964ed94f74dab63afe0b69c38ec7b9221118cb05790ddc",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_linalg_pythran.cpython-312-darwin.so": "6a70990106c015360f7eb78309e9b5a135c9ae301fc7fa04828b19948abb6bc5",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_matfuncs_sqrtm_triu.cpython-312-darwin.so": "bab23faa3dadfbf9c824ef4c881970b7a2763518441444f277238f71bd30a002",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/_solve_toeplitz.cpython-312-darwin.so": "a886584cdde82f9c9b8b65506f05428880b6324a68457d564e76e02dad203fe8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/cython_blas.cpython-312-darwin.so": "6656ce3f6cd5ab1244b41b680854a18670a7e45828560cb715024f64eb915bb8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/linalg/cython_lapack.cpython-312-darwin.so": "66c2350107d731ce312499b03e065d5b4d8fa7005f792866770fc66a392c313f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/ndimage/_ctest.cpython-312-darwin.so": "fd7ba01631b021fe76c3a0566f3de4a5f0d265571bb3515c25a2e2e57d224a32",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/ndimage/_cytest.cpython-312-darwin.so": "35e1dcc2fc3a3f8575f271e6b2dd53a0b4fa5802b61d0e882a564d41c956d9a2",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/ndimage/_nd_image.cpython-312-darwin.so": "e6b5ecf24ffe8b3bcac97c6c12eab10cf8e94019c2e92a2a0093d57489e44f65",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/ndimage/_ni_label.cpython-312-darwin.so": "1441ae26438bc3ee2bed0c61a8fc91e42a7b790afb2a218782886010d9cd80e8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/ndimage/_rank_filter_1d.cpython-312-darwin.so": "5dea8cfe0d83943cdd25362a8ca5c144a46d3160bd2d18a7f2ff280739875ae0",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/odr/__odrpack.cpython-312-darwin.so": "eea05ea0bf1c74a3ab859a6ed582baafaa91727e88844432f7c57ca8d352d330",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_bglu_dense.cpython-312-darwin.so": "7d14b39b46639462bd7137c4e942e215a3dc0368a14085a686ac93eb4b5b7092",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_direct.cpython-312-darwin.so": "74d47eaafd6e4c2341674f88214e6943f4a8a21772f1d8cf244956a77058c419",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_group_columns.cpython-312-darwin.so": "362f28ad7e39f3c7207221cd1fcc9ba5f342f7e4993ccaee7781018924c38b8c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_highspy/_core.cpython-312-darwin.so": "83964acedc1180ffb9cdab9b45bf5c2dba9dcf388cfbaf83bb325b0a9dc82fb0",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_highspy/_highs_options.cpython-312-darwin.so": "d804f80e2780cb1f52f568e63a05a57a6beba48c791667b1526d2b23111fedaa",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_lbfgsb.cpython-312-darwin.so": "24a8a24d2fa62c723161f800a86662f15300acbf35b16b3d3749047896b552f9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_lsap.cpython-312-darwin.so": "7733b54e306c7f5512b81c6a52519dfdf3469e6eda6a55affe7bb11430085f74",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_lsq/givens_elimination.cpython-312-darwin.so": "8f1240a454a49bd7a99976b76d617db1d6a97d87a4f295c648a93140422585f7",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_minimize.py": "6b20ec664e77e2f8f7d725eba541c3765ca9037e9d759b18627da9bdf8933ca6",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_minpack.cpython-312-darwin.so": "80425cb08edfeb4851e905eaa12eea6b2daa739b306ae4a3ac1711c95318067a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_moduleTNC.cpython-312-darwin.so": "a2774cfe0545caac44389e8619e11b11bdb9d916e0929169b5795f17b8f249c1",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_optimize.py": "f5ad5bc0ec01d9f0adafad622631a59ab8efc90019f41efbbef19c8b2feaf430",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_pava_pybind.cpython-312-darwin.so": "f42f7b1fcad7a7b0a5f8927e0af3ec065229b79ad0603266c677e772f0288969",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_slsqplib.cpython-312-darwin.so": "89a69a2839997f291abbd03bae7dfbdf71ba11995d4675cc501ddfb3c648a771",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_trlib/_trlib.cpython-312-darwin.so": "d0dd10d19d1a36f3feebf0a2d8ca8dd2262f44d74fd5db5692a18219b6859c0c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/_zeros.cpython-312-darwin.so": "9e293a938b43eb7b4ad4a194c1d8df3fc491df464397df93d5e852ea5961cb32",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/optimize/cython_optimize/_zeros.cpython-312-darwin.so": "0f289317770fb71afc34a5a5a9ef78e78115b32d46ef3b1655a3275e76b9a385",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/signal/_max_len_seq_inner.cpython-312-darwin.so": "58d6a07d534999bff2ab6fb79a8e59a7818a730a5008169a25d2ef5c2be959a3",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/signal/_peak_finding_utils.cpython-312-darwin.so": "f1c879f266f7893034f022124f69ae41e5397abf6151bb3cf69f243b54fc777c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/signal/_sigtools.cpython-312-darwin.so": "ef178698287fc0ff2cd4ded9308aba9b34cd50abc426efc18eee9bae4d693099",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/signal/_sosfilt.cpython-312-darwin.so": "24b924b997b2cdf58ab67a508795aac22e8f6439a313e36f780a3ac2624509c1",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/signal/_spline.cpython-312-darwin.so": "53635f1ff5cc1c191898681d92a03c4e7a48f3dfe98aad771782d25fd75c7147",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/signal/_upfirdn_apply.cpython-312-darwin.so": "7473575ea92fecd7a2e3bb92155bbdb78ad92ceb79de45c04279a2c6f9d8fbc6",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/_csparsetools.cpython-312-darwin.so": "0e944ca7fc2141e371baac9775845fa7a0ea473cdd7acf8aac635b03a8bf6746",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/_sparsetools.cpython-312-darwin.so": "077b33d61dc1a677cb56bb4835572623986f7f0a1c0d35d6eaf85fc0df5dade2",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_flow.cpython-312-darwin.so": "08661ba1bfeb7c5b71ee189617152f3cd9724c20a4868cfa546ed922af8d62ee",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_matching.cpython-312-darwin.so": "15f78e1f7a9387816e24353fa6af16858f20e4340d9d920b7600901459e0712c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_min_spanning_tree.cpython-312-darwin.so": "875042dfb3e93a84f3bde8bfd65fbfbd917191691971206067598bc1a8fa0c11",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_reordering.cpython-312-darwin.so": "2b517693aaaebf37965a57cecac87e0db783ee52c5507e3e1e5b4508affe7a51",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_shortest_path.cpython-312-darwin.so": "8f4085fd2186bc33b6be281733e8fb5245459a3972359b9892aafceea3b72078",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_tools.cpython-312-darwin.so": "02005754ec402765999ae4466a7b8cd80f0faccabb4d389d65941b81f33f7d7c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/csgraph/_traversal.cpython-312-darwin.so": "b4e7126a2c3ba555a5a50ebf86c436d5c0544c19d657f2ba3dc2c10cf73375c4",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/linalg/_dsolve/_superlu.cpython-312-darwin.so": "dc5797bee155da521013ae2621cfc6537886a8be3243dd788d31dbfe271e30c6",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/linalg/_eigen/arpack/_arpacklib.cpython-312-darwin.so": "f8981e4e514d32d62dd635d980d6f84661254ec720ed670fbda83239a17512b3",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/sparse/linalg/_propack.cpython-312-darwin.so": "4da33c45714432e639cfaf725e9a0e463f8a756bc87b94846d5b1f3d671d094b",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/_ckdtree.cpython-312-darwin.so": "9302bfa863405a8dc0a817d576bb4a0ed6d0c460c4c1ce903463dd343af56563",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/_distance_pybind.cpython-312-darwin.so": "53e72cb821c61d61edc3624ee701423b1a115fe5b2ae6d761e732078c2cefba8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/_distance_wrap.cpython-312-darwin.so": "9d0f38bd8075a6782c62ec2301c0ab850fff412892d3fcfc5b7cf8a14a824410",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/_hausdorff.cpython-312-darwin.so": "9882f3084c0c8752cc596bd5882398bd31f0d53d0c9a9710e922e1897bc96313",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/_qhull.cpython-312-darwin.so": "da32b9a670f98b404049e28015c7dff4ce748ef0ee25ad789342906d5d3b1600",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/_voronoi.cpython-312-darwin.so": "870c16b551c8a066c634c99ff2042afd4301fe151cf78346976c9e006ca49905",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/transform/_rigid_transform_cy.cpython-312-darwin.so": "eb062daa4abf7e4dad280781785e5eb943f059753fd55979fd1654b12d88e63a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/spatial/transform/_rotation_cy.cpython-312-darwin.so": "5a5913d8c8700fc7b96951b14f1c65a9d946a9c368589bf47052839873f04bba",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_comb.cpython-312-darwin.so": "5d99a20baf57660f7c3ac5c57db51bc8ed139cff380b578bb8f6ae73f58cf8ab",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_ellip_harm_2.cpython-312-darwin.so": "6998b9aa6b5133b08c53d5595b706d7e809c1c6c1b92626f604c0ecddc2216da",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_gufuncs.cpython-312-darwin.so": "c6656783e3049fe4abfcd81c13a903517e4be0e43f14fdaaa99d43d232ea3b2d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_logsumexp.py": "7da908306d6382cd8214628b24f0f753ea035378ff6285276828b7af33c5b101",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_specfun.cpython-312-darwin.so": "500d21e44a4c226258bd898ad1dbdfca3174ae2c35383a22a976094a0c4561ec",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_special_ufuncs.cpython-312-darwin.so": "651f24f15864d5a3e14ac9c8eafb697154fcd46aa3ef539da3746a67bcc3bbc3",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_test_internal.cpython-312-darwin.so": "9219e7c9e669e5607abce8d001aad06f540ab714a7a8c2e0c2025f8c6c99c041",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_ufuncs.cpython-312-darwin.so": "a0889d5c82454d79d4cd4cc8a589a62a382d667da8e2b030e637f58708bd340c",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/_ufuncs_cxx.cpython-312-darwin.so": "eb2112f8a8dd431d07e44b3e7bd5e8d9652278271d17d5fb7841cdd68dcdd27f",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/special/cython_special.cpython-312-darwin.so": "0c0d6e920fee7bb8968442b50a27f546e3e087c7e4122b6cfe86d7fe5fc733f8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_ansari_swilk_statistics.cpython-312-darwin.so": "adec9f596fc5ab40cd18c805dd30721ceae4feeae3440b08e38bf835480763f6",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_biasedurn.cpython-312-darwin.so": "e62705b640b283bc74b0cc78a8d19132e712cdc245ecee795a42d53cf56ddf4a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_levy_stable/levyst.cpython-312-darwin.so": "707a83df6dd93d96ebba2e3c1274cedf8da78628078b9fabd70751ab39d91fea",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_qmc_cy.cpython-312-darwin.so": "382403aa52b3cd69415e68cdf364a211d6071527856ceee198fb4e15b5387beb",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_qmvnt_cy.cpython-312-darwin.so": "79e9a893f928c1fb9305841680aaf1f673deaa0f0f3b5484277b453e5828db9a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_rcont/rcont.cpython-312-darwin.so": "c340036ec9b76d64143e563b5aa071637221bab0416b1df9bcc48aadb2642049",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_sobol.cpython-312-darwin.so": "426dbc8990840ad5bf1cc0658c67fc0167518e924ccb78db00d550860ef017f7",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_stats.cpython-312-darwin.so": "9f058c77fda23a33d9df51b42c805526f49d6248667725c804e786b60497ffeb",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_stats_pythran.cpython-312-darwin.so": "3445197046b1f7870012c6cc38188fb8d085d76024a2aafe4d97e4c67c89fa42",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/scipy/stats/_unuran/unuran_wrapper.cpython-312-darwin.so": "b6603dae7e3c12168c120fe78bfc9f04fbc2647bcb77ac3ccb729e1c244b084a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch-2.14.0.dist-info/METADATA": "45eb688ebf1a2a131e65cd00292e19405019e8ae94f3b5c9f538f86381fd6e3d",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch-2.14.0.dist-info/RECORD": "ccd568a7ff99a6e2350a727174f9e989ab437ebc9cfe07fa9d10276442f32dc2",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch-2.14.0.dist-info/WHEEL": "2a34e791b7a9eab6380c25a20d48c93088418082c44a28ab837d968aa8977c88",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/_C.cpython-312-darwin.so": "b5b5b86566d6e00ee22b73c51e6c243bd894ffbf06f12c58d0bab0549b1840ac",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/_weights_only_unpickler.py": "f805f3feae84fd10f92eff99c0f88d0373d560d9143fe2297f0ebb08a9eb00e9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libc10.dylib": "332fdb431f20a9690f38be0768cab415584480c2ce31744153347778f85a04d8",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libomp.dylib": "6256bee09e93c28d71c65711cc69224d69994c6965648b628b70a22772fe98d4",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libshm.dylib": "cb3ae9606a65cae6cc2f3a661a75a6b03ee1821badc24e99fa51253cb3244d4e",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libtorch.dylib": "a0e3303b427f2c9b1f34ba729d2ea3d3e821b9cfeb30ec490cc60e6c5c4bfe21",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libtorch_cpu.dylib": "ca979f3619acb92240c2ef46d7581b1a388761e0fccfa7dc491a7eaa153d584a",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libtorch_global_deps.dylib": "183fab80a5ba3e8d577a53b9979e5b1345fe560948de350d75f5879b03ad8247",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib/libtorch_python.dylib": "3a8659c0606c2e3eaf84f983ca4af3bc15f6d55b527fb16fa473b3a5abec9091",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py": "d139fc1dc9adb172c208b8b470fc405d8037612c0f08768d275c5bbcc284b9c9",
+    "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/serialization.py": "4a25e7d5a44d55ce2578164451b3cfbb65b4bf1be8bdba2fd7b9e008d2cf9021",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/astra-implementation-final-review.md": "960dbbbe2a1fd91404777b160d3db4e187bf5c148834d63f1baf8fb07e62f5f4",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-input-closure.json": "e44e160ff17290444037f5239ffa84fea9b175c7981095735ff5c381ad4f53c9",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/source-environment-at-C.json": "8ecbcdb28d07eb7a64648af2455b3da5b31c91eeccbe95db4c0c2de609d777af",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm-4.6.0.dist-info/METADATA": "6cae173638e3581cfa60cd0e07660b0a72efe67ca3db4d3d3cfaa7d31d03b65d",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm-4.6.0.dist-info/RECORD": "286c77fbc06bccd66744d4886332bb17ca62eb4758f56da8d53a15f487cbe9d8",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm-4.6.0.dist-info/WHEEL": "a47c502c1984abb87f340b85ffe781097729b410218962e5c21054802ddc2237",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/__init__.py": "c7c0f7b3d82778b4b88337ad921bfa91d92f68a362e223e3b4877759a40d8c0c",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/basic.py": "b8ccce4724edd38ff32a947b628a8718d314f5f5811be9c078b13b3d82d260bd",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/callback.py": "63b8ebfd530fd258200e811e09229666945ca1795987616602c44b603cbba463",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/compat.py": "4b3dfeb7d4f1d254acbb217b7a010b3240936cea015d4554340b76429176ed12",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/dask.py": "69aa081a0ba8014dc53291722d383c3d6ecce305a2b2f2ee8aa77edd1864589b",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/engine.py": "c5010abf6bef08f407b64d4b1585bd18875213d594a7f068d9ddfc8bf3b47753",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/lib/lib_lightgbm.dylib": "50f62eef76a25c7dbd5b79c998d59a5dff4874c595f7fb8d197826c2bfbd8a92",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/libpath.py": "ee52bd73ce3a7730761b94c84d554818913e70aae1b8d03d83a770ad8b4e3890",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/plotting.py": "c69f2e312cf1c3367e98166b6407546b85c2f77f581e1fd4ad82bbd92566db4c",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps/lightgbm/sklearn.py": "9a7dc662c18746b943423ca63768597930e02ed91eeba8a63ef35f16270d6e9f",
+    "/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/Python": "06036c0dd18c344b14c6d7a443197b6ec7716df04b1344227ec20969b641f934"
+  },
+  "environment": {
+    "python": "/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+    "python_version": "3.12.14",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "pandas": "3.0.5",
+    "torch": "2.14.0",
+    "pyarrow": "25.0.1",
+    "machine": "arm64",
+    "dynamic_library_path": "/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib",
+    "pythonpath": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:/Users/song/Projects/pitcheezy-worktrees/june-calibration-execution-source/experiments/pitchmdp"
+  },
+  "data": {
+    "cache_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/cache/sequence_physics.json",
+      "sha256": "6fe960287006e430a83d7e12d8d39ba84971166c443bdb366a65ce32973f478f"
+    },
+    "local_config": {
+      "path": "/Users/song/Projects/pitcheezy/experiments/pitchmdp/configs/local.json",
+      "sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"
+    },
+    "physics_cache": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/cache/sequence_physics.parquet",
+      "sha256": "0119de70c57e040f7622e64985d7c3dea1ad3dc9c39091e8c166434cedb2ac2a"
+    },
+    "processed_pitches": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+      "sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27"
+    },
+    "quality_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/reports/data_quality.json",
+      "sha256": "c83606744daf3b567d8860cac005ad8b1b11ff3ff776bfec5905ec97c540552f"
+    }
+  },
+  "output_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1",
+  "heavy_lock": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock",
+  "registration": {
+    "source_environment": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/source-environment-at-C.json",
+      "sha256": "8ecbcdb28d07eb7a64648af2455b3da5b31c91eeccbe95db4c0c2de609d777af"
+    },
+    "input_closure": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-input-closure.json",
+      "sha256": "e44e160ff17290444037f5239ffa84fea9b175c7981095735ff5c381ad4f53c9"
+    },
+    "implementation_review": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/astra-implementation-final-review.md",
+      "sha256": "960dbbbe2a1fd91404777b160d3db4e187bf5c148834d63f1baf8fb07e62f5f4"
+    },
+    "authorization": "D84: user authorized implementation through actual bounded execution and independent reporting",
+    "decoded_cache_exposure": {
+      "approved_seasons": [
+        2023,
+        2024,
+        2025
+      ],
+      "data_values_decoded_in_this_audit": false,
+      "exposed_dev_caveat": "Full approved cache decode includes already exposed later-2025 DEV outcome/physics columns before prefix selection; this is not fresh holdout or independent confirmation. Actual worker must disclose exact decoded rows/columns/date range and label-archive accesses.",
+      "feature_history_cutoff": "2025-06-30",
+      "fit_query_scope": {
+        "date_max": "2025-06-30",
+        "date_min": "2025-06-01",
+        "games": 394,
+        "pitchers": 549,
+        "rows": 104970
+      },
+      "full_cache_schemas": {
+        "/Volumes/T7 Shield/pitcheezy/pitchmdp/cache/sequence_physics.parquet": {
+          "columns": [
+            {
+              "name": "game_pk",
+              "type": "int64"
+            },
+            {
+              "name": "at_bat_number",
+              "type": "int64"
+            },
+            {
+              "name": "pitch_number",
+              "type": "int64"
+            },
+            {
+              "name": "effective_speed",
+              "type": "double"
+            },
+            {
+              "name": "spin_axis",
+              "type": "double"
+            }
+          ],
+          "row_groups": 3,
+          "rows": 2145111
+        },
+        "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet": {
+          "columns": [
+            {
+              "name": "game_date",
+              "type": "timestamp[ns]"
+            },
+            {
+              "name": "game_pk",
+              "type": "int64"
+            },
+            {
+              "name": "at_bat_number",
+              "type": "int64"
+            },
+            {
+              "name": "pitch_number",
+              "type": "int64"
+            },
+            {
+              "name": "game_type",
+              "type": "large_string"
+            },
+            {
+              "name": "pitch_type",
+              "type": "large_string"
+            },
+            {
+              "name": "player_name",
+              "type": "large_string"
+            },
+            {
+              "name": "pitcher",
+              "type": "int64"
+            },
+            {
+              "name": "batter",
+              "type": "int64"
+            },
+            {
+              "name": "stand",
+              "type": "large_string"
+            },
+            {
+              "name": "p_throws",
+              "type": "large_string"
+            },
+            {
+              "name": "balls",
+              "type": "int64"
+            },
+            {
+              "name": "strikes",
+              "type": "int64"
+            },
+            {
+              "name": "outs_when_up",
+              "type": "int64"
+            },
+            {
+              "name": "inning",
+              "type": "int64"
+            },
+            {
+              "name": "inning_topbot",
+              "type": "large_string"
+            },
+            {
+              "name": "home_team",
+              "type": "large_string"
+            },
+            {
+              "name": "away_team",
+              "type": "large_string"
+            },
+            {
+              "name": "home_score",
+              "type": "int64"
+            },
+            {
+              "name": "away_score",
+              "type": "int64"
+            },
+            {
+              "name": "bat_score",
+              "type": "int64"
+            },
+            {
+              "name": "fld_score",
+              "type": "int64"
+            },
+            {
+              "name": "post_home_score",
+              "type": "int64"
+            },
+            {
+              "name": "post_away_score",
+              "type": "int64"
+            },
+            {
+              "name": "post_bat_score",
+              "type": "int64"
+            },
+            {
+              "name": "post_fld_score",
+              "type": "int64"
+            },
+            {
+              "name": "on_1b",
+              "type": "double"
+            },
+            {
+              "name": "on_2b",
+              "type": "double"
+            },
+            {
+              "name": "on_3b",
+              "type": "double"
+            },
+            {
+              "name": "plate_x",
+              "type": "double"
+            },
+            {
+              "name": "plate_z",
+              "type": "double"
+            },
+            {
+              "name": "sz_top",
+              "type": "double"
+            },
+            {
+              "name": "sz_bot",
+              "type": "double"
+            },
+            {
+              "name": "release_speed",
+              "type": "double"
+            },
+            {
+              "name": "release_spin_rate",
+              "type": "double"
+            },
+            {
+              "name": "pfx_x",
+              "type": "double"
+            },
+            {
+              "name": "pfx_z",
+              "type": "double"
+            },
+            {
+              "name": "events",
+              "type": "large_string"
+            },
+            {
+              "name": "description",
+              "type": "large_string"
+            },
+            {
+              "name": "type",
+              "type": "large_string"
+            },
+            {
+              "name": "launch_speed",
+              "type": "double"
+            },
+            {
+              "name": "launch_angle",
+              "type": "double"
+            },
+            {
+              "name": "outs_recorded",
+              "type": "int64"
+            },
+            {
+              "name": "outs_ambiguous_extra",
+              "type": "int64"
+            },
+            {
+              "name": "outs_interval_pitcher_change",
+              "type": "bool"
+            },
+            {
+              "name": "outs_event_implied",
+              "type": "int64"
+            },
+            {
+              "name": "split",
+              "type": "large_string"
+            },
+            {
+              "name": "fielding_team",
+              "type": "large_string"
+            },
+            {
+              "name": "starter_pitcher",
+              "type": "int64"
+            },
+            {
+              "name": "is_lad_start",
+              "type": "bool"
+            },
+            {
+              "name": "cohort_pitcher",
+              "type": "bool"
+            },
+            {
+              "name": "bases",
+              "type": "int64"
+            },
+            {
+              "name": "is_pa_terminal",
+              "type": "bool"
+            },
+            {
+              "name": "terminal_event",
+              "type": "large_string"
+            },
+            {
+              "name": "next_outs",
+              "type": "double"
+            },
+            {
+              "name": "next_bases",
+              "type": "double"
+            },
+            {
+              "name": "next_home_score",
+              "type": "double"
+            },
+            {
+              "name": "next_away_score",
+              "type": "double"
+            },
+            {
+              "name": "next_inning",
+              "type": "double"
+            },
+            {
+              "name": "next_half",
+              "type": "large_string"
+            },
+            {
+              "name": "complete_game",
+              "type": "bool"
+            },
+            {
+              "name": "final_home_win",
+              "type": "double"
+            },
+            {
+              "name": "pitch_outcome",
+              "type": "large_string"
+            },
+            {
+              "name": "supported_pa",
+              "type": "bool"
+            },
+            {
+              "name": "prev_pitch_type",
+              "type": "large_string"
+            },
+            {
+              "name": "prev_description",
+              "type": "large_string"
+            },
+            {
+              "name": "prev_plate_x",
+              "type": "double"
+            },
+            {
+              "name": "prev_plate_z",
+              "type": "double"
+            },
+            {
+              "name": "batter_pa_prior",
+              "type": "int64"
+            },
+            {
+              "name": "batter_obp_prior",
+              "type": "double"
+            },
+            {
+              "name": "batter_k_prior",
+              "type": "double"
+            }
+          ],
+          "row_groups": 3,
+          "rows": 2145111
+        }
+      },
+      "history_rule": "prior-date aggregates and prior-pitch same-PA history only; no later-date features",
+      "loader_decode_scope": "unchanged loader reads all stored columns and all approved 2023–25 cached rows before June prefix selection",
+      "new_2026_access": false,
+      "no_dev_fit_or_selection_allowed": true,
+      "physics_column_count": 5,
+      "physics_rows": 2145111,
+      "processed_column_count": 71,
+      "processed_rows": 2145111,
+      "raw_read_performed": false,
+      "schemas_source": {
+        "access": "Parquet footer schema only; no column values decoded",
+        "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/cache-footer-schemas.json",
+        "sha256": "1282dff2a912951d8b4162ab50f87b20ea5b05c9bd0619f0d005542dc7e690ae"
+      },
+      "status": "planned_decode_not_performed_by_this_audit"
+    },
+    "project_vs_external_source_pins": "Worker pins project and external runtime files; supervisor plan lists project C sources and binds the complete worker config by SHA256.",
+    "registration_commit_d_binding": "The external immutable execution registration records D after this config is committed, avoiding a circular self-hash. Root verifies D contains these exact bytes before release.",
+    "runtime_release_authority": "Coordinator releases the single queue after final independent source C/config D/plan audit; this config alone does not launch a worker."
+  }
+}

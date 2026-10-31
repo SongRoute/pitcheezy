@@ -1,0 +1,331 @@
+{
+  "audit_status": "PASS",
+  "scope": "JSON metadata, opaque byte hashes and registered decision arithmetic only; no arrays/bootstrap/refit",
+  "code_commit_c": "1002f57ea09d14df279212c68100da755bc573dc",
+  "registration_commit_d": "61b056caa5d752787d84c7ae74b2a627818c34b3",
+  "source_parent_input_pins_verified": 419,
+  "sealed_manifest_count": 10,
+  "sealed_artifact_count": 20,
+  "stages": [
+    {
+      "stage": "prepare",
+      "official_seconds": 7.379271334037185,
+      "cap": 300.0
+    },
+    {
+      "stage": "profile",
+      "official_seconds": 8.753600334050134,
+      "cap": 600.0
+    },
+    {
+      "stage": "predict-seed0",
+      "official_seconds": 78.69317154190503,
+      "cap": 600.0
+    },
+    {
+      "stage": "predict-seed1",
+      "official_seconds": 79.10151304188184,
+      "cap": 600.0
+    },
+    {
+      "stage": "predict-seed2",
+      "official_seconds": 79.63080362509936,
+      "cap": 600.0
+    },
+    {
+      "stage": "predict-seed3",
+      "official_seconds": 80.42360375006683,
+      "cap": 600.0
+    },
+    {
+      "stage": "predict-seed4",
+      "official_seconds": 80.23455191706307,
+      "cap": 600.0
+    },
+    {
+      "stage": "fit",
+      "official_seconds": 3.4310408749151975,
+      "cap": 300.0
+    },
+    {
+      "stage": "apply",
+      "official_seconds": 4.751637416193262,
+      "cap": 300.0
+    },
+    {
+      "stage": "score",
+      "official_seconds": 51.121932124951854,
+      "cap": 300.0
+    }
+  ],
+  "official_worker_seconds": 473.5211259601638,
+  "family_cap_seconds": 3600,
+  "sum_postflight_seconds": 0.26420078962109983,
+  "invocation_record_to_terminal_timestamp_seconds": 475.243574,
+  "outer_timestamp_limit": "UTC record-to-status elapsed, not separately measured supervisor process wall",
+  "optimizer_calls": 36,
+  "replay_calls": 6,
+  "candidate_calls": 30,
+  "replay_weights_max_absolute_error": 0.0,
+  "member_probability_replay_max_absolute_error": 8.46164993628662e-09,
+  "B2_fallback_rows": 0,
+  "N_family_size": 3,
+  "R_family_size": 78,
+  "R_measured_passed_slots": 78,
+  "N_failed_criteria": {
+    "B1-B0": [
+      "delta_nll_at_most_minus_0.003"
+    ],
+    "B2-B0": [
+      "delta_nll_at_most_minus_0.003"
+    ],
+    "B2-B1": [
+      "delta_nll_at_most_minus_0.003",
+      "nll_ci95_upper_below_zero",
+      "holm_adjusted_p_at_most_0.05",
+      "at_least_4_of_5_seed_nll_negative"
+    ]
+  },
+  "candidates": {
+    "B1": {
+      "required_contrasts": [
+        "B1-B0"
+      ],
+      "checks": {
+        "B1-B0": {
+          "N": "inconclusive",
+          "R": "passed"
+        }
+      },
+      "research_improvement_candidate": false,
+      "service_promotion": false
+    },
+    "B2": {
+      "required_contrasts": [
+        "B2-B0",
+        "B2-B1"
+      ],
+      "checks": {
+        "B2-B0": {
+          "N": "inconclusive",
+          "R": "passed"
+        },
+        "B2-B1": {
+          "N": "inconclusive",
+          "R": "passed"
+        }
+      },
+      "research_improvement_candidate": false,
+      "service_promotion": false
+    }
+  },
+  "primary": {
+    "B1-B0": {
+      "contrast": "B1-B0",
+      "candidate": "B1",
+      "control": "B0",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": -0.0005790967764688547,
+        "ci95": [
+          -0.0007044085814310439,
+          -0.000456415431635658
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "brier": {
+        "delta": -0.0005672250369111795,
+        "ci95": [
+          -0.0006226582637235096,
+          -0.000512912470034648
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "seed_nll_deltas": [
+        -0.0008333867764815868,
+        -0.0007622513697977206,
+        -0.00035701000408065156,
+        -0.0004938805311413035,
+        -0.00032807941832721337
+      ],
+      "seed_brier_deltas": [
+        -0.0006709702618834697,
+        -0.0006331990512097277,
+        -0.000383894145007936,
+        -0.000492878965922524,
+        -0.00040979701370003193
+      ],
+      "adjusted_p": 0.00029997000299970003,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": true,
+          "holm_adjusted_p_at_most_0.05": true,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": true
+        },
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00029997000299970003
+      }
+    },
+    "B2-B0": {
+      "contrast": "B2-B0",
+      "candidate": "B2",
+      "control": "B0",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": -0.0005675643174538072,
+        "ci95": [
+          -0.0007146727402135341,
+          -0.0004225818169680127
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "brier": {
+        "delta": -0.0005664482802835134,
+        "ci95": [
+          -0.0006299412516481067,
+          -0.0005023902135340495
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "seed_nll_deltas": [
+        -0.0008017052203782973,
+        -0.0007673122396868551,
+        -0.0003162041120482766,
+        -0.0004938332143050215,
+        -0.00030249800716904157
+      ],
+      "seed_brier_deltas": [
+        -0.0006662619539131477,
+        -0.0006325987794051206,
+        -0.0003736574556978123,
+        -0.0004884717118604109,
+        -0.0004060989392555375
+      ],
+      "adjusted_p": 0.00029997000299970003,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": true,
+          "holm_adjusted_p_at_most_0.05": true,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": true
+        },
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00029997000299970003
+      }
+    },
+    "B2-B1": {
+      "contrast": "B2-B1",
+      "candidate": "B2",
+      "control": "B1",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": 1.1532459015048021e-05,
+        "ci95": [
+          -4.6890315933322e-05,
+          7.066987010762694e-05
+        ],
+        "p_less": 0.6484351564843516
+      },
+      "brier": {
+        "delta": 7.767566276678616e-07,
+        "ci95": [
+          -2.3412378623850834e-05,
+          2.497994634790655e-05
+        ],
+        "p_less": 0.5243475652434757
+      },
+      "seed_nll_deltas": [
+        3.1681556103289676e-05,
+        -5.060869889134566e-06,
+        4.0805892032374954e-05,
+        4.7316836282031915e-08,
+        2.5581411158171733e-05
+      ],
+      "seed_brier_deltas": [
+        4.708307970322003e-06,
+        6.002718046072304e-07,
+        1.0236689310123773e-05,
+        4.407254062113251e-06,
+        3.698074444494354e-06
+      ],
+      "adjusted_p": 0.6484351564843516,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": false,
+          "holm_adjusted_p_at_most_0.05": false,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": false
+        },
+        "negative_seeds": 1,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.6484351564843516
+      }
+    }
+  },
+  "maximum_additivity_recorded_error": 1.919037845299343e-17,
+  "result_sha256": "31f72b0202a2cc7c06a595094ab36be95d3edd6de2a9455f173da8bc15c034e9",
+  "parameters_sha256": "fab0aff37e3b381d7f9dcb53677a436a36357e7e8a50ad3ed3bd4292e1121e9f",
+  "status_sha256": "de0c5fe28ee9c53ec273eb1c4f6536e137c123bc47102ab5c4be7ed4b6959609",
+  "manifest_hashes": {
+    "prepared/manifest.json": "e208d89f3b3abce771082f08dec689f883d698895b4ad651e950916382e430ca",
+    "profile/manifest.json": "bab21232f90df00f16b4acce146ce90664500b62d212b426a1f9d775adc19ea6",
+    "members/seed0/manifest.json": "8625f936a0207fdac2a9192a9e072e9d81327c628d4c38edc1fe79e1d14501be",
+    "members/seed1/manifest.json": "bb8aa651068534c78380eb7db67cffa2b65a30563dc61eecc901a31c21558602",
+    "members/seed2/manifest.json": "fd036289f1ba1636a31083ac5d0afd6194580f4ed2e39c8a17d49245af538379",
+    "members/seed3/manifest.json": "92b903680c40b06a5d241c8f1155e99b74edcf634b92503c8df9fc6d4b6174cf",
+    "members/seed4/manifest.json": "4b366f7233960c550e25ca7daa434fb33ed4c8833eb04f3909ba233b5e8286dd",
+    "fit/manifest.json": "eb0dec3ccac973643ede9263ef4103665fae2f46f340db7e34aed9eb1eeae6ea",
+    "apply/manifest.json": "9d588be3d781a13ce5c5a59dca8888e2630a949746b68906ae3de044e53062d6",
+    "analysis/manifest.json": "a296c8ec4c3a379904706b4a88fc2f62e1bacb5c93c24d510345e333efa37fcc"
+  },
+  "artifact_hashes": {
+    "prepared/june_frequency.npz": "40c293a26ea466ad1ec17500d144c973b4cb6d6c162c0f0b09ee5d1035f743c1",
+    "prepared/june_labels.npz": "61617d93b3d415bb8ebd8264575e88283409fc46744dd6a9db3a4279164166f2",
+    "prepared/june_population.npz": "026dc54ce6cf2babb3219f5bfcb663123d9509f07b5626b6ba1ac5ca7695cda7",
+    "prepared/june_store.pkl": "8fe3f5ea5ed0e6be0167accd8762cc9d0d8d5eaa0ada506796bcedcbdcf6581e",
+    "prepared/prepared.json": "f66c3c10f76e38dd340bf41a74f24c660ec70f5ed77430cb5dad331a1149da08",
+    "profile/profile.json": "ccdf1fd1c36e1b8934551c87735a13868ad39b826b5a46b7169b7b78ecc3f3ee",
+    "members/seed0/prediction_runtime.json": "23dd6664c969532f71c3edb9e01e10b4a9ff8c437f9bc234b02cc903f823a02e",
+    "members/seed0/predictions.npz": "a833ee1ea1f50030cdfa439bfbbbdbb1a376ca0f4ccf6940775d7f81ae972e51",
+    "members/seed1/prediction_runtime.json": "56f26e68fd9ab938de6439483281b98d0d3aac42f5975c005b0123dff1e5eb6e",
+    "members/seed1/predictions.npz": "f228d8ee12c4c2aff1ff8e7afd59dd6cce01a832a701c605b66c7ceb95a8de5c",
+    "members/seed2/prediction_runtime.json": "8978b5a3f635d334a06bfcb5e92e11ebb5d67cf5d76736db135c706eb07d474d",
+    "members/seed2/predictions.npz": "f1ec525a9d71166b3f5d6862e6e154a61cc7a94081cead4a43174e8211b85cac",
+    "members/seed3/prediction_runtime.json": "10b852e2896bd2a49bad463e964ae407a856f5e663f6235cdc180947434c6504",
+    "members/seed3/predictions.npz": "ca65cb3460c34a75b3be293523e26f9554b96ac4ff03c5c763f31f73d8362187",
+    "members/seed4/prediction_runtime.json": "55ff0e6962e37dd552866b16c96a8897a838ae2a884d2034c53f73e33266db87",
+    "members/seed4/predictions.npz": "bbd6c5f7d357a291f569615a3b8d82f542ae470561f5e45056ce9f43db34ed71",
+    "fit/parameters.json": "fab0aff37e3b381d7f9dcb53677a436a36357e7e8a50ad3ed3bd4292e1121e9f",
+    "apply/application.json": "1ee7cb45dad2967e9cd20b12fd7f5b64cb682693c15b1fbed56e0a710149f05c",
+    "apply/predictions.npz": "a98b8e4db40749c850fd1be98c5780807eca1897a3dc45a619331326aad9d62f",
+    "analysis/results.json": "31f72b0202a2cc7c06a595094ab36be95d3edd6de2a9455f173da8bc15c034e9"
+  },
+  "audit_seconds": 0.8517273340839893,
+  "new_array_values_decoded": false,
+  "new_fit_or_bootstrap": false,
+  "blockers": []
+}

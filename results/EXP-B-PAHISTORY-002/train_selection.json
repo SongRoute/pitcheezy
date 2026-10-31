@@ -1,0 +1,122 @@
+{
+  "artifact_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-002",
+  "elapsed_seconds": 1.0177271249704063,
+  "experiment_id": "EXP-B-PAHISTORY-002",
+  "fold_support": [
+    {
+      "context_seen": 87,
+      "fit_pas": 46,
+      "fit_pitches": 200,
+      "none": 50,
+      "unseen_context": 59,
+      "validation_pas": 50,
+      "validation_pitches": 196
+    },
+    {
+      "context_seen": 72,
+      "fit_pas": 96,
+      "fit_pitches": 396,
+      "none": 49,
+      "unseen_context": 61,
+      "validation_pas": 49,
+      "validation_pitches": 182
+    }
+  ],
+  "folds": [
+    {
+      "fit_game_ids": [
+        778489,
+        778482
+      ],
+      "validation_game_ids": [
+        778410,
+        778406
+      ]
+    },
+    {
+      "fit_game_ids": [
+        778489,
+        778482,
+        778410,
+        778406
+      ],
+      "validation_game_ids": [
+        778339,
+        778336
+      ]
+    }
+  ],
+  "forward_nll": {
+    "0.0": {
+      "blocks": [
+        1.517656628075036,
+        1.5673317706707253
+      ],
+      "pooled": 1.5415742893248123
+    },
+    "0.25": {
+      "blocks": [
+        1.5175723271671357,
+        1.5670887157824376
+      ],
+      "pooled": 1.541413551315244
+    },
+    "0.5": {
+      "blocks": [
+        1.5175517878621567,
+        1.5669369292207254
+      ],
+      "pooled": 1.5413298188866529
+    },
+    "0.75": {
+      "blocks": [
+        1.5175928451608232,
+        1.566874612894393
+      ],
+      "pooled": 1.541321103699209
+    },
+    "1.0": {
+      "blocks": [
+        1.5176937189218618,
+        1.5669004734555385
+      ],
+      "pooled": 1.5413858599936323
+    }
+  },
+  "gate": "passed",
+  "maxrss_bytes_macos": 321290240,
+  "minimum_nll_alpha": 0.75,
+  "phase": "train_selected",
+  "seed": 20260923,
+  "selected_alpha": 0.75,
+  "sha256": {
+    "checkpoint": "11bb5b40ecaed50d068bbbe2a70e58ebd57bc4f2e7d2ba5dcfcf08e6435c04bf",
+    "common_config": "d194fe9348d7dfc9c7d07b6c92baeed4fc16c98d7f3cdb82466f1bc97b5e6ce2",
+    "config": "183c9b4aae26f5132fcce58ef9a6dd31743316213a39ad07f03c20429b4868f2",
+    "contract": "af0a34700de7f2e1dc25b42668e5d145a8d9091062f0cfac9bf0ec44ed9e278a",
+    "family_config": "9ed4af0267189093b5c950e2970b5c85eb5a5f7cea984918a9864c248a2ed939",
+    "helpers": {
+      "experiments/pitchmdp/pitchmdp/model.py": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "experiments/pitchmdp/scripts/diagnose_sequence_legality.py": "4988e85c0c46d9d839688a86a9c69df16d5fa485c0ff43a46d10ffb390e4b428",
+      "experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+      "scripts/a_small_eval.py": "35955301157249b3dfcba0244bfbc108ee89df7939e9d95b68e8ba1370ca9b29",
+      "scripts/b_pa_history_eval.py": "a835cb0042185b8620cd06e164890ca73dbcc1bc17778caaee833bdce66df420"
+    },
+    "parent_manifest": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+    "script": "5a888741b87c822b0df2088b47bface903300efafa9290a7d5f7703b31b18658",
+    "train_parquet": "a75488855c59963c16826fb55e3e50b8e38fe80659e11847d52b5ad14c167852",
+    "train_predictions": "4fbd20561b52cc3ca6513f46178c3bafe1250f51f2082732a1c91a71a47cb9fb"
+  },
+  "spec_git_commit": "4ccd31ffa51b04bdf26272bde3cf89811b8c2a2a",
+  "train_support": {
+    "cohort_pas": 149,
+    "context_cells": 189,
+    "excluded_pa_reasons": {
+      "missing_terminal": 2,
+      "state_changed_inside_pa": 1,
+      "unsupported_pa": 1
+    },
+    "pas": 145,
+    "pitches": 578
+  }
+}

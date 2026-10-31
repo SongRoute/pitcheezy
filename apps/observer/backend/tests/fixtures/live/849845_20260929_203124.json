@@ -1,0 +1,242 @@
+{
+ "metaData": {
+  "timeStamp": "20260929_203124"
+ },
+ "gameData": {
+  "game": {
+   "pk": 849845,
+   "type": "F",
+   "season": "2026"
+  },
+  "datetime": {
+   "officialDate": "2026-09-29"
+  },
+  "status": {
+   "abstractGameState": "Live",
+   "detailedState": "In Progress"
+  },
+  "teams": {
+   "away": {
+    "id": 143,
+    "name": "Philadelphia Phillies",
+    "abbreviation": "PHI"
+   },
+   "home": {
+    "id": 144,
+    "name": "Atlanta Braves",
+    "abbreviation": "ATL"
+   }
+  },
+  "players": {
+   "ID645277": {
+    "id": 645277,
+    "fullName": "Ozzie Albies",
+    "batSide": {
+     "code": "S",
+     "description": "Switch"
+    },
+    "pitchHand": {
+     "code": "R",
+     "description": "Right"
+    }
+   },
+   "ID661395": {
+    "id": 661395,
+    "fullName": "Jhoan Duran",
+    "batSide": {
+     "code": "R",
+     "description": "Right"
+    },
+    "pitchHand": {
+     "code": "R",
+     "description": "Right"
+    }
+   }
+  }
+ },
+ "liveData": {
+  "linescore": {
+   "currentInning": 8,
+   "inningHalf": "Bottom",
+   "isTopInning": false,
+   "inningState": "Bottom",
+   "balls": 2,
+   "strikes": 2,
+   "outs": 2,
+   "teams": {
+    "away": {
+     "runs": 3
+    },
+    "home": {
+     "runs": 2
+    }
+   },
+   "offense": {
+    "batter": {
+     "id": 645277,
+     "fullName": "Ozzie Albies"
+    },
+    "first": {
+     "id": 671739,
+     "fullName": "Michael Harris II"
+    }
+   },
+   "defense": {
+    "pitcher": {
+     "id": 661395,
+     "fullName": "Jhoan Duran"
+    }
+   }
+  },
+  "plays": {
+   "currentPlay": {
+    "about": {
+     "atBatIndex": 64,
+     "halfInning": "bottom",
+     "isTopInning": false,
+     "inning": 8,
+     "isComplete": false
+    },
+    "count": {
+     "balls": 2,
+     "strikes": 2,
+     "outs": 2
+    },
+    "matchup": {
+     "batter": {
+      "id": 645277,
+      "fullName": "Ozzie Albies",
+      "link": "/api/v1/people/645277"
+     },
+     "batSide": {
+      "code": "L",
+      "description": "Left"
+     },
+     "pitcher": {
+      "id": 661395,
+      "fullName": "Jhoan Duran",
+      "link": "/api/v1/people/661395"
+     },
+     "pitchHand": {
+      "code": "R",
+      "description": "Right"
+     }
+    },
+    "playEvents": [
+     {
+      "index": 0,
+      "isPitch": true,
+      "pitchNumber": 1,
+      "count": {
+       "balls": 0,
+       "strikes": 1,
+       "outs": 2
+      },
+      "details": {
+       "description": "Called Strike",
+       "call": {
+        "code": "C",
+        "description": "Called Strike"
+       },
+       "type": {
+        "code": "KC",
+        "description": "Knuckle Curve"
+       }
+      },
+      "pitchData": {
+       "startSpeed": 88.8,
+       "coordinates": {
+        "pX": 0.14085495183664926,
+        "pZ": 2.8275301424840644
+       }
+      }
+     },
+     {
+      "index": 1,
+      "isPitch": true,
+      "pitchNumber": 2,
+      "count": {
+       "balls": 1,
+       "strikes": 1,
+       "outs": 2
+      },
+      "details": {
+       "description": "Ball",
+       "call": {
+        "code": "B",
+        "description": "Ball"
+       },
+       "type": {
+        "code": "FF",
+        "description": "Four-Seam Fastball"
+       }
+      },
+      "pitchData": {
+       "startSpeed": 99.9,
+       "coordinates": {
+        "pX": 0.04931165009037049,
+        "pZ": 3.9797359069503537
+       }
+      }
+     },
+     {
+      "index": 2,
+      "isPitch": true,
+      "pitchNumber": 3,
+      "count": {
+       "balls": 2,
+       "strikes": 1,
+       "outs": 2
+      },
+      "details": {
+       "description": "Ball",
+       "call": {
+        "code": "B",
+        "description": "Ball"
+       },
+       "type": {
+        "code": "FF",
+        "description": "Four-Seam Fastball"
+       }
+      },
+      "pitchData": {
+       "startSpeed": 99.6,
+       "coordinates": {
+        "pX": -0.25521136051271126,
+        "pZ": 3.859015340565665
+       }
+      }
+     },
+     {
+      "index": 3,
+      "isPitch": true,
+      "pitchNumber": 4,
+      "count": {
+       "balls": 2,
+       "strikes": 2,
+       "outs": 2
+      },
+      "details": {
+       "description": "Foul",
+       "call": {
+        "code": "F",
+        "description": "Foul"
+       },
+       "type": {
+        "code": "FS",
+        "description": "Splitter"
+       }
+      },
+      "pitchData": {
+       "startSpeed": 98.4,
+       "coordinates": {
+        "pX": 0.0897338734172536,
+        "pZ": 1.9456145840619812
+       }
+      }
+     }
+    ]
+   }
+  }
+ }
+}

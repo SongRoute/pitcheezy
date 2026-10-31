@@ -1,0 +1,88 @@
+VERDICT: PASS_WITH_NOTES
+
+# REVIEW-A2B-SONNET-003-CLOSURE — independent design review, round 3 (closure check): EXP-OPE-RES-02 (track A2b) v2.2
+
+- **Reviewer:** Claude Sonnet 5.5 (`claude-sonnet-5-5`), independent design reviewer, G-REV round 3 (short closure). Read-only.
+- **Author:** research-design worker (Claude Opus 5.5) under the Claude Fable 5.1 PM session. Codex is unavailable until 2026-11-02 18:57 KST; the Codex re-confirmation remains a separate gate before G-CODE.
+- **Date:** 2026-10-28. Round 1 [REVIEW-A2B-SONNET-001](REVIEW-A2B-SONNET-001.md) FAIL (sha256 `fef363df…`); round 2 [REVIEW-A2B-SONNET-002](REVIEW-A2B-SONNET-002.md) PASS_WITH_NOTES (sha256 `9fc5a155…`, 120 lines).
+- **Files under review** (main checkout `/Users/song/Projects/pitcheezy`, uncommitted; sha256 at review time, all equal to the values the coordinator gave):
+  - `docs/pm/research/track-a/A2b-ope-followup-design.md` — `5a1cd065a70bf334fba27b592cae6b213660e0e0173d864432c62aac6db22a6f` (557 lines, 98,406 B)
+  - `docs/pm/research/track-a/A2b-ope-followup-registration-draft.json` — `38d0a793ee0cbfc4232394464e7e652e485c734fda65523dcb5a16a5a3db44b5` (3,075 lines, 170,334 B)
+  - `docs/pm/research/track-a/A2b-sizing/` — `README.md` `8c48f47d92c1470ef3cb3d18ba912789e7f0622bb9d2719cadbd9ccd45e74a9e`; `a2b_registered_world_sizing.py` `68fdbeae50d70fa056435ba603632764f4282b55073b56be99242ae2971d29a5` (400 lines); `a2b_registered_world_sizing_output.json` `1e3b4b4a71df1a73fb06dcfadd591354fb549c7c274015a1d8fea4a9cbf30c96`; `registered-world-inputs.json` `cdece800ffd98158a2d600fbdf062bc82427c7169b2556c136486dd4bc9f5d79`; toy files unchanged (`f1cf66c0…`, `924be5a6…`)
+- **Also read:** `results/EXP-OPE-RES-01.json` (sha `069bcd6b…`, unchanged since round 2: `S0_summary`, `S1_tab_summary` incl. `cells[*].delta_true`, `S2_s5x_summary.dose_response_s2_by_run`, `digest_manifest`); A2 worktree, read-only: `scripts/run_ope_a2.py` :1245–1265 and :1420–1440, `pitchmdp/ope_redesign_registry.py` :304–350, `pitchmdp/ope_synthetic_a2.py`, `tests/ope_a2_fixtures.py`.
+- **Done / not done:** the coordinator allowed a cheap re-run of the data-free sizing script, so I ran only that: 6.3 s, `python -B`, output to the session scratchpad (34 KB, outside the repo). It reads `registered-world-inputs.json` (aggregate TRAIN marginals already public in the sealed A2-S0/S1 outputs) and imports the A2 modules read-only. No experiment, stage, fit or test was run; no sealed ledger, `/Volumes/T7 Shield` path, 2026 file or rehearsal row was opened; no git state change. Afterwards the A2 worktree is clean (`git status` empty, no `__pycache__`) and the sizing folder hashes are unchanged. Other computations: sha256 of the pinned files, derivation of the nine role seeds from public integers, arithmetic on recorded numbers.
+- **Citation shorthand:** `D:n` = design line, `J:n` = draft line, `S:` = sizing folder, `a2syn` = `pitchmdp/ope_synthetic_a2.py` in the A2 worktree.
+
+Counts: **0 BLOCKER, 0 MAJOR left.** All 10 round-2 items (4 MINOR, 6 NOTE) are CLOSED. New in round 3: 1 MINOR (R3-MINOR-1, a scope fix for G-CODE/G-REG) and 5 NOTE. No recommendation changes.
+
+## Hard constraints — all held
+
+- **Draft state:** `DRAFT_UNREGISTERED`, `registered` false, `preregistration_complete` false, `execution.enabled` false (J:5–7, J:14). All 46 pin leaves are null (the 5 non-null leaves under `registration_input_pins` are allowed-value lists and rule strings), 15 of 16 `stage_output_seals` fields are null (the 16th is the rule text), and `registered_kst` plus the four review references are null (J:21–58, J:2639, J:2719).
+- **Fixed values and identity:** B = 1.26e-5, SE ≤ B/2, ratio 0.70 unchanged; policy identity `c13cc989…` and protected paths untouched; sealed ledgers read-only; no 2026 row. The nine role seeds recompute from `SeedSequence([20261028, r])` (0 mismatches), including `d2_field` 24,791,393 (J:`seeds.roles`).
+- **Data:** the registered-world sizing reads only the public TRAIN marginals and `eta_p`/baseline summary; no rehearsal row, reward, ledger, T7 path or 2026 file (S:README data statement; script docstring and `main()` read only `--inputs`, `--toy-output`, the A2 modules and the fixture).
+
+## 1. Round-2 items — status
+
+- **R2-MINOR-1 (adequacy evaluation point, Song-facing reason, push rule) — CLOSED.** "t > 1 region" in D:89 and J:569; D:222 and J:1784–1785 state t = 1 as the boundary and the dependence of the verdict on the point (synthetic 0/5, 3/5, 5/5 inside at t = 0, 1, 2; registered out, out, in). I re-derived the registered triple from the output: t0 q99 ratio 1.980 with ESS null; t1 0.637/1.762; t2 0.727/1.432, against the bands [0.5167, 0.8389] and [1.196, 1.588]. The push rule fires on the C1 clause alone (D:225; J:1795) and the decision-2 reason leads with the registered-world C1 (D:465; J:2804).
+- **R2-MINOR-2 (ω = 1 is not the worst case) — CLOSED.** D:199, J:1285, J:1598: cosine of the bias-maximizing direction with z̄ is −0.048; C1 at ω 0/0.5/1 is 0.296/1.278/1.152 B (not monotone); the worst direction reaches 28.1 B at the recorded KL. All re-aggregated from the output.
+- **R2-MINOR-3 (README "fixed in v1", band wording) — CLOSED.** S:README heading is now "Definitions (shared by both parts)" and its "Revision notes" put the z̄ change at script writing (01:25 KST) before the first trial run (01:26); the band is "0.5 to 1.5 times the recorded loss/excess" (S:README, D:557, J:1769). Arithmetic: 1 − 0.322 × (1.5, 0.5) = (0.517, 0.839); 1 + 0.392 × (0.5, 1.5) = (1.196, 1.588).
+- **R2-MINOR-4 (no equivalence check of the copied evaluator and S-2′ driver) — CLOSED**, with R3-MINOR-1 and R3-NOTE-3 attached. G-INT-EVAL (D:401; J:2302) and G-INT-S2EQ (D:402; J:2323) exist with costs (707 s; 1,301.75 s per dose family, J:960–961), hang-guard cover (J:2435–2449), failure handling (D:426) and a place in the G-INT list (D:439). Cost arithmetic checked: phase 1 = 3,808 + 1,060.5 + 707 = 5,575.5 s = 1.55 h; maximum = 5,575.5 + 32,978 (R1-b tuple incl. both G-INT-S2EQ families, 65 S-2′ runs, 5 descriptive runs) + 361.9 (TAB re-run) = 38,915 s = 10.81 h (J:940–962).
+- **R2-NOTE-1 (shared noise in the toy worlds) — CLOSED.** D:556, S:README "Shared noise", J:1750; the 100 alternative ε draws are described as adding part of the missing spread.
+- **R2-NOTE-2 (label 4) — CLOSED.** D:332 and J:1921 ff.: gate-failing B2 tuples go to labels 5/6; label 4 is unreachable under ③ and, by the registered-world result, under ①/②.
+- **R2-NOTE-3 (pins) — CLOSED, residual R3-NOTE-1.** 33 of 34 `sources_read_sha256` entries recompute to the pinned bytes; "commit the untracked results file before G-REG" is stated (J:2974).
+- **R2-NOTE-4 (dose cells k = 9–12 unverifiable on T7) — CLOSED by design.** G-INT-S2EQ re-derives them at A2b-S2a (D:402); the residual (decision 3's PASS tables rest on the extraction until then) is listed (J:2901).
+- **R2-NOTE-5 (code freeze under ①/②) — CLOSED.** The G-CODE-2 relaxation is now called a deviation, with reasons (D:317).
+- **R2-NOTE-6 (registered-world value) — CLOSED, and it mattered.** D:204–215 and §2 below.
+
+## 2. Registered-world sizing
+
+**Fidelity claim — confirmed, and stronger than stated.**
+- The script mirrors `situation_from_doc` and `marginals_from_doc` exactly as `run_ope_a2.py:1249–1262` (file sha `8205d27c…` equals the hash recorded in the output) and builds `TabWorld(marginals, law, eta_p, kappa, zeta)` as `stage_s1` does (:1428–1433; `scale('2*kappa_p', κ_p)` = 2.0 × κ_p; drift False for T-A1..T-A4, `ope_redesign_registry.py:304–307`, `:319–321`).
+- I compared with the results JSON directly, not through the PM extraction. `eta_p` 0.16405664825560962 equals `S1_tab_summary.eta_p`; β₀ of T-A1 −2.558039500707987e-18, T-A2 8.92541220275217e-06, T-A3 5.78692909564138e-18, T-A4 −2.341199066210886e-18 equal `S1_tab_summary.acceptance[*].R1_0xR2_0.b_hat`; all five are identical as float64. `kappa_p` 0.06401083365199156 and `zeta_p` 0.2913276237377431 equal `S0_summary` (TAB) and the extraction's marginals. The extraction equals the results JSON on every one of these fields.
+- Evidence the author did not use: `S1_tab_summary.cells[T-A1..T-A4].delta_true` (1.154690894962726e-05 for T-A1/T-A2, 1.0120078201965152e-05, 1.1131715045375363e-05) equal the recomputed `delta_true` bit for bit, so the κ- and ζ-perturbed worlds are right too.
+- Why this is a strong check: the three V2 β₀ are rounding-noise values (~1e-18) that depend on every floating-point step of q̂, π and the DP, so their equality shows the arithmetic path is identical, not merely close. T-A2's β₀ (0.708 B) is a signal that depends on q̂, the η error field and the A2 fixed draws, and it is computed with a denominator (B0) that differs from the V3 logging law, which is the same `_expected_dr` call pattern the D2 rows use.
+- Limits: the new D2 construction is covered by the 90-row reproduction of the reviewed toy script (90/90, again in my re-run), not by a recorded value. The file hashes of `s0.json` (`ae1edc95…`) and `tab.json` (`53a7d19b…`) cannot be checked without T7 (the results JSON records stage-seal manifest hashes `a76a48c2…`, `31e7bc3a…`, not file hashes); the content agreement above makes this immaterial.
+- Re-run: my scratch output is byte-identical to the committed `a2b_registered_world_sizing_output.json` (sha256 `1e3b4b4a…`; even the `seconds` field is 5.9 in both), so the file is the script's untouched output.
+
+**C1 = 1.28 B follows from the output.** Re-aggregated from `rows`, `exact_cells_kl1_eta_p`, `eps_draw_spread_kl1_eta_p` (`rows_compact`) and `worst_direction_eta_p`; every number in D:204–215 and J:1450–1620 matches (re-checked item by item).
+- Registered stand-in (KL ×1, ω 0.5, η_p, registered ε): θ = 0.4908, mean KL 0.048863 (target 0.048863351…), β₂(t0) = 1.61e-05, ratio to B = 1.2778 → `EXACT_FAIL`. C2 2.467 B vs |β₀| + B = 1.708 B; C3 1.111 B; C4 1.310 B (all FAIL); C5, C7, C8 ≈ 1e-13 B (identities: the denominator equals the logging law, so they say nothing about B2); C6 0.513 B vs 3.958 B (PASS).
+- Sensitivities: ω 0/0.5/1 → 0.296/1.278/1.152 B, failing cells {C2}, {C1–C4}, {C1, C3, C4}; KL ×0.5/1/2 → 0.292/1.278/52.46 B; η = 0 → 2.396 B; fixed λ 100/10/3 at t0 → 1.432/0.519/1.051 B; B0's own bias when B2 is true → 1.181 B (t1), 2.958 B (t2), 0.708 B (V3).
+- 100 alternative ε draws (ω 0.5): median 1.305 B, q10 0.254, q90 3.567, max 8.79; C1 passes in 40, C1·C2·C6 in 32, t1 band in 2 (ESS ratio alone in 100), C1 and band together in 2. ω 0: 38/29/1. Worst direction (a feasible D2, so a lower bound on the worst case at that distance): 12.5 B at KL ×0.5 (inside the t1 band), 28.1 B at ×1, 1,823 B at ×2.
+- Consequence under ①/②: both A2b-S0 triggers hold at the registered draw (band out at t = 1; C1 EXACT_FAIL). Only the band trigger depends on the evaluation point; the C1 trigger does not, as D:225 says.
+- What the numbers do not say, and the design says correctly: 1.28 B is a property of one draw (60 of 100 draws exceed B, median 1.31 B), not of B2. The finding is that the stand-in cannot certify B2 either way, not that B2 is biased. The Gaussian 4-group field also misses B2's tail (registered max 5.9 vs recorded 18.1; J:2888).
+- Wording: S:README says "No ω lets the pure swap pass all eight cells"; only ω ∈ {0, 0.5, 1} were run, as D:209 and J say (R3-NOTE-2).
+
+## 3. Placement of G-INT-EVAL and G-INT-S2EQ inside registered stages — acceptable
+
+- Both use real inputs (the S6 ledger with rewards; the S5 runtime). The project gate forbids real-data execution before registration and independent review, so "pre-G-CODE" was available only to synthetic checks; G-CODE itself is code reading plus synthetic tests (D:433).
+- Order inside the stages is right: G-INT-EVAL after G-INT-A2 and G-INT-R3 and before the 25 rehearsal rows (D:401); G-INT-S2EQ before any new-seed run (D:402). A mismatch in the exact form is a deterministic-integrity failure with the existing fix, review and stage-rerun path, at most twice (D:426); a miss in the statistical form stops with `결정 필요` and no automatic retry, which is right because a 3σ miss is not a bug signature.
+- What is lost is early discovery: a defect found at A2b-S3 costs a post-registration fix cycle instead of a pre-registration one. This is bounded (+707 s for G-INT-EVAL; 0.36–0.72 h for G-INT-S2EQ) and mitigated by synthetic bit-identity tests already listed for G-CODE ("A2-part bit identity of the 25-row evaluator", J:3027). `G-INT-A2` still calls the original A2 evaluator (J:3026), so old and new code are both checked.
+- Conditions: R3-MINOR-1 (scope of the S6 reward read) and R3-NOTE-3 (what the statistical form can see) must be handled at G-CODE/G-REG.
+
+## 4. New findings
+
+### MINOR
+
+**R3-MINOR-1 — The registered S6 reward-read rule and the "zero new exposure" claim were not updated for G-INT-EVAL.**
+- *Evidence.* `governing_rules.s6_reward_reads` (J:134) and `data_roles.DEV_S6_150` (J:1071) say that under options 2/3 S6 rewards are read only by the G-INT-A2 reproduction of values A2 already unblinded. G-INT-EVAL (J:2302) is a second S6 reward read. It runs the whole 25-row evaluator on S6; only the 12 A2 pairs have public S6 values, the 13 B2/λ rows do not, and the design's own vocabulary calls a B2 tuple measured on S6 `EXPOSED_S6_NEW_ARM` (J:970, J:985). D:401 and D:439 say "no new exposure" without that restriction. The typed public allowlist (J:2057–2077) has no item for the two checks' results (A2 kept G-INT-A2 in a separate `S3_gint` record), and the runner rejects anything outside the allowlist.
+- *Fix (before G-REG).* Restrict G-INT-EVAL on S6 to the 12 A2 pair rows, or compute the 25 rows but write nothing for the other 13 and say so. Amend J:134 and J:1071 to name G-INT-EVAL as the second permitted S6 reward read. Say where the two results are written (a separate integrity record as `S3_gint`, or typed allowlist items): pass/fail and max |Δ| over the 12 pairs; same for G-INT-S2EQ. Qualify D:401 and D:439 to "for the 12-pair part". Restricting to 12 pairs would also cut about 353 s.
+
+### NOTE
+
+- **R3-NOTE-1 — Two stale pins.** `documents.sizing.sha256["README.md"]` (J:87) is `fcd2e699…`, the v2 sizing README; the current file is `8c48f47d…`, which J:1757 pins correctly. `sources_read_sha256` pins the track-A status board `README.md` at `bef95408…` (J:2935; now `3b62712a…`): the board was edited at 02:54 (it now mentions this closure check), after the draft's last write at 02:52, so this one is benign. The status board is not a design input; label it "as read" or drop it. Re-pin everything at G-REG.
+- **R3-NOTE-2 — Wording.** J:1784 says the record's reference mean ρ under B2 is 0.958 (< 1); the §2.5 argument and D:222 use the ratio B2/B0 = 0.9579/0.9896 = 0.968. Use the ratio. S:README "No ω" should read "none of ω 0, 0.5, 1".
+- **R3-NOTE-3 — Resolving power of G-INT-S2EQ's statistical form.** From the recorded S-2 runs, a 3·√2·SE tolerance is 7.8, 3.4, 14.9 B for the κ runs (k = 4, 9, 10) and 1.07, 0.67, 1.28 B for the ζ runs (k = 5, 11, 12); the R1-a κ rows are exact zeros with SE 0 and test nothing. If G-CODE finds the truth-only path call-order dependent, the κ family is nearly blind in the statistical form. G-CODE should fix the form, state the detection limit in B units if it is statistical, require the exact log-phase reproduction in any case, and add a synthetic bit-identity test of the new S-2′ driver against A2 `run_s5x` on a fixture world (the evaluator analogue is already listed).
+- **R3-NOTE-4 — Options 1/2 only: no pre-gate owner for the A2b-S0 stand-in code.** A2b-S0 must compute θ, the t = 1 band fit and the exact C1 before the gate (D:296; J:2278–2287), but the module that holds the D2 construction, `ope_tab_r3.py`, is written after the gate and reviewed at G-CODE-2 (D:383 item 8; J:3018). Name a pre-gate module for the S0 checks, with bit-reproduction of the sizing output's registered-world block as its acceptance test. Moot under ③.
+- **R3-NOTE-5 — Option 3 only (pre-existing): A2b-S3 hang guard.** The guard is 3,600 s for every option (J:2435–2439) while option 3's rehearsal alone is projected at 7,423.5 s plus 707 s (J:1039); the cost gate would stop with `결정 필요` rather than fail silently. Scale the guard with the option at G-REG. The 7,423.5 s also multiplies the size-independent 353.5 s G-INT-A2 part by 7 (a conservative overestimate).
+
+## 5. The seven recommendations
+
+I would **not change any**: 1 ②, 2 ③, 3 ①, 4 ①, 5 ①, 6 ①, 7 ①.
+- **2 ③** is now supported by an exact computation in the sealed A2 world rather than by toy worlds. Under ①/② the registered rules end at `DIAGNOSTIC_ONLY` at A2b-S0 (two independent triggers), so ①/② cost extra B2 code and review for the outcome ③ gives directly (D:462–465). The draw dependence of C1 (40 % pass) is itself the reason, not a weakness of the argument.
+- **Decisions 1, 3, 4, 5, 6, 7** are unaffected: phase 1 rises from 1.35 h to 1.55 h, the maximum from 9.9 h to 10.8 h, and the new checks sit inside stages already planned.
+
+## Verdict
+
+VERDICT: PASS_WITH_NOTES
+
+0 BLOCKER, 0 MAJOR. All ten round-2 items are CLOSED. The registered-world sizing is faithful to the sealed record (bit-identical η_p, four β₀ and four true effects) and the C1 = 1.28 B conclusion follows from, and is reproduced by, the script's output. Placing G-INT-EVAL and G-INT-S2EQ inside the registered stages is acceptable. R3-MINOR-1 should be fixed before G-CODE/G-REG; the notes can ride along. The design may go to Song with recommendations 1②, 2③, 3①, 4①, 5①, 6①, 7①. The Codex re-confirmation (after 2026-11-02 18:57 KST) and G-CODE remain required.

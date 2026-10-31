@@ -1,0 +1,21 @@
+{
+  "artifact_id": "C-D-API-001",
+  "code_commit": "9c6d8f959aa9c6c4055c0aa7c8b2653e089bb5c2",
+  "database": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-API-001/observer.sqlite3",
+  "transport": "FastAPI ASGI TestClient",
+  "service_injection": "No PA dataset or predictor; actual imported C decision only",
+  "decision_id": "inning-decision-2b1ead36958b4ee23cd8e4231a58c36a61a9ebbcd0072960891fe572abab6d4e",
+  "match_status": 200,
+  "mismatch_cases": 7,
+  "restart_preserved": true,
+  "original_result_preserved": true,
+  "model_calls": 0,
+  "new_data_fetches": 0,
+  "http_server_started": false,
+  "ui_connected": false,
+  "outputs_sha256": {
+    "catalog.json": "c8a31834b3414cccfc91f466c96f03ef77d09440c1bcd6dc7a1871c1639993ab",
+    "resolved.json": "33e860697b9a38a7538110c0d86e3abd15b0cd1986e4a215849e175bc22bec00",
+    "mismatches.json": "952639fed12a4a45f99627fcea35fd068a3901e9f56f3ddf67393318978821f1"
+  }
+}

@@ -1,0 +1,30 @@
+# EXP-WS-RECENCY-001 — fit100(scale-002) EVAL 행의 이력/프로필 특징을 2026 strictly-prior 자료로 갱신 (분류기·보정 고정, 재학습 없음)
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e1-recency/REGISTRATION.json
+#   sha256 3c76de3a14ee8a8c00b177dc255e914d617c7ed68395d2c7161be92825f37372 (실행 전 동결, 독립 검토 PASS; revision 1 = 재현 게이트(c) 1e-12→1e-9)
+# 코드: recency_run.py af1947c0841921902e51025433d4b6e555190e7755400e0e0a67aadd652f232d, recency_predict.py 6552824893da7f86c052f8d830720aa125174b3ac1a4bda8ca7440d0a1fd06b1
+id: EXP-WS-RECENCY-001
+phase: WS-adaptation
+baseline: scale-002 fit100 H0 (이력 donor pool = FIT 행만, 2026-08-02 동결)
+change: "EVAL 질의의 이력 donor pool만 바꿈 — H1: FIT∪SELECT∪CAL(2026-09-06 동결, 시리즈 전 동결 운영안), H2: 전체 수용 행(게임 날짜별 strictly prior, prequential). 분류기 3개 model.txt·인코더·CAL 온도는 scale-002 그대로"
+data_version: d20260930-h2026f          # S2 2026 정규시즌, parquet sha c0c1eda4…9ed2ab, 수용 행 713,021
+data_role: 2026 EXPOSED DEVELOPMENT      # 독립 TEST 없음, 승자·채택 없음; 이력 풀은 2026-only(≤2025 이력 없음)
+splits:
+  FIT: {dates: [2026-03-25, 2026-08-02], rows: 493254, games: 1682}
+  SELECT: {dates: [2026-08-03, 2026-08-23], rows: 82908}
+  CAL: {dates: [2026-08-24, 2026-09-06], rows: 56275}
+  EVAL: {dates: [2026-09-07, 2026-09-27], rows: 80584, games: 275}   # 1회 평가
+seeds:
+  classifier: 20261043                   # 고정 모델(재학습 없음)
+  bootstrap: 20261211
+gates:
+  h0_reproduction: {features: exact float32 equality vs x-fit100.npy EVAL rows, margins_atol: 1e-10, seven_leaf_max_abs: 1e-9}
+  h2_leak: pool rows dated >= pivot(EVAL 중앙 날짜) 재작성 시 pivot 이전 EVAL 특징 불변·이후 변함
+metrics:
+  primary: H2-H0 seven-leaf NLL (whole-game paired bootstrap 10000, pitch-weighted, percentile 95% CI)
+  secondary: [H1-H0, H2-H1, Brier, top-label ECE 10-bin, strata]
+  strata_by_pitcher_FIT_pool_rows: {S0: 0, S1: 1-199, S2: 200-999, S3: ">=1000"}
+  batter_strata: {B0: 0 FIT-pool rows, B1: ">0"}
+  margins: {helps: CI95 upper < 0, nll_non_inferior: CI95 upper <= 0.0010, brier_non_inferior: CI95 upper <= 0.0005}
+caps: {rss_bytes: 6442450944, feature_stage_seconds: 2400, total_seconds: 7200, min_free_memory_bytes: 8589934592, lock: ML-MATRIX-20260924/.heavy.lock}
+attempt: recency-001
+commit_at_execution: 686798ca97b78a6b73730941dbe56cf8b15a5bea   # pitcheezy repo HEAD (codex/ml-matrix-execution); 실험 코드는 job 디렉터리에 있음

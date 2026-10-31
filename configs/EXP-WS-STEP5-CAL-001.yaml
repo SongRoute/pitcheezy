@@ -1,0 +1,27 @@
+# EXP-WS-STEP5-CAL-001 — Step 5 그림자 경로(2026 strict-prior 프로필 → 199칸 → 2024 동결 3-head → 7 leaf) 결과 확률 보정 검증
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-cal-001/{REGISTRATION.md,config.json}
+#   REGISTRATION.md sha256 1874b5942bdcb55a1c7f2cadb816e03ac31f78e866ec52b424ace8c835f4b4b7
+#   config.json     sha256 cba1343b2d8cb689106abcb13fbecd4de82b928f4c1ad9c21bd5975316b1eb76
+#   step5cal.py     sha256 56ea0bf3d33b3ea513707a3e6ad6b6314feeec7371b3cbf91889f1fabe2e55d2
+# 독립 검토 PASS: /Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-cal-001-review/REVIEW.md (실행 전 동결)
+id: EXP-WS-STEP5-CAL-001
+phase: WS-adaptation
+baseline: 없음(동결 경로의 기술 통계). 참고 비교는 fit100·OLD 기록 예측(같은 행, report-only)
+change: "학습·튜닝·선택 없음. 그림자 경로를 2026 EVAL 행에 그대로 적용해 실제 구종 칸의 7-leaf 확률 보정을 측정"
+data_version: d20260930-h2026f          # S2 2026 정규시즌 03-25..09-27, parquet sha c0c1eda4…9ed9b
+data_role: 2026 EXPOSED DEVELOPMENT      # 독립 TEST 없음, 승자·채택 없음, 표지는 권고
+population: {dates: [2026-09-07, 2026-09-27], rows: 80584, games: 275}   # scale-002 corpus EVAL
+designs:
+  A: {profile_cutoff: 2026-09-06, note: "EVAL 전 동결 프로필 하나(주 설계)"}
+  B: {profile_cutoff: "경기일 - 1일", note: "경기일별 prequential(프로필 21개)"}
+model: {kind: frozen 2024 three heads (early fold), registry_sha256: 9caa9aa3…c510, encoder_sha256: 449ceeb0…90f9, load_form: bytes/hash/1 thread smoke form}
+seeds: {bootstrap: 20261211}
+metrics:
+  cell: 실제 구종 칸의 7-leaf 확률
+  list: [NLL, Brier, top-label ECE(10 bins), leaf별 one-vs-rest 보정 표·ECE]
+  ci: whole-game bootstrap 10000 draws, pitch-weighted ratio of sums, percentile 95%
+thresholds_advisory: {top_label_ece_max: 0.010, leaf_ece_max: 0.010, populated_bin_min_n: 1000, max_abs_bin_gap: 0.03, leaves: [narrow_whiff, ground_ball_in_play], primary_design: A}
+gates: [G1 committed-profile reproduction, L1 label mapping vs corpus y7, G2 shadow-ledger replay (849831), G3 single-action row == build_candidates, G4 bulk == pipeline-form head call]
+caps: {min_free_memory_gib: 8, rss_gib: 6, wall_s: 3600, lock: ML-MATRIX-20260924/.heavy.lock}
+attempt: cal-001
+commit_at_execution: d665ae50d6331cae113b7cabb1dff29946cde192   # 실험 코드는 job 디렉터리에 있음

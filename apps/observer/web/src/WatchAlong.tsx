@@ -1,0 +1,422 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import WatchSummaryPanel from './WatchSummaryPanel';
+import showcaseSource from './showcase-scenes.json';
+import './watch-along.css';
+
+export const BADGE = '검증 전 실험 버전 · 위치는 실제 투구 분포 근사';
+export type Bounds = { bottom: number; top: number };
+type Target = { x: number; z: number };
+export type Candidate = { rank: number; pitch_type: string; pitch_label: string; zone_id: string | null; zone_label: string; target: Target | null;
+  detail: { probability: number; reference_probability: number; kernel_mass: number | null; kernel_ess: number | null } };
+export type Situation = { inning: number; half: 'Top' | 'Bot'; outs: number; balls: number; strikes: number; bases: number; home_score: number; away_score: number };
+type Person = { id: number; name: string | null };
+type Decision = { index: number; pa_id: string; at_bat_number: number; pitch_number: number; situation: Situation;
+  pitcher: Person & { hand: string }; batter: Person & { side: string }; status: string;
+  pre: { status: 'ready' | 'unsupported'; reason: string | null; recommendation: { candidates: Candidate[] } | null } };
+export type Actual = { pitch_type: string | null; pitch_label: string; result_label: string; event_label: string | null; play_text: string | null;
+  speed_mph: number | null; x: number | null; z: number | null; zone_label: string };
+type Reveal = { index: number; actual: Actual; we: { home_before: number | null; home_after: number | null; home_delta: number | null } };
+type Timeline = { badge: string; game: { game_pk: number; date: string; game_type: string; away_team: string; home_team: string };
+  policy: { name: string; identity_sha256: string; tau: number; note: string }; location: { note: string; zone_bounds: Bounds };
+  we_note: string; coverage: { pitch_decisions: number; ready: number; ready_share_of_pitches: number | null }; decisions: Decision[] };
+type GameItem = Timeline['game'] & { pitches?: number; ready?: number; ready_share?: number | null };
+// Catcher setup read from the broadcast video after the game (D151, same GET /api/watch/{game}/setup as Game.tsx): horizontal only.
+type SetupView = { game_pk: number; badge?: string; pitches: { at_bat_number: number; pitch_number: number; status: string; plate_x_feet: number | null }[] };
+type Setups = { game: number; badge: string | null; x: Map<string, number | null> };  // null = the video module abstained on that pitch
+type LiveGame = { game_pk: number; game_type: string; start: string | null; status: string; live: boolean; away_team: string; home_team: string };
+
+export const ZONE_BOUNDS: Bounds = { bottom: 1.6, top: 3.3899 };
+const TEAMS: Record<string, string> = {
+  'Arizona Diamondbacks': '애리조나', 'Athletics': '애슬레틱스', 'Atlanta Braves': '애틀랜타', 'Baltimore Orioles': '볼티모어',
+  'Boston Red Sox': '보스턴', 'Chicago Cubs': '컵스', 'Chicago White Sox': '화이트삭스', 'Cincinnati Reds': '신시내티',
+  'Cleveland Guardians': '클리블랜드', 'Colorado Rockies': '콜로라도', 'Detroit Tigers': '디트로이트', 'Houston Astros': '휴스턴',
+  'Kansas City Royals': '캔자스시티', 'Los Angeles Angels': '에인절스', 'Los Angeles Dodgers': '다저스', 'Miami Marlins': '마이애미',
+  'Milwaukee Brewers': '밀워키', 'Minnesota Twins': '미네소타', 'New York Mets': '메츠', 'New York Yankees': '양키스',
+  'Philadelphia Phillies': '필라델피아', 'Pittsburgh Pirates': '피츠버그', 'San Diego Padres': '샌디에이고',
+  'San Francisco Giants': '샌프란시스코', 'Seattle Mariners': '시애틀', 'St. Louis Cardinals': '세인트루이스',
+  'Tampa Bay Rays': '탬파베이', 'Texas Rangers': '텍사스', 'Toronto Blue Jays': '토론토', 'Washington Nationals': '워싱턴' };
+const SERIES: Record<string, string> = { F: '와일드카드', D: '디비전시리즈', L: '챔피언십시리즈', W: '월드시리즈', R: '정규시즌' };
+
+export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  let response: Response;
+  try { response = await fetch(`/api${path}`, { cache: 'no-store', signal }); }
+  catch (e) { if (signal?.aborted) throw e; throw new Error('관전 서버에 연결하지 못했어요. 네트워크(Tailscale) 연결을 확인해 주세요.'); }
+  const body = await response.json().catch(e => { if (signal?.aborted) throw e; return {}; });  // a dropped request never reads as empty data
+  if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.');
+  return body as T;
+}
+export const halfLabel = (s: { inning: number; half: 'Top' | 'Bot' }) => `${s.inning}회 ${s.half === 'Top' ? '초' : '말'}`;
+export const percent = (v: number | null | undefined) => v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`;
+export const short = (team: string) => TEAMS[team] ?? team.split(' ').slice(-1)[0];
+/** Plainer zone words: '가운데 높이 중앙' → '한가운데'. Left/right stay catcher's view (the zone caption says so). */
+export const plainZone = (label: string) => label.replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 ');
+// Refusal texts decided from the actual row (pitch-clock call, PA over without a pitch, missing type, thrown type
+// outside TRAIN): before the reveal they tell what happened, so the viewer sees a neutral line until revealing.
+// Must equal STATUS_TEXT in scripts/demo_precompute.py (tests/pre-reason-neutral-smoke.mjs checks this).
+const OUTCOME_REASONS = new Set([
+  '자동 볼·스트라이크(투구 없음)라 추천 대상이 아닙니다.',
+  '투구 없이 타석이 끝난 기록이라 추천 대상이 아닙니다.',
+  '구종 정보가 없는 투구라 이 타석은 계산에서 빠졌습니다.',
+  '실제 던진 구종이 학습 기간 구종 목록에 없어 이 타석은 계산에서 빠졌습니다.',
+]);
+const PRE_NEUTRAL_REASON = '이 공은 투구 전 추천 대상이 아니에요. 이유는 실제 투구를 공개하면 보여 드려요.';
+const preReason = (reason: string | null, revealed: boolean) =>
+  !revealed && reason !== null && OUTCOME_REASONS.has(reason) ? PRE_NEUTRAL_REASON : reason;
+const GUIDE_KEY = 'pitcheezy.guide.v1';
+const guideSeen = () => { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch { return false; } };
+const readHash = () => { const m = /i=(\d+)/.exec(window.location.hash); return m ? Number(m[1]) : null; };
+const nyDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+const kstTime = (iso: string | null) => iso ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)) : '';
+
+export function Bases({ mask }: { mask: number }) {
+  const on = (base: number) => (mask & (1 << (base - 1))) !== 0;
+  const runners = [1, 2, 3].filter(on);
+  return <svg className="wa-bases" viewBox="0 0 60 44" role="img" aria-label={`주자 ${runners.length ? runners.join(', ') + '루' : '없음'}`}>
+    {[[30, 6, 2], [48, 22, 1], [12, 22, 3]].map(([x, y, base]) => <rect key={base} x={x - 7} y={y - 7} width="14" height="14" transform={`rotate(45 ${x} ${y})`} className={on(base) ? 'on' : ''} />)}
+  </svg>;
+}
+
+function Outs({ outs }: { outs: number }) {
+  return <span className="wa-outs" aria-label={`${outs}아웃`}>{[0, 1, 2].map(i => <i key={i} className={i < outs ? 'on' : ''} />)}<em>{outs}아웃</em></span>;
+}
+
+export const SETUP_X_DRAWN = 1.1;  // same bound as the ball dot below, so the two marks never disagree; beyond it the mitt is described
+
+export function Zone({ bounds, candidates, actual, setupX }: { bounds: Bounds; candidates: Candidate[]; actual: { x: number | null; z: number | null } | null; setupX?: number | null }) {
+  const x = (v: number) => 90 + v / 1.6 * 80, y = (v: number) => 200 - (v - .6) / 3.8 * 190;
+  const left = x(-.83), right = x(.83), top = y(bounds.top), bottom = y(bounds.bottom);
+  const cells = [0, 1, 2];
+  const seen = new Set<string>();
+  return <svg className="wa-zone" viewBox="0 0 180 210" role="img" aria-label={candidates.length ? '포수 시점 스트라이크존: 추천 대략 위치와 실제 투구' : '포수 시점 스트라이크존: 실제 투구'}>
+    <rect x={left} y={top} width={right - left} height={bottom - top} className="wa-zone-box" />
+    {cells.map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="wa-zone-grid" />)}
+    {cells.map(i => <line key={`h${i}`} y1={top + (bottom - top) * i / 3} y2={top + (bottom - top) * i / 3} x1={left} x2={right} className="wa-zone-grid" />)}
+    {typeof setupX === 'number' && Math.abs(setupX) <= SETUP_X_DRAWN && <g className="wa-setup-mark" data-x={setupX} role="img" aria-label="포수 미트 가로 위치 추정">
+      {/* as in Game.tsx: a dashed vertical line with edge ticks, across the plate only; no claim about height */}
+      <line x1={x(setupX)} x2={x(setupX)} y1={top - 3} y2={bottom + 3} />
+      <path d={`M${x(setupX) - 5} ${top - 10}h10l-5 6z`} /><path d={`M${x(setupX) - 5} ${bottom + 10}h10l-5 -6z`} />
+      <text x={x(setupX)} y={top - 13} textAnchor="middle">미트</text></g>}
+    {candidates.filter(c => c.target).map(c => {
+      const key = `${c.target!.x}:${c.target!.z}`, offset = seen.has(key) ? 9 : 0; seen.add(key);
+      return <g key={c.rank} className={`wa-target rank-${c.rank}`}><circle cx={x(c.target!.x) + offset} cy={y(c.target!.z)} r={c.rank === 1 ? 11 : 8} /><text x={x(c.target!.x) + offset} y={y(c.target!.z) + 4} textAnchor="middle">{c.rank}</text></g>;
+    })}
+    {actual && actual.x !== null && actual.z !== null && <circle className="wa-actual" cx={x(Math.max(-1.1, Math.min(1.1, actual.x)))} cy={y(Math.max(.7, Math.min(4.3, actual.z)))} r="7" />}
+    <text x="90" y="207" textAnchor="middle" className="wa-zone-caption">포수 쪽에서 본 존 · {candidates.length ? '숫자=추천 · ' : ''}주황=실제</text>
+  </svg>;
+}
+
+export function Header({ badge, back, onHelp }: { badge: string; back?: boolean; onHelp?: () => void }) {
+  return <header className="wa-header">
+    <div className="wa-header-row">{back ? <a className="wa-back" href="/watch" aria-label="경기 목록으로">←</a> : null}<a className="wa-brand" href="/watch">Pitcheezy<span>.</span></a>
+      {onHelp && <button className="wa-help" onClick={onHelp}>보는 법</button>}</div>
+    <p className="wa-badge">{badge}</p></header>;
+}
+
+/** First-visit, one-screen guide; dismissal is remembered on this browser only. */
+export function Guide({ onClose }: { onClose: () => void }) {
+  const close = () => { try { localStorage.setItem(GUIDE_KEY, '1'); } catch { /* private mode: show again next time */ } onClose(); };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); close(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  });
+  return <div className="wa-guide" role="dialog" aria-modal="true" aria-labelledby="wa-guide-title"><div className="wa-guide-box">
+    <h2 id="wa-guide-title">이렇게 보세요</h2>
+    <ol>
+      <li><b>영상과 맞추기</b> 중계 영상을 틀고, 위쪽 <em>회</em> 버튼이나 타석 목록으로 영상과 같은 장면을 찾아요.</li>
+      <li><b>던지기 전에 보기</b> 투수가 공을 던지기 전에 추천 구종과 대략 위치를 봐요.</li>
+      <li><b>넘겨서 비교하기</b> 공이 들어오면 아래 버튼을 눌러 실제 투구를 공개하고, 한 번 더 누르면 다음 공으로 가요.</li>
+    </ol>
+    <p className="wa-guide-note">추천은 검증 전 실험 버전이에요. 2026 정규시즌 1회 평가에서는 개선 근거를 확인하지 못했어요.</p>
+    <button className="wa-primary" onClick={close} autoFocus>알겠어요</button>
+  </div></div>;
+}
+
+export function Board({ s, away, home, pitcher, batter, extra }: { s: Situation; away: string; home: string; pitcher: string; batter: string; extra?: string }) {
+  return <section className="wa-board" aria-live="polite">
+    <div className="wa-score"><span>{short(away)}</span><strong>{s.away_score}</strong><i>:</i><strong>{s.home_score}</strong><span>{short(home)}</span></div>
+    <div className="wa-inning"><strong>{halfLabel(s)}</strong><Outs outs={s.outs} /><Bases mask={s.bases} /><span className="wa-count" aria-label={`볼 ${s.balls}, 스트라이크 ${s.strikes}`}>{s.balls}-{s.strikes}</span>{extra && <span className="wa-pitchno">{extra}</span>}</div>
+    <div className="wa-matchup"><span>투수 <b>{pitcher}</b></span><span>타자 <b>{batter}</b></span></div>
+  </section>;
+}
+
+/** Type first, then the approximate zone; numbers folded (D49). */
+export function Recommendation({ candidates, bounds, actual, note, setupX }: { candidates: Candidate[]; bounds: Bounds; actual: { x: number | null; z: number | null } | null; note: string; setupX?: number | null }) {
+  const top = candidates[0];
+  return <>
+    <div className="wa-rec">
+      <div className="wa-rec-text"><h2 className="wa-type">{top.pitch_label}</h2><p className="wa-zone-label">{plainZone(top.zone_label)}</p>
+        {candidates.length > 1 && <><p className="wa-kicker wa-others-title">다른 후보</p>
+          <ol className="wa-others">{candidates.slice(1).map(c => <li key={c.rank}><b>{c.rank}</b><span>{c.pitch_label} <em>· {plainZone(c.zone_label)}</em></span></li>)}</ol></>}</div>
+      <Zone bounds={bounds} candidates={candidates} actual={actual} setupX={setupX} />
+    </div>
+    <details className="wa-numbers"><summary>숫자로 보기</summary>
+      <table><thead><tr><th>구종</th><th>모델이 고를 확률</th><th>이 투수 평소</th></tr></thead>
+        <tbody>{candidates.map(c => <tr key={c.rank}><td>{c.pitch_label}</td><td>{percent(c.detail.probability)}</td><td>{percent(c.detail.reference_probability)}</td></tr>)}</tbody></table>
+      <p><b>모델이 고를 확률</b>은 추천 모델이 이 상황에서 그 구종을 고르는 비율, <b>이 투수 평소</b>는 비슷한 상황에서 이 투수가 2025년까지 던진 방식을 흉내 낸 기준 모델의 비율이에요. 두 숫자가 비슷하면 “평소대로”에 가까운 추천이에요.</p>
+      <p>이 공이 볼·스트라이크·인플레이가 될 확률은 이 자료에 없어요(미측정).</p>
+      <p>{note}</p></details>
+  </>;
+}
+
+/** Win-expectancy change for the team at bat; event contribution beyond WE is not computed yet (D43). */
+export function WeCard({ team, before, after }: { team: string; before: number | null; after: number | null }) {
+  const delta = before !== null && after !== null ? after - before : null;
+  return <div className="wa-we-card">
+    <p className="wa-eyebrow">승리확률 변화 · {short(team)} 공격</p>
+    <p className="wa-we-line"><span>{percent(before)}</span><i>→</i><strong>{percent(after)}</strong>
+      {delta !== null && <b className={delta > 0.0005 ? 'up' : delta < -0.0005 ? 'down' : ''}>{delta >= 0 ? '+' : ''}{(delta * 100).toFixed(1)}%p</b>}</p>
+    <p className="wa-we-note">{delta !== null && Math.abs(delta) < 0.0005 ? '볼·스트라이크만으로는 움직이지 않아요. 타석이 끝나거나 주자·아웃이 바뀔 때 변해요.' : '이 공 뒤 공격 팀이 이길 확률이 이만큼 바뀌었어요.'}</p>
+  </div>;
+}
+
+export type StripItem = { key: string; label: string; result: string; match: boolean | null; current?: boolean };
+export function PitchStrip({ items }: { items: StripItem[] }) {
+  if (!items.length) return null;
+  return <ol className="wa-strip" aria-label="이 타석 투구 순서">{items.map((p, i) =>
+    <li key={p.key} className={p.current ? 'current' : ''}><span className="n">{i + 1}</span><b>{p.label}</b><em>{p.result}</em>{p.match !== null && <i className={p.match ? 'hit' : ''} title={p.match ? '추천 1순위와 같은 구종' : '추천 1순위와 다른 구종'}>{p.match ? '✓' : '·'}</i>}</li>)}
+  </ol>;
+}
+
+function Picker() {
+  const [games, setGames] = useState<GameItem[] | null>(null);
+  const [live, setLive] = useState<LiveGame[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  useEffect(() => {
+    get<{ games: GameItem[] }>('/watch/games').then(r => setGames(r.games)).catch(e => setError(e.message));
+    get<{ games: LiveGame[] }>(`/live/games?date=${nyDate()}`).then(r => setLive(r.games.filter(g => g.game_type !== 'R' || g.live))).catch(e => setLiveError(e.message));
+  }, []);
+  return <div className="wa-page"><Header badge={BADGE} />
+    <main className="wa-main">
+      <h1 className="wa-title">오늘의 포스트시즌</h1>
+      <section className="wa-section">
+        <h2>지금 경기 · 지연 중계</h2>
+        <p className="wa-muted">내 중계 화면에 시점을 맞춰, 다음 공의 추천 구종과 대략 위치를 먼저 보여 줘요.</p>
+        {liveError ? <p className="wa-error" role="alert">{liveError}</p> : live === null ? <p className="wa-loading">오늘 경기를 불러오는 중…</p> : live.length === 0 ? <p className="wa-empty">오늘(미국 동부 기준) 예정된 포스트시즌 경기가 없어요.</p> :
+          <ul className="wa-games">{live.map(g => <li key={g.game_pk}><a className={`wa-game ${g.live ? 'is-live' : ''}`} href={`/legacy/live?game=${g.game_pk}`}>
+            <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{SERIES[g.game_type] ?? g.game_type}</span></span>
+            <span className="wa-game-meta">{g.live ? <em className="wa-live-dot">경기 중</em> : <em>{g.status === 'Final' || g.status === 'Game Over' ? '종료' : `${kstTime(g.start)} 시작(한국)`}</em>}</span></a></li>)}</ul>}
+      </section>
+      <section className="wa-section">
+        <h2>끝난 경기 · 중계 영상과 함께 보기</h2>
+        <p className="wa-muted">한 공씩 넘기며 추천 → 실제 투구를 비교해요. “실제 속도로 다시 보기”는 경기 때와 같은 간격으로 저절로 넘어가요. 목록에 최종 점수는 없어요.</p>
+        {error && <p className="wa-error" role="alert">{error}</p>}
+        {games === null ? (!error && <p className="wa-loading">경기 목록을 불러오는 중…</p>) : games.length === 0 ? <p className="wa-empty">아직 준비된 경기가 없어요. 맥미니에서 <code>scripts/demo_precompute.py sync</code>를 실행하면 끝난 경기가 추가돼요. (저장장치 T7이 연결돼 있어야 해요)</p> :
+          <ul className="wa-games">{games.map(g => <li key={g.game_pk} className="wa-game-row"><a className="wa-game" href={`/legacy/watch?game=${g.game_pk}`}>
+            <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{g.date} · {SERIES[g.game_type] ?? g.game_type}</span></span>
+            {g.ready_share !== undefined && g.ready_share !== null && <span className="wa-coverage" title="추천을 낼 수 있었던 공의 비율">
+              <span className="bar"><i style={{ width: `${Math.round(g.ready_share * 100)}%` }} /></span>추천 {Math.round(g.ready_share * 100)}%</span>}</a>
+            <span className="wa-replay-links"><a className="wa-replay-link" href={`/legacy/game?game=${g.game_pk}&replay=0`}>한 화면으로 다시 보기 ▸</a>
+              {g.game_pk === showcaseSource.gamePk && <a className="wa-replay-link" href="/showcase">영상과 나란히 비교 ▸</a>}
+              <a className="wa-replay-link" href={`/legacy/live?game=${g.game_pk}&replay=0`}>실제 속도로 다시 보기 ▸</a></span></li>)}</ul>}
+        <p className="wa-footnote">추천 비율이 낮은 경기는 2025년 4월 이후 데뷔했거나 기록이 적은 투수가 많이 던진 경기예요. 그런 투수의 공은 추천 없이 이유만 보여 줘요.</p>
+      </section>
+    </main></div>;
+}
+
+export default function WatchAlong() {
+  const params = new URLSearchParams(window.location.search);
+  const gamePk = params.get('game') ? Number(params.get('game')) : null;
+  const embedded = params.get('embed') === '1';
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [index, setIndex] = useState(0);
+  const [furthest, setFurthest] = useState(0);  // the latest pitch this viewer has reached: navigation lists stop there
+  const [reveals, setReveals] = useState<Record<number, Reveal>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [guide, setGuide] = useState(() => !embedded && !guideSeen());
+  const [setups, setSetups] = useState<Setups | null>(null);
+
+  useEffect(() => {
+    if (gamePk === null) return;
+    setTimeline(null); setError(null);
+    get<Timeline>(`/watch/${gamePk}`).then(t => {
+      setTimeline(t);
+      let start = readHash();
+      if (start === null) { try { start = Number(localStorage.getItem(`pitcheezy.watch.${gamePk}`) ?? 0); } catch { start = 0; } }
+      const first = Math.min(Math.max(0, start || 0), t.decisions.length - 1);
+      let reached = 0;
+      try { reached = Number(localStorage.getItem(`pitcheezy.watch.${gamePk}.furthest`) ?? 0) || 0; } catch { reached = 0; }
+      setIndex(first); setFurthest(Math.min(Math.max(first, reached), t.decisions.length - 1));
+    }).catch(e => setError(e.message));
+  }, [gamePk]);
+  useEffect(() => {  // once per game; drawn only for a pitch already revealed, never before
+    setSetups(null);
+    if (gamePk === null) return;
+    const request = new AbortController();
+    get<SetupView>(`/watch/${gamePk}/setup`, request.signal).then(v => {
+      if (request.signal.aborted || v.game_pk !== gamePk || !Array.isArray(v.pitches)) return;
+      const x = new Map<string, number | null>();
+      v.pitches.forEach(p => x.set(`${gamePk}:${p.at_bat_number}:${p.pitch_number}`,
+        p.status !== 'unavailable' && typeof p.plate_x_feet === 'number' && Number.isFinite(p.plate_x_feet) ? p.plate_x_feet : null));
+      setSetups({ game: gamePk, badge: v.badge ?? null, x });
+    }).catch(() => undefined);  // most games have none (404); a failed request draws nothing and says nothing
+    return () => request.abort();
+  }, [gamePk]);
+  useEffect(() => {
+    if (!timeline) return;
+    window.history.replaceState(null, '', `?game=${timeline.game.game_pk}${embedded ? '&embed=1' : ''}#i=${index}`);
+    try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}`, String(index)); } catch { /* storage may be unavailable */ }
+  }, [index, timeline, embedded]);
+  useEffect(() => { if (timeline && index > furthest) setFurthest(index); }, [index, furthest, timeline]);
+  useEffect(() => {  // also keeps a pitch reached by opening a shared #i=N link, not only by stepping past it
+    if (!timeline || embedded) return;
+    try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}.furthest`, String(furthest)); } catch { /* storage may be unavailable */ }
+  }, [furthest, timeline, embedded]);
+
+  const decision = timeline?.decisions[index] ?? null;
+  const reveal = reveals[index] ?? null;
+  const plateAppearances = useMemo(() => {
+    const out: { first: number; label: string }[] = [];
+    timeline?.decisions.forEach(d => { if (!out.length || timeline.decisions[out[out.length - 1].first].pa_id !== d.pa_id) out.push({ first: d.index, label: `${halfLabel(d.situation)} · ${d.batter.name ?? d.batter.id}` }); });
+    return out;
+  }, [timeline]);
+  const halves = useMemo(() => {  // jump targets for syncing with the broadcast video: first pitch of each half-inning
+    const out: { first: number; label: string }[] = [];
+    timeline?.decisions.forEach(d => { const label = `${d.situation.inning}${d.situation.half === 'Top' ? '초' : '말'}`; if (!out.length || out[out.length - 1].label !== label) out.push({ first: d.index, label }); });
+    return out;
+  }, [timeline]);
+  // The row must not tell how the game ends before the viewer gets there (spoiler audit T23): always 1초–9말, a half that
+  // was never played (9말 after a home lead) jumps to the last pitch, and extra innings appear only once reached.
+  const innings = useMemo(() => {
+    if (!timeline) return [];
+    const at = new Map(halves.map(h => [h.label, h.first])), last = timeline.decisions.length - 1;
+    const regular = Array.from({ length: 18 }, (_, i) => `${Math.floor(i / 2) + 1}${i % 2 ? '말' : '초'}`).map(label => ({ label, first: at.get(label) ?? last }));
+    const extra = halves.filter(h => Number.parseInt(h.label, 10) > 9 && h.first <= Math.max(furthest, index));
+    return [...regular, ...extra];
+  }, [timeline, halves, furthest, index]);
+  const halfNow = (d: Decision | null) => d ? `${d.situation.inning}${d.situation.half === 'Top' ? '초' : '말'}` : '';
+  const currentHalf = innings.findIndex(h => h.label === halfNow(timeline?.decisions[index] ?? null));
+  const currentPa = plateAppearances.reduce((found, pa, i) => pa.first <= index ? i : found, 0);
+  const reachedPas = plateAppearances.filter(pa => pa.first <= Math.max(furthest, index));
+  const paStart = plateAppearances[currentPa]?.first ?? 0;
+
+  const fetchReveal = useCallback(async (i: number) => {
+    if (!timeline) return null;
+    const r = await get<Reveal>(`/watch/${timeline.game.game_pk}/reveal/${i}`);
+    setReveals(prev => ({ ...prev, [i]: r }));
+    return r;
+  }, [timeline]);
+  // Earlier pitches of this plate appearance are already in the past: fill the sequence strip.
+  useEffect(() => {
+    if (!timeline) return;
+    for (let i = paStart; i < index; i++) if (!reveals[i]) void fetchReveal(i).catch(() => undefined);
+  }, [timeline, paStart, index, reveals, fetchReveal]);
+
+  const doReveal = useCallback(async () => {
+    if (!timeline || busy) return;
+    setBusy(true); setError(null);  // a successful retry must not leave the previous failure on screen
+    try { await fetchReveal(index); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }, [timeline, index, busy, fetchReveal]);
+  const go = useCallback((next: number) => { if (embedded) return; setError(null); setIndex(next); window.scrollTo({ top: 0 }); }, [embedded]);
+  const step = useCallback((delta: number) => { if (timeline) go(Math.min(Math.max(0, index + delta), timeline.decisions.length - 1)); }, [timeline, index, go]);
+  useEffect(() => {  // a typed or shared #i=N link jumps to that pitch
+    const onHash = () => { const target = readHash(); if (timeline && target !== null && target < timeline.decisions.length) go(target); };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [timeline, go]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (guide || (event.target as HTMLElement)?.tagName === 'SELECT' || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === 'ArrowRight' || event.key === ' ') { event.preventDefault(); if (reveal) step(1); else void doReveal(); }
+      if (event.key === 'ArrowLeft') step(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [reveal, step, doReveal, guide]);
+  useEffect(() => { document.querySelector('.wa-innings .current')?.scrollIntoView({ block: 'nearest', inline: 'center' }); }, [currentHalf, timeline]);
+  useEffect(() => { if (reveal) document.querySelector('.wa-reveal')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [reveal]);
+
+  if (gamePk === null) return <Picker />;
+  if (!timeline || !decision) return <div className="wa-page"><Header badge={BADGE} back /><main className="wa-main">{error ? <><p className="wa-error" role="alert">{error}</p><a className="wa-button" href="/watch">경기 목록으로</a></> : <p className="wa-loading">경기 자료를 불러오는 중…</p>}</main></div>;
+
+  const s = decision.situation, rec = decision.pre.recommendation, top = rec?.candidates[0];
+  const game = timeline.game;
+  const strip: StripItem[] = timeline.decisions.slice(paStart, index + 1).map(d => {
+    const r = reveals[d.index]; const t = d.pre.recommendation?.candidates[0];
+    return { key: String(d.index), label: r ? r.actual.pitch_label : d.index === index ? '?' : '…', result: r ? (r.actual.event_label ?? r.actual.result_label) : d.index === index ? '다음 공' : '',
+      match: r && t && r.actual.pitch_type ? t.pitch_type === r.actual.pitch_type : null, current: d.index === index };
+  });
+  const last = index === timeline.decisions.length - 1;
+  // exact game:at_bat:pitch, and only once this very pitch has been revealed. undefined = no line for it, null = abstained
+  const setupX = reveal && reveal.index === decision.index && setups?.game === game.game_pk
+    ? setups.x.get(`${game.game_pk}:${decision.at_bat_number}:${decision.pitch_number}`) : undefined;
+  const ready = decision.pre.status === 'ready' && top;
+  return <div className="wa-page wa-has-bar"><Header badge={timeline.badge} back={!embedded} onHelp={embedded ? undefined : () => setGuide(true)} />
+    <Board s={s} away={game.away_team} home={game.home_team} pitcher={decision.pitcher.name ?? String(decision.pitcher.id)}
+      batter={`${decision.batter.name ?? decision.batter.id} (${decision.batter.side === 'L' ? '좌' : '우'}타)`} extra={`${decision.pitch_number}구째`} />
+    <main className="wa-main">
+      {!embedded && <><nav className="wa-innings" aria-label="회로 이동">{innings.map((h, i) =>
+        <button key={h.label} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} onClick={() => go(h.first)}>{h.label}</button>)}</nav>
+      <div className="wa-nav">
+        <select value={currentPa} onChange={e => go(plateAppearances[Number(e.target.value)].first)} aria-label="타석으로 이동">
+          {reachedPas.map((pa, i) => <option key={pa.first} value={i}>{pa.label}</option>)}
+        </select>
+        <span className="wa-progress">경기 {index + 1}번째 공</span>
+      </div>
+      </>}
+      <PitchStrip items={strip} />
+      {error && <p className="wa-error" role="alert">{error}</p>}
+      <article className="wa-card">
+        <p className="wa-eyebrow">투구 전 추천</p>
+        {ready ? <Recommendation candidates={rec!.candidates} bounds={timeline.location.zone_bounds} actual={reveal?.actual ?? null} note={timeline.location.note} setupX={setupX} />
+          : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{preReason(decision.pre.reason, reveal !== null)}</p><p className="wa-muted wa-small">실제 투구는 아래 버튼으로 그대로 볼 수 있어요.</p></>}
+        {reveal && <Revealed reveal={reveal} top={top ?? null} decision={decision} game={game}
+          setup={setupX === undefined ? null : <SetupNote x={setupX} badge={setups?.badge ?? null}
+            zone={ready ? null : <Zone bounds={timeline.location.zone_bounds} candidates={[]} actual={reveal.actual} setupX={setupX} />} />} />}
+      </article>
+      {reveal && <WatchSummaryPanel gamePk={timeline.game.game_pk} through={index} />}
+      <footer className="wa-foot">
+        <p className="wa-keys">{embedded ? '스페이스 = 실제 투구 공개 · 장면은 바깥 화면에서 바꿔 주세요.' : '키보드: → 또는 스페이스 = 공개/다음 · ← = 이전'}</p>
+        <details><summary>이 추천은 어떻게 만들었나요?</summary>
+          <p>2026 정규시즌 1회 평가에서 추천 정책의 개선 근거를 확인하지 못했습니다. 서비스 추천은 검증 전 실험 버전입니다.</p>
+          <p>2025년까지 기록으로 학습해 고정한 추천 모델(연구 이름 ARM-B)이 구종을 고르고, 위치는 그 투수가 실제로 던진 공의 분포로 어림해요.</p>
+          <p>이 경기에서 추천을 낸 공 {timeline.coverage.ready}/{timeline.coverage.pitch_decisions} · {timeline.we_note}</p>
+          <p className="wa-tech">{timeline.policy.name} · τ {timeline.policy.tau} · 식별자 {timeline.policy.identity_sha256.slice(0, 8)}</p></details></footer>
+    </main>
+    <div className="wa-actionbar" role="toolbar" aria-label="투구 넘기기">
+      {!embedded && <button className="wa-step" onClick={() => step(-1)} disabled={index === 0} aria-label="이전 공">←</button>}
+      {!reveal ? <button className="wa-primary" onClick={() => void doReveal()} disabled={busy}>{busy ? '불러오는 중…' : '실제 투구 공개'}</button>
+        : embedded ? <button className="wa-primary" disabled>공개 완료 · 다음 장면은 영상 옆에서 선택</button>
+        : last ? <a className="wa-primary" href="/watch">마지막 공이에요 · 목록으로</a>
+        : <button className="wa-primary" onClick={() => step(1)}>다음 공 →</button>}
+      {!embedded && <button className="wa-step" onClick={() => step(1)} disabled={last} aria-label="공개하지 않고 다음 공">→</button>}
+    </div>
+    {guide && <Guide onClose={() => setGuide(false)} />}
+  </div>;
+}
+
+/** After the reveal only: where the catcher set the mitt across the plate, read from the video. Zone = the picture to
+ *  draw it on when no recommendation zone is on screen. */
+function SetupNote({ x, badge, zone }: { x: number | null; badge: string | null; zone: ReactNode }) {
+  const off = x !== null && Math.abs(x) > SETUP_X_DRAWN;
+  return <div className="wa-setup">
+    {x === null ? <p className="wa-setup-line">포수 미트 위치 추정 · 이 공은 영상에서 미트를 읽지 못해 표시하지 않아요.</p> : <>
+      {!off && zone}
+      <p className="wa-setup-line">{off ? `포수 미트 위치 추정 · 존 그림 밖(포수 기준 ${x < 0 ? '왼쪽' : '오른쪽'})이라 그리지 않았어요.`
+        : <><i aria-hidden="true" />점선 = 포수 미트 위치 추정 (AI·검토 전, 가로만)</>}</p></>}
+    <details className="wa-setup-more"><summary>이 표시의 한계</summary>
+      <p>경기 영상에서 AI가 포수가 준비 자세에서 둔 미트를 읽어 홈플레이트 가로 위치로 바꾼 값이에요. 사람 검토 전이고 높이는 표시하지 않아요.</p>
+      <p>투수의 실제 의도나 목표가 아니며 추천 계산에는 쓰지 않아요. 영상에 나온 일부 공만 있고, 미트를 읽지 못한 공은 비워 둬요.</p>
+      <p>이 경기의 정확도는 미측정이에요. 사람 판독과 비교한 평가(M3)는 다른 두 경기의 결과라 이 경기 값이 아니에요.</p>
+      {badge && <p className="wa-tech">{badge}</p>}</details>
+  </div>;
+}
+
+function Revealed({ reveal, top, decision, game, setup }: { reveal: Reveal; top: Candidate | null; decision: Decision; game: GameItem; setup: ReactNode }) {
+  const a = reveal.actual, we = reveal.we;
+  const battingHome = decision.situation.half === 'Bot';
+  const before = we.home_before === null ? null : battingHome ? we.home_before : 1 - we.home_before;
+  const after = we.home_after === null ? null : battingHome ? we.home_after : 1 - we.home_after;
+  return <section className="wa-reveal">
+    <p className="wa-eyebrow">실제 투구</p>
+    <h3>{a.pitch_label}{a.speed_mph !== null && <span> · {a.speed_mph.toFixed(1)} mph</span>}</h3>
+    <p className="wa-result">{a.event_label ?? a.result_label} · {plainZone(a.zone_label)}</p>
+    {top && a.pitch_type && <p className={`wa-match ${top.pitch_type === a.pitch_type ? 'same' : ''}`}>{top.pitch_type === a.pitch_type ? '추천 1순위 구종과 같았어요' : `추천 1순위(${top.pitch_label})와 다른 구종`}</p>}
+    {a.play_text && <p className="wa-play">{a.play_text}</p>}
+    {setup}
+    <WeCard team={battingHome ? game.home_team : game.away_team} before={before} after={after} />
+  </section>;
+}

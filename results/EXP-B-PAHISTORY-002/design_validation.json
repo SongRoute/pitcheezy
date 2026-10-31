@@ -1,0 +1,24 @@
+{
+  "experiment_id": "EXP-B-PAHISTORY-002",
+  "status": "design_integrity_verified_not_fitted_or_scored",
+  "spec_commit": "d75fe92c0350b6a570f3ac85cb78d767229f7a50",
+  "config_sha256": "183c9b4aae26f5132fcce58ef9a6dd31743316213a39ad07f03c20429b4868f2",
+  "selection_manifest_sha256": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+  "forward_folds": [
+    {
+      "fold": 1,
+      "latest_fit_date": "2025-04-02",
+      "earliest_validation_date": "2025-04-07",
+      "complete_game_id_disjoint": true
+    },
+    {
+      "fold": 2,
+      "latest_fit_date": "2025-04-08",
+      "earliest_validation_date": "2025-04-13",
+      "complete_game_id_disjoint": true
+    }
+  ],
+  "dev_opened_for_this_check": false,
+  "final_holdout_opened": false,
+  "next_run_requires_train_selection_commit_before_dev": true
+}

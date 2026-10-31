@@ -1,0 +1,32 @@
+{
+  "before": "http://127.0.0.1:8766/",
+  "after": "http://127.0.0.1:8767/",
+  "sessionId": "a245dac4-3db6-495a-916f-500f10b77247",
+  "screenshots": {
+    "beforeDesktop": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/browser/before-desktop.png",
+    "beforeMobile": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/browser/before-mobile-390.png",
+    "afterDesktop": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/browser/after-desktop.png",
+    "afterMobile": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/browser/after-mobile-390.png",
+    "afterMobileNext": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/browser/after-mobile-next-390.png"
+  },
+  "checks": {
+    "desktopLoadMs": 552,
+    "reloadAndTimeline": true,
+    "initialComparison": "02 같은 3구, 실제 기록과 비교 사전 추천은 이후 결과로 바뀌지 않습니다. 실제 구종과 도착 위치는 기록된 사실입니다. 던지기 전 저장 추천 · 모델 추정 체인지업 · 낮은 오른쪽 → 실제 3구 · 관측 기록 포심 · 존 바깥 삼진",
+    "nextAndPastTiming": true,
+    "mobileLoadMs": 569,
+    "mobileWidth": {
+      "viewport": 390,
+      "document": 390
+    },
+    "inningAccessible": true,
+    "firstScreenAction": {
+      "y": 780,
+      "bottom": 828,
+      "visibleInFirstViewport": true
+    },
+    "errorAndRetryVisible": true
+  },
+  "errors": [],
+  "passed": true
+}

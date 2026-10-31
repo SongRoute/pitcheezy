@@ -1,0 +1,1510 @@
+{
+  "family_id": "ML-JUNE-CALIBRATION-v1",
+  "status": "completed",
+  "scope": "Previously exposed eligible 2025 whole-MLB DEV",
+  "source": {
+    "full_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/analysis/results.json",
+      "sha256": "31f72b0202a2cc7c06a595094ab36be95d3edd6de2a9455f173da8bc15c034e9"
+    },
+    "analysis_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/analysis/manifest.json",
+      "sha256": "a296c8ec4c3a379904706b4a88fc2f62e1bacb5c93c24d510345e333efa37fcc"
+    },
+    "fit_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/fit/manifest.json",
+      "sha256": "eb0dec3ccac973643ede9263ef4103665fae2f46f340db7e34aed9eb1eeae6ea"
+    },
+    "parameters": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/fit/parameters.json",
+      "sha256": "fab0aff37e3b381d7f9dcb53677a436a36357e7e8a50ad3ed3bd4292e1121e9f"
+    },
+    "queue_status": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/status.json",
+      "sha256": "de0c5fe28ee9c53ec273eb1c4f6536e137c123bc47102ab5c4be7ed4b6959609"
+    },
+    "execution_plan": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-plan.json",
+      "sha256": "74fbfa5e6395f6bbf5b92d62605aad7fce65d4329b08b9e846f30fef115dbbfb"
+    },
+    "execution_registration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-registration.json",
+      "sha256": "5ba9f82f4378363eb1ed7f521564e79575d3b69a5403f52f97e2d1c387c6b307"
+    },
+    "runtime_release": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/runtime-release.json",
+      "sha256": "8057ed19cceb827adb550e4d83c528423f0d1a8b0ab65588366bfa225c861392"
+    },
+    "terminal_evidence": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/terminal-execution-evidence-001.json",
+      "sha256": "df8de2f023775f0ce625b54e54a886ea96051cddac2b37f9caf8473d4c2e2f0b"
+    },
+    "scientific_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-v1.json",
+      "sha256": "a0bff3b34079ac736b2dff7c69a29faa5a5268316b53ad06e113945684ba6ab8"
+    },
+    "execution_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-EXECUTION-v1.json",
+      "sha256": "792f89c6e752e2955ae6ca48d8db2fab94d109da2bf7bfda01342bab54f8e917"
+    },
+    "contract": {
+      "path": "/Users/song/Projects/pitcheezy/docs/contracts/ML-JUNE-CALIBRATION-v1.md",
+      "sha256": "e155315dcf732c55009755443f4db8117f260851273d7c54c760e2f29c701d4c"
+    },
+    "code_commit_c": "1002f57ea09d14df279212c68100da755bc573dc",
+    "registration_commit_d": "61b056caa5d752787d84c7ae74b2a627818c34b3"
+  },
+  "population": {
+    "june": {
+      "rows": 104970,
+      "games": 394,
+      "pitchers": 549,
+      "support": {
+        "zero": {
+          "pitches": 4788,
+          "games": 127,
+          "supported": true
+        },
+        "low": {
+          "pitches": 5338,
+          "games": 184,
+          "supported": true
+        },
+        "middle": {
+          "pitches": 38546,
+          "games": 393,
+          "supported": true
+        },
+        "high": {
+          "pitches": 56298,
+          "games": 386,
+          "supported": true
+        }
+      }
+    },
+    "dev": {
+      "rows": 311721,
+      "games": 1161
+    },
+    "overlap": {
+      "overlap_pitches": 12334,
+      "overlap_games": 328,
+      "complement_pitches": 299387,
+      "complement_games": 1161,
+      "shared_games_panel_complement": 328
+    }
+  },
+  "fit": {
+    "call_counts": {
+      "replay": 6,
+      "candidate": 30,
+      "total": 36
+    },
+    "new_neural_fits": 0,
+    "new_temperature_fits": 0,
+    "new_full_june_predictions": 5,
+    "B0_weights": {
+      "ensemble": 0.7467754577062221,
+      "seed0": 0.7360713993721615,
+      "seed1": 0.7110143941240522,
+      "seed2": 0.6662467703718219,
+      "seed3": 0.6705016129088885,
+      "seed4": 0.6778171874988664
+    },
+    "B1_weights": {
+      "ensemble": 0.6189409076426928,
+      "seed0": 0.5910941438773701,
+      "seed1": 0.5700157941550489,
+      "seed2": 0.5701259774514701,
+      "seed3": 0.5592060678372671,
+      "seed4": 0.576578660639779
+    },
+    "B2_weights": {
+      "zero": {
+        "ensemble": 0.45912396607400446,
+        "seed0": 0.4558586059319134,
+        "seed1": 0.4204278837066143,
+        "seed2": 0.4248820847909258,
+        "seed3": 0.39201862910949714,
+        "seed4": 0.43109014728475753
+      },
+      "low": {
+        "ensemble": 0.7339027901554653,
+        "seed0": 0.6435926083649495,
+        "seed1": 0.6671016380192494,
+        "seed2": 0.6486546625638409,
+        "seed3": 0.6579176563927726,
+        "seed4": 0.6850108210769651
+      },
+      "middle": {
+        "ensemble": 0.5946737197560682,
+        "seed0": 0.570651365419747,
+        "seed1": 0.5458136521056773,
+        "seed2": 0.5465393244011202,
+        "seed3": 0.5399537685192303,
+        "seed4": 0.5566971634365097
+      },
+      "high": {
+        "ensemble": 0.6434878830703542,
+        "seed0": 0.6142003066092806,
+        "seed1": 0.594717529895126,
+        "seed2": 0.595103607411264,
+        "seed3": 0.5837254415347954,
+        "seed4": 0.596044307661407
+      }
+    },
+    "B2_fallback_rows": 0,
+    "replay_weight_max_abs_difference": 0.0
+  },
+  "N": {
+    "B1-B0": {
+      "contrast": "B1-B0",
+      "candidate": "B1",
+      "control": "B0",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": -0.0005790967764688547,
+        "ci95": [
+          -0.0007044085814310439,
+          -0.000456415431635658
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "brier": {
+        "delta": -0.0005672250369111795,
+        "ci95": [
+          -0.0006226582637235096,
+          -0.000512912470034648
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "seed_nll_deltas": [
+        -0.0008333867764815868,
+        -0.0007622513697977206,
+        -0.00035701000408065156,
+        -0.0004938805311413035,
+        -0.00032807941832721337
+      ],
+      "seed_brier_deltas": [
+        -0.0006709702618834697,
+        -0.0006331990512097277,
+        -0.000383894145007936,
+        -0.000492878965922524,
+        -0.00040979701370003193
+      ],
+      "adjusted_p": 0.00029997000299970003,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": true,
+          "holm_adjusted_p_at_most_0.05": true,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": true
+        },
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00029997000299970003
+      }
+    },
+    "B2-B0": {
+      "contrast": "B2-B0",
+      "candidate": "B2",
+      "control": "B0",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": -0.0005675643174538072,
+        "ci95": [
+          -0.0007146727402135341,
+          -0.0004225818169680127
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "brier": {
+        "delta": -0.0005664482802835134,
+        "ci95": [
+          -0.0006299412516481067,
+          -0.0005023902135340495
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "seed_nll_deltas": [
+        -0.0008017052203782973,
+        -0.0007673122396868551,
+        -0.0003162041120482766,
+        -0.0004938332143050215,
+        -0.00030249800716904157
+      ],
+      "seed_brier_deltas": [
+        -0.0006662619539131477,
+        -0.0006325987794051206,
+        -0.0003736574556978123,
+        -0.0004884717118604109,
+        -0.0004060989392555375
+      ],
+      "adjusted_p": 0.00029997000299970003,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": true,
+          "holm_adjusted_p_at_most_0.05": true,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": true
+        },
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00029997000299970003
+      }
+    },
+    "B2-B1": {
+      "contrast": "B2-B1",
+      "candidate": "B2",
+      "control": "B1",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": 1.1532459015048021e-05,
+        "ci95": [
+          -4.6890315933322e-05,
+          7.066987010762694e-05
+        ],
+        "p_less": 0.6484351564843516
+      },
+      "brier": {
+        "delta": 7.767566276678616e-07,
+        "ci95": [
+          -2.3412378623850834e-05,
+          2.497994634790655e-05
+        ],
+        "p_less": 0.5243475652434757
+      },
+      "seed_nll_deltas": [
+        3.1681556103289676e-05,
+        -5.060869889134566e-06,
+        4.0805892032374954e-05,
+        4.7316836282031915e-08,
+        2.5581411158171733e-05
+      ],
+      "seed_brier_deltas": [
+        4.708307970322003e-06,
+        6.002718046072304e-07,
+        1.0236689310123773e-05,
+        4.407254062113251e-06,
+        3.698074444494354e-06
+      ],
+      "adjusted_p": 0.6484351564843516,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": false,
+          "holm_adjusted_p_at_most_0.05": false,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": false
+        },
+        "negative_seeds": 1,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.6484351564843516
+      }
+    }
+  },
+  "multiplicity": {
+    "method": "Holm",
+    "alpha": 0.05,
+    "slot_order": [
+      "B1-B0",
+      "B2-B0",
+      "B2-B1"
+    ],
+    "raw_p": [
+      9.999000099990002e-05,
+      9.999000099990002e-05,
+      0.6484351564843516
+    ],
+    "adjusted_p": [
+      0.00029997000299970003,
+      0.00029997000299970003,
+      0.6484351564843516
+    ],
+    "family_size": 3
+  },
+  "R": {
+    "family_size": 78,
+    "upper_alpha": 0.000641025641025641,
+    "draws": 100000,
+    "seed": 20260924,
+    "slots": [
+      {
+        "slot": "B1-B0|role_starter|NLL",
+        "contrast": "B1-B0",
+        "group": "role_starter",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00028904520057568614,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|role_starter|Brier",
+        "contrast": "B1-B0",
+        "group": "role_starter",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00044559245512791433,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|role_starter|NLL",
+        "contrast": "B2-B0",
+        "group": "role_starter",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0002902831667034234,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|role_starter|Brier",
+        "contrast": "B2-B0",
+        "group": "role_starter",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0004300772744601643,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|role_starter|NLL",
+        "contrast": "B2-B1",
+        "group": "role_starter",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 8.92554501046348e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|role_starter|Brier",
+        "contrast": "B2-B1",
+        "group": "role_starter",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 5.418812977799842e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|role_relief|NLL",
+        "contrast": "B1-B0",
+        "group": "role_relief",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00030075400179974555,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|role_relief|Brier",
+        "contrast": "B1-B0",
+        "group": "role_relief",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00043245376125018253,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|role_relief|NLL",
+        "contrast": "B2-B0",
+        "group": "role_relief",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00014702534523333832,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|role_relief|Brier",
+        "contrast": "B2-B0",
+        "group": "role_relief",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.000407864968139014,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|role_relief|NLL",
+        "contrast": "B2-B1",
+        "group": "role_relief",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.00022200820748950907,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|role_relief|Brier",
+        "contrast": "B2-B1",
+        "group": "role_relief",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 5.729770739322614e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|hand_L|NLL",
+        "contrast": "B1-B0",
+        "group": "hand_L",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.0001360248611440582,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|hand_L|Brier",
+        "contrast": "B1-B0",
+        "group": "hand_L",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0002877930956149206,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|hand_L|NLL",
+        "contrast": "B2-B0",
+        "group": "hand_L",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.0003747826209434483,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|hand_L|Brier",
+        "contrast": "B2-B0",
+        "group": "hand_L",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00021987177295033794,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|hand_L|NLL",
+        "contrast": "B2-B1",
+        "group": "hand_L",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.00037230562724626753,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|hand_L|Brier",
+        "contrast": "B2-B1",
+        "group": "hand_L",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 0.00012163831614386731,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|hand_R|NLL",
+        "contrast": "B1-B0",
+        "group": "hand_R",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0004660490247581891,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|hand_R|Brier",
+        "contrast": "B1-B0",
+        "group": "hand_R",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0005000050973776379,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|hand_R|NLL",
+        "contrast": "B2-B0",
+        "group": "hand_R",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00048328609451196556,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|hand_R|Brier",
+        "contrast": "B2-B0",
+        "group": "hand_R",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0005034631158607862,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|hand_R|NLL",
+        "contrast": "B2-B1",
+        "group": "hand_R",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 4.8278043261581364e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|hand_R|Brier",
+        "contrast": "B2-B1",
+        "group": "hand_R",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 2.7629886650683662e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_low|NLL",
+        "contrast": "B1-B0",
+        "group": "volume_low",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.0007594369883752226,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_low|Brier",
+        "contrast": "B1-B0",
+        "group": "volume_low",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 0.00011981210696342835,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_low|NLL",
+        "contrast": "B2-B0",
+        "group": "volume_low",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 4.1467246465940804e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_low|Brier",
+        "contrast": "B2-B0",
+        "group": "volume_low",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 6.656908212930916e-07,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_low|NLL",
+        "contrast": "B2-B1",
+        "group": "volume_low",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.00037722976376585506,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_low|Brier",
+        "contrast": "B2-B1",
+        "group": "volume_low",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 0.0003021817975928292,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_middle|NLL",
+        "contrast": "B1-B0",
+        "group": "volume_middle",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0005173586949392338,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_middle|Brier",
+        "contrast": "B1-B0",
+        "group": "volume_middle",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.000577978008048272,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_middle|NLL",
+        "contrast": "B2-B0",
+        "group": "volume_middle",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.000480395619116172,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_middle|Brier",
+        "contrast": "B2-B0",
+        "group": "volume_middle",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0006347328034355581,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_middle|NLL",
+        "contrast": "B2-B1",
+        "group": "volume_middle",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 3.82132613767519e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_middle|Brier",
+        "contrast": "B2-B1",
+        "group": "volume_middle",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -5.6997065225841665e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_high|NLL",
+        "contrast": "B1-B0",
+        "group": "volume_high",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0001272571263131207,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_high|Brier",
+        "contrast": "B1-B0",
+        "group": "volume_high",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00038749636467860733,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_high|NLL",
+        "contrast": "B2-B0",
+        "group": "volume_high",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00019639646910412688,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_high|Brier",
+        "contrast": "B2-B0",
+        "group": "volume_high",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0003483917400779586,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_high|NLL",
+        "contrast": "B2-B1",
+        "group": "volume_high",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 4.178479732705891e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_high|Brier",
+        "contrast": "B2-B1",
+        "group": "volume_high",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 9.012903163338221e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_zero|NLL",
+        "contrast": "B1-B0",
+        "group": "volume_zero",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0001188287156428164,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|volume_zero|Brier",
+        "contrast": "B1-B0",
+        "group": "volume_zero",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00017719110758317082,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_zero|NLL",
+        "contrast": "B2-B0",
+        "group": "volume_zero",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.001167266949020253,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|volume_zero|Brier",
+        "contrast": "B2-B0",
+        "group": "volume_zero",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 9.530667633078494e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_zero|NLL",
+        "contrast": "B2-B1",
+        "group": "volume_zero",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.0012823713307871887,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|volume_zero|Brier",
+        "contrast": "B2-B1",
+        "group": "volume_zero",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 0.0002720837468515024,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|two_strikes|NLL",
+        "contrast": "B1-B0",
+        "group": "two_strikes",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -7.691439135147429e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|two_strikes|Brier",
+        "contrast": "B1-B0",
+        "group": "two_strikes",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00031602961990135535,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|two_strikes|NLL",
+        "contrast": "B2-B0",
+        "group": "two_strikes",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 6.729141720715536e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|two_strikes|Brier",
+        "contrast": "B2-B0",
+        "group": "two_strikes",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0002669875640623946,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|two_strikes|NLL",
+        "contrast": "B2-B1",
+        "group": "two_strikes",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.0002838117158457734,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|two_strikes|Brier",
+        "contrast": "B2-B1",
+        "group": "two_strikes",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 0.00010713078396737549,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|less_two_strikes|NLL",
+        "contrast": "B1-B0",
+        "group": "less_two_strikes",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0003873391066571504,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|less_two_strikes|Brier",
+        "contrast": "B1-B0",
+        "group": "less_two_strikes",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0004961920760973135,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|less_two_strikes|NLL",
+        "contrast": "B2-B0",
+        "group": "less_two_strikes",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00036642400021124634,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|less_two_strikes|Brier",
+        "contrast": "B2-B0",
+        "group": "less_two_strikes",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0004928898068524979,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|less_two_strikes|NLL",
+        "contrast": "B2-B1",
+        "group": "less_two_strikes",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 8.095009703533241e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|less_two_strikes|Brier",
+        "contrast": "B2-B1",
+        "group": "less_two_strikes",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 3.216287274706706e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|runners_on|NLL",
+        "contrast": "B1-B0",
+        "group": "runners_on",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -5.6186381570555995e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|runners_on|Brier",
+        "contrast": "B1-B0",
+        "group": "runners_on",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00035972053715984005,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|runners_on|NLL",
+        "contrast": "B2-B0",
+        "group": "runners_on",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 6.961661196437602e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|runners_on|Brier",
+        "contrast": "B2-B0",
+        "group": "runners_on",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0003184578414704499,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|runners_on|NLL",
+        "contrast": "B2-B1",
+        "group": "runners_on",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.00022904400654663,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|runners_on|Brier",
+        "contrast": "B2-B1",
+        "group": "runners_on",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 8.41880887805174e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|bases_empty|NLL",
+        "contrast": "B1-B0",
+        "group": "bases_empty",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0004458360016588753,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|bases_empty|Brier",
+        "contrast": "B1-B0",
+        "group": "bases_empty",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0004948279940945302,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|bases_empty|NLL",
+        "contrast": "B2-B0",
+        "group": "bases_empty",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.00044343476926952214,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|bases_empty|Brier",
+        "contrast": "B2-B0",
+        "group": "bases_empty",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0004919706096985555,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|bases_empty|NLL",
+        "contrast": "B2-B1",
+        "group": "bases_empty",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 7.91773330240917e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|bases_empty|Brier",
+        "contrast": "B2-B1",
+        "group": "bases_empty",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 3.591352758432174e-05,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|non_cpanel|NLL",
+        "contrast": "B1-B0",
+        "group": "non_cpanel",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0003685215179244115,
+        "within_margin": true
+      },
+      {
+        "slot": "B1-B0|non_cpanel|Brier",
+        "contrast": "B1-B0",
+        "group": "non_cpanel",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.0004764852111660516,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|non_cpanel|NLL",
+        "contrast": "B2-B0",
+        "group": "non_cpanel",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": -0.0003162095533536934,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B0|non_cpanel|Brier",
+        "contrast": "B2-B0",
+        "group": "non_cpanel",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": -0.00046272406136931986,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|non_cpanel|NLL",
+        "contrast": "B2-B1",
+        "group": "non_cpanel",
+        "loss": "NLL",
+        "margin": 0.01,
+        "status": "measured",
+        "upper": 0.00011104243612681764,
+        "within_margin": true
+      },
+      {
+        "slot": "B2-B1|non_cpanel|Brier",
+        "contrast": "B2-B1",
+        "group": "non_cpanel",
+        "loss": "Brier",
+        "margin": 0.002,
+        "status": "measured",
+        "upper": 3.909066159542258e-05,
+        "within_margin": true
+      }
+    ],
+    "contrast_status": {
+      "B1-B0": "passed",
+      "B2-B0": "passed",
+      "B2-B1": "passed"
+    },
+    "margins": {
+      "NLL": 0.01,
+      "Brier": 0.002
+    },
+    "note": "An upper bound above its margin means noninferiority unestablished; missing slots stay unconfirmed."
+  },
+  "candidates": {
+    "B1": {
+      "required_contrasts": [
+        "B1-B0"
+      ],
+      "checks": {
+        "B1-B0": {
+          "N": "inconclusive",
+          "R": "passed"
+        }
+      },
+      "research_improvement_candidate": false,
+      "service_promotion": false
+    },
+    "B2": {
+      "required_contrasts": [
+        "B2-B0",
+        "B2-B1"
+      ],
+      "checks": {
+        "B2-B0": {
+          "N": "inconclusive",
+          "R": "passed"
+        },
+        "B2-B1": {
+          "N": "inconclusive",
+          "R": "passed"
+        }
+      },
+      "research_improvement_candidate": false,
+      "service_promotion": false
+    }
+  },
+  "contrast_additivity": {
+    "N": {
+      "scope": "N3 whole DEV",
+      "point_max_abs_error": 1.734723475976807e-18,
+      "draw_max_abs_error": 3.577867169202165e-18,
+      "draws_checked": 10000,
+      "atol": 1e-12,
+      "rtol": 0,
+      "passed": true
+    },
+    "R": [
+      {
+        "scope": "R78 role_starter",
+        "point_max_abs_error": 1.3010426069826053e-18,
+        "draw_max_abs_error": 4.445228907190568e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 role_relief",
+        "point_max_abs_error": 1.3986208025063007e-17,
+        "draw_max_abs_error": 5.204170427930421e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 hand_L",
+        "point_max_abs_error": 2.371692252312041e-18,
+        "draw_max_abs_error": 3.0899761915836876e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 hand_R",
+        "point_max_abs_error": 1.3227266504323154e-17,
+        "draw_max_abs_error": 5.421010862427522e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 volume_low",
+        "point_max_abs_error": 7.013432803265607e-19,
+        "draw_max_abs_error": 2.5190759851342892e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 volume_middle",
+        "point_max_abs_error": 1.431146867680866e-17,
+        "draw_max_abs_error": 6.288372600415926e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 volume_high",
+        "point_max_abs_error": 7.914675859144182e-18,
+        "draw_max_abs_error": 3.3610267347050637e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 volume_zero",
+        "point_max_abs_error": 6.830473686658678e-18,
+        "draw_max_abs_error": 7.806255641895632e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 two_strikes",
+        "point_max_abs_error": 1.1384122811097797e-18,
+        "draw_max_abs_error": 4.228388472693467e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 less_two_strikes",
+        "point_max_abs_error": 1.2576745200831851e-17,
+        "draw_max_abs_error": 5.5294310796760726e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 runners_on",
+        "point_max_abs_error": 4.445228907190568e-18,
+        "draw_max_abs_error": 3.903127820947816e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 bases_empty",
+        "point_max_abs_error": 4.662069341687669e-18,
+        "draw_max_abs_error": 6.071532165918825e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "R78 non_cpanel",
+        "point_max_abs_error": 1.919037845299343e-17,
+        "draw_max_abs_error": 4.228388472693467e-18,
+        "draws_checked": 100000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      }
+    ],
+    "descriptive": [
+      {
+        "scope": "descriptive whole",
+        "point_max_abs_error": 1.734723475976807e-18,
+        "draw_max_abs_error": 3.577867169202165e-18,
+        "draws_checked": 10000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "descriptive cpanel",
+        "point_max_abs_error": 5.421010862427522e-19,
+        "draw_max_abs_error": 2.8189256484623115e-18,
+        "draws_checked": 10000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      },
+      {
+        "scope": "descriptive non_cpanel",
+        "point_max_abs_error": 1.6263032587282567e-18,
+        "draw_max_abs_error": 3.469446951953614e-18,
+        "draws_checked": 10000,
+        "atol": 1e-12,
+        "rtol": 0,
+        "passed": true
+      }
+    ]
+  },
+  "contrast_additivity_passed": true,
+  "descriptive_absolute": {
+    "whole": {
+      "n": 311721,
+      "games": 1161,
+      "B0": {
+        "log_loss": 1.4904081967248524,
+        "brier_multiclass": 0.726592367393062,
+        "accuracy": 0.3714635844232503,
+        "top_label_ece10": 0.008710236256349225
+      },
+      "B1": {
+        "log_loss": 1.4898290999483836,
+        "brier_multiclass": 0.7260251423561509,
+        "accuracy": 0.37269545523079933,
+        "top_label_ece10": 0.0039233191217816765
+      },
+      "B2": {
+        "log_loss": 1.4898406324073987,
+        "brier_multiclass": 0.7260259191127785,
+        "accuracy": 0.3729264310072148,
+        "top_label_ece10": 0.003424726820557618
+      }
+    },
+    "cpanel": {
+      "n": 12334,
+      "games": 328,
+      "B0": {
+        "log_loss": 1.4833332600862763,
+        "brier_multiclass": 0.7238415200547448,
+        "accuracy": 0.3741689638397924,
+        "top_label_ece10": 0.006404792241420726
+      },
+      "B1": {
+        "log_loss": 1.4826932399585737,
+        "brier_multiclass": 0.7233157669545536,
+        "accuracy": 0.3754661910167018,
+        "top_label_ece10": 0.006308309882480177
+      },
+      "B2": {
+        "log_loss": 1.482678783348016,
+        "brier_multiclass": 0.723398877818124,
+        "accuracy": 0.3756283444138155,
+        "top_label_ece10": 0.004911493852005127
+      }
+    },
+    "non_cpanel": {
+      "n": 299387,
+      "games": 1161,
+      "B0": {
+        "log_loss": 1.490699666523141,
+        "brier_multiclass": 0.7267056954636556,
+        "accuracy": 0.37135212951798174,
+        "top_label_ece10": 0.008904281796008202
+      },
+      "B1": {
+        "log_loss": 1.4901230796372622,
+        "brier_multiclass": 0.7261367618860679,
+        "accuracy": 0.37258130780561616,
+        "top_label_ece10": 0.004106302569100169
+      },
+      "B2": {
+        "log_loss": 1.4901356827813241,
+        "brier_multiclass": 0.7261341466822063,
+        "accuracy": 0.3728151188929379,
+        "top_label_ece10": 0.0035545942638181265
+      }
+    }
+  },
+  "cost": {
+    "basis": "Sum of supervisor monotonic timestamps before Popen through wait/reap; no overlapping internal times added",
+    "official_worker_seconds": 473.5211259601638,
+    "family_cap_seconds": 3600,
+    "worker_launches": 10,
+    "successful_workers": 10,
+    "failed_workers": 0,
+    "retry_count": 0,
+    "stages": [
+      {
+        "job_id": "prepare",
+        "popen_wait_seconds": 7.379271334037185,
+        "postflight_seconds": 0.04476004093885422,
+        "cap_seconds": 300.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "profile",
+        "popen_wait_seconds": 8.753600334050134,
+        "postflight_seconds": 0.0014440410304814577,
+        "cap_seconds": 600.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "predict-seed0",
+        "popen_wait_seconds": 78.69317154190503,
+        "postflight_seconds": 0.009826207999140024,
+        "cap_seconds": 600.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "predict-seed1",
+        "popen_wait_seconds": 79.10151304188184,
+        "postflight_seconds": 0.009971792111173272,
+        "cap_seconds": 600.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "predict-seed2",
+        "popen_wait_seconds": 79.63080362509936,
+        "postflight_seconds": 0.01185833290219307,
+        "cap_seconds": 600.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "predict-seed3",
+        "popen_wait_seconds": 80.42360375006683,
+        "postflight_seconds": 0.010995290940627456,
+        "cap_seconds": 600.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "predict-seed4",
+        "popen_wait_seconds": 80.23455191706307,
+        "postflight_seconds": 0.010610249824821949,
+        "cap_seconds": 600.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "fit",
+        "popen_wait_seconds": 3.4310408749151975,
+        "postflight_seconds": 0.002153499983251095,
+        "cap_seconds": 300.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "apply",
+        "popen_wait_seconds": 4.751637416193262,
+        "postflight_seconds": 0.16085258382372558,
+        "cap_seconds": 300.0,
+        "outcome": "completed"
+      },
+      {
+        "job_id": "score",
+        "popen_wait_seconds": 51.121932124951854,
+        "postflight_seconds": 0.001728750066831708,
+        "cap_seconds": 300.0,
+        "outcome": "completed"
+      }
+    ],
+    "prior_eligibility_worker_seconds_not_recharged": 1.219837541,
+    "postflight_seconds_separate_nonadditive": 0.26420078962109983
+  },
+  "decision": "retain_frozen_G0; no qualifying research improvement candidate",
+  "independent_confirmation": null,
+  "held_out_confirmation": false,
+  "policy_effect": null,
+  "service_adoption": null,
+  "limits": [
+    "DEV was exposed in P11 and adaptive family choice followed it; no fresh alpha or confirmation.",
+    "Intervals condition on frozen base models, fitted calibration parameters and outputs.",
+    "B1-B0 changes calibration sample size and composition jointly; not a causal row-count effect.",
+    "Cpanel/non-Cpanel, month, seen/unseen and intersections are descriptive and add no hypotheses."
+  ],
+  "post_run_audit": {
+    "status": "PASS",
+    "review": "docs/reviews/ML-June-calibration-result-audit-2026-09-28.md",
+    "review_sha256": "223cca2d5f5536efc3b8a37f5719659bcf708c37269b91c17058cb6c4c82e0b8",
+    "checks": "results/ML-June-calibration-audit-2026-09-28.json",
+    "checks_sha256": "5f1ed7deaa35336de6f440aff7b557dfc33003cbe27c455744f3ea63ae11ca6b",
+    "independent_scope": "Sealed JSON, opaque hashes, official cost, registered rule arithmetic; no predictions/losses/bootstrap recomputed from arrays",
+    "source_parent_input_path_entries_verified": 419,
+    "manifests_verified": 10,
+    "output_artifacts_verified": 20
+  }
+}

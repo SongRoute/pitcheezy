@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "contract_version": "v1",
+  "contract_version_note": "Also the path prefix of every published file (v1/...): the two cannot differ.",
+  "publish_interval_s": 10,
+  "publish_interval_note": "PROVISIONAL, not measured. Seconds between publish cycles. 10 only mirrors live_config.json poll_interval_s (the feed's own metaData.wait); the contract leaves the interval open until the rehearsal. The upstream poll pace itself stays in live_config.json (poll_interval_s / fast_poll_s): a cycle that comes sooner than that republishes the last snapshot. Env PITCHEEZY_PUBLISH_INTERVAL_S overrides.",
+  "fixed_delay_s": 0,
+  "fixed_delay_note": "The one delay every viewer gets, in seconds behind the game's own event times (contract: default 0 = as the feed delivers). May not exceed the live feed's max_delay_s. Adjustable after the rehearsal. Env PITCHEEZY_PUBLISH_DELAY_S overrides.",
+  "out_dir": null,
+  "out_dir_note": "Local output directory of the directory sink. null = must be given by --out or env PITCHEEZY_PUBLISH_OUT_DIR. Never a path inside the repository.",
+  "state_path": null,
+  "state_path_note": "Publisher's own bookkeeping (sequence, per-file digests, which games are final). null = '<out_dir>.state.json' beside the output directory, so it is not part of what gets uploaded. Env PITCHEEZY_PUBLISH_STATE overrides.",
+  "settled_recheck_s": 600,
+  "settled_recheck_note": "PROVISIONAL, not measured. A file that no longer changes by itself (a game marked final, its setup file, the game list of a date outside the live window) is rebuilt at most this often and rewritten only if its content changed (a correction, with a new sequence). null = never rebuilt at this pace after it settled (then a setup file that arrives after the game ended is never picked up; final_slow_recheck_s still applies to live-feed games).",
+  "final_recheck_for_s": 21600,
+  "final_recheck_for_note": "PROVISIONAL, not measured. This long after a game taken from the live feed was first marked final, it is no longer rebuilt at the settled pace: upstream is then asked only every final_slow_recheck_s. Its file stays as it is; its setup file is still looked for at every settled recheck (a local read), and a final feed that arrives in the local archive is taken at once. null = the settled pace for as long as the publisher knows the game. Finished games read from the local archive are not affected: rebuilding them asks nobody.",
+  "final_slow_recheck_s": 21600,
+  "final_slow_recheck_note": "PROVISIONAL, not measured. After final_recheck_for_s, how often a final live-feed game is still rebuilt to find a late official correction (one upstream request per game each time). null = never again.",
+  "skip_unchanged_live": true,
+  "skip_unchanged_live_note": "A game still in progress is rewritten only when its content or the connection facts a viewer reads in it (feed ok, display_state.feed ok/delayed, lag_s while delayed) changed; health.json still advances every cycle and its game_checks carry checked_at / file_sequence, which is how the viewer tells freshness. A skipped write queues no upload. false = rewrite every cycle (the behaviour before 2026-10-17). Final games are not affected (they always skip unchanged content).",
+  "live_days_back": 1,
+  "live_days_ahead": 1,
+  "live_days_note": "PROVISIONAL. KST dates around today whose game list and unfinished games are rebuilt every cycle (today-back .. today+ahead). --date on the command line replaces this window.",
+  "profile_reference": {
+    "enabled": true,
+    "profile_sources": null
+  },
+  "profile_reference_note": "A2 reference card (next.reference: past pitch-type frequencies of a pitcher the recommender does not support; no rank, no target location, no model). ON for the World Series publish (Song decision 2026-10-18). profile_sources null = taken from env PITCHEEZY_OBSERVER_PROFILE_SOURCES (os.pathsep-separated; the operator points it at the daily refresh pointer LATEST.json, see docs/pm/service/ws-operations-runbook.md); never a path in the repository. The reader rereads the pointer at most every 30 s and uses the newest committed profile whose cutoff is strictly before the game's officialDate. Kept as before: cell minimum 20 pitches per count x batter side (provisional), broad (all-count) fallback OFF. A card whose cutoff is more than 2 days before officialDate is marked stale and the screen shows its date up front. With no usable source the card is simply absent. Env PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0 turns it off without editing this file.",
+  "upload": {
+    "enabled": false,
+    "base_url": null,
+    "token_env": "PITCHEEZY_PUBLISH_TOKEN",
+    "token_file": null,
+    "timeout_s": 5,
+    "retries": 0,
+    "backoff_s": 0.25,
+    "headers": {
+      "live": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      },
+      "final": {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      }
+    },
+    "note": "Disabled by default. Pinned partner CAS protocol: authenticated HEAD, raw-byte SHA256, strong ETag conditions, validated 200 receipts, tombstones. HTTPS base_url must include /_publish once; bearer token must be 43-128 URL-safe characters. timeout_s is a socket timeout, not a total deadline. Legacy retries/backoff_s are accepted for config compatibility but mutations are never blindly retried; 429 waits for Retry-After in durable pending. Unknown/interrupted/conflict outcomes block until reviewed reconciliation. Background transport uses a 128-path metadata mailbox and one owned child per HTTP operation. operation_deadline_s includes child startup; shutdown_grace_s drains pending work before stopping/reaping the child. These are provisional local limits, not remote-server completion guarantees.",
+    "background": true,
+    "operation_deadline_s": 15,
+    "shutdown_grace_s": 5
+  }
+}

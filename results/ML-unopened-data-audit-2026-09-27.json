@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "audit_id": "ML-unopened-data-audit-2026-09-27",
+  "generated_at_utc": "2026-09-27T12:27:28.815010+00:00",
+  "repository_head_at_audit": "cf20fb4a2941695b7db759fe3b884dddeca4c2a8",
+  "status": "completed_metadata_provenance_audit",
+  "conclusion": "No verified unexposed non-2026 confirmation population established by the inspected evidence.",
+  "verified_unexposed_population_count": 0,
+  "independent_confirmation_available": null,
+  "decision": "Do not register an independent confirmation claim from the known populations; retain unknown status until positive provenance and separation evidence exists.",
+  "scope": {
+    "years": [
+      2023,
+      2024,
+      2025
+    ],
+    "approved_raw_filenames_from_config": [
+      "statcast_2023.parquet",
+      "statcast_2024.parquet",
+      "statcast_2025.parquet"
+    ],
+    "approved_processed_row_count_from_contract": 2145111,
+    "method": "Read existing repository reports, contracts, configuration and sampling/history source; hash those documentary evidence files. No data arrays or candidate datasets were opened.",
+    "raw_bytes_revalidated": false,
+    "new_labels_outcomes_predictions_or_performance_read": false,
+    "dataset_2026_accessed": false,
+    "inference_training_or_fitting_run": false,
+    "file_store_exhaustive_inventory": false
+  },
+  "definitions": {
+    "documented_used": "Completed records support the stated use; sample counts do not prove use of every row in a date window.",
+    "unknown": "Insufficient row-level provenance or availability evidence; never equivalent to unexposed.",
+    "verified_unexposed": "Would require positive dataset identity, access/use provenance and separation from TRAIN/CAL/DEV/history/preprocessing/selection; no population satisfies this audit.",
+    "roles_can_overlap": true
+  },
+  "populations": [
+    {
+      "id": "history_2023",
+      "population": "Approved 2023 rows before 2023-05-15",
+      "documented_roles": [
+        "history_context"
+      ],
+      "exposure_status": "pipeline_history_use_row_consumption_not_enumerated",
+      "evidence_ids": [
+        "history_and_split",
+        "temporal_report"
+      ],
+      "interpretation": "Preparation computes prior-day batter histories from terminal events before assigning query samples. Earlier history is not a certified outcome-free reserve. This audit does not enumerate which historical row contributed to each model query.",
+      "reported_counts": null,
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "train_2023_2024",
+      "population": "Eligible regular-season rows 2023-05-15 through 2024-04-30",
+      "documented_roles": [
+        "training",
+        "normalization",
+        "frequency",
+        "delivery"
+      ],
+      "exposure_status": "documented_used",
+      "evidence_ids": [
+        "temporal_report",
+        "temporal_split",
+        "matrix_contract"
+      ],
+      "interpretation": "2024 full TRAIN is documented; cumulative 2025 TRAIN reuses the window. All-TRAIN normalizer and eligible full-TRAIN auxiliary estimators also count as use.",
+      "reported_counts": {
+        "2024_full_train": 608722
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "may_2024",
+      "population": "2024-05-01 through 2024-05-31",
+      "documented_roles": [
+        "early_stopping_2024",
+        "temperature_calibration_2024",
+        "training_2025"
+      ],
+      "exposure_status": "documented_used",
+      "evidence_ids": [
+        "temporal_report",
+        "temporal_split",
+        "matrix_contract"
+      ],
+      "interpretation": "2024 May splits were fitted/selected, and eligible rows later belong to cumulative 2025 TRAIN. Counts refer to the earlier temporal experiment, not a current G0 membership census.",
+      "reported_counts": {
+        "2024_earlystop": 16000,
+        "2024_temperature": 1396
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "june_2024",
+      "population": "2024-06-01 through 2024-06-30",
+      "documented_roles": [
+        "blend_calibration_2024",
+        "training_2025"
+      ],
+      "exposure_status": "documented_used",
+      "evidence_ids": [
+        "temporal_report",
+        "temporal_split",
+        "matrix_contract"
+      ],
+      "interpretation": "The 2024 blend sample was fit and eligible population is subsequently in 2025 TRAIN.",
+      "reported_counts": {
+        "2024_blend": 2415
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "dev_2024",
+      "population": "2024-07-01 through 2024-09-30",
+      "documented_roles": [
+        "development_evaluation_2024",
+        "training_2025"
+      ],
+      "exposure_status": "documented_used",
+      "evidence_ids": [
+        "temporal_report",
+        "temporal_split",
+        "matrix_contract"
+      ],
+      "interpretation": "2024 DEV was scored; its eligible population is also within cumulative 2025 TRAIN. The folds are not independent replications.",
+      "reported_counts": {
+        "2024_dev_pitches": 7737,
+        "2024_dev_games": 88
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "late_train",
+      "population": "Eligible regular-season rows 2024-10-01 through 2025-04-30",
+      "documented_roles": [
+        "training_2025",
+        "normalization",
+        "frequency",
+        "delivery"
+      ],
+      "exposure_status": "documented_training_window_actual_dates_not_enumerated",
+      "evidence_ids": [
+        "matrix_contract",
+        "matrix_train",
+        "temporal_report"
+      ],
+      "interpretation": "Window membership is a rule, not evidence that every calendar date has rows. Together with earlier eligible dates, 2025 D100 has 1,252,824 rows.",
+      "reported_counts": {
+        "2025_full_train_entire_window": 1252824
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "may_2025",
+      "population": "2025-05-01 through 2025-05-31",
+      "documented_roles": [
+        "early_stopping",
+        "temperature_calibration",
+        "legacy_calibration"
+      ],
+      "exposure_status": "documented_used_subsets_remainder_unknown",
+      "evidence_ids": [
+        "matrix_contract",
+        "temporal_report",
+        "legacy_cal_sampling",
+        "legacy_cal_fit",
+        "legacy_cal_report"
+      ],
+      "interpretation": "May 1–15 selects stopping; May 16–31 fits temperature. Older calibration sampled across May–June league rows. No exact complement is certified untouched. Temporal 2025 temperature count is 1,146 and must not be substituted for current G0 temperature membership.",
+      "reported_counts": {
+        "temporal_2025_earlystop": 16000,
+        "temporal_2025_temperature": 1146
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "june_cpanel_2025",
+      "population": "Current 2025 June C-panel calibration rows",
+      "documented_roles": [
+        "blend_calibration",
+        "class_bias_fit"
+      ],
+      "exposure_status": "documented_used",
+      "evidence_ids": [
+        "whole_report",
+        "matrix_contract"
+      ],
+      "interpretation": "Archived G0 ensemble/seed weights and the completed I1 fits used this calibration panel. Six I1 fits are one ensemble plus five seed fits, not six independent validation sets.",
+      "reported_counts": {
+        "pitches": 4821,
+        "train_volume_groups": {
+          "zero": {
+            "pitches": 0,
+            "games": 0
+          },
+          "low": {
+            "pitches": 635,
+            "games": 12
+          },
+          "middle": {
+            "pitches": 1014,
+            "games": 19
+          },
+          "high": {
+            "pitches": 3172,
+            "games": 86
+          }
+        }
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "june_non_cpanel_2025",
+      "population": "Eligible 2025 June rows outside the current C-panel",
+      "documented_roles": [
+        "possible_legacy_calibration",
+        "history_context"
+      ],
+      "exposure_status": "exact_supervised_membership_unknown_not_verified_unexposed",
+      "evidence_ids": [
+        "legacy_cal_sampling",
+        "legacy_cal_fit",
+        "legacy_cal_report",
+        "history_and_split",
+        "temporal_report"
+      ],
+      "interpretation": "Older 16,000-row CAL sampled eligible May–June league rows without the current panel filter. Its 4,000 temperature and remaining 12,000 blend rows were also early-stopping data. Exact overlap with June non-Cpanel was not joined in this metadata-only audit. Prior-day outcome histories are another use channel. Additional calibration may be researched under a new registration, but this is not an independent test population.",
+      "reported_counts": null,
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "whole_dev_2025",
+      "population": "Eligible regular-season 2025-07-01 through 2025-09-30 whole MLB",
+      "documented_roles": [
+        "development_evaluation_T4",
+        "development_evaluation_G0",
+        "adaptive_calibration_diagnostics"
+      ],
+      "exposure_status": "documented_used",
+      "evidence_ids": [
+        "whole_report",
+        "experiment_log"
+      ],
+      "interpretation": "EXP-P7-003 had already scored this whole population before EXP-P11-001/002. Holding a pitcher out of TRAIN does not undo DEV exposure or prior-day context use.",
+      "reported_counts": {
+        "pitches": 311721,
+        "games": 1161,
+        "cpanel_pitches": 12334,
+        "cpanel_games": 328,
+        "non_cpanel_pitches": 299387,
+        "non_cpanel_games": 1161,
+        "shared_games": 328
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "excluded_dev_2025",
+      "population": "Requested 2025 July–September pitches excluded by fixed eligibility",
+      "documented_roles": [
+        "eligibility_processing"
+      ],
+      "exposure_status": "target_use_unknown_not_independent_reserve",
+      "evidence_ids": [
+        "whole_report",
+        "matrix_contract",
+        "history_and_split"
+      ],
+      "interpretation": "30,220 is arithmetic from the published requested and eligible totals, not newly inspected data. Eligibility uses supported-PA and observed-location conditions. Exclusion from scored queries does not prove absence from history, preprocessing, or earlier research.",
+      "reported_counts": {
+        "requested": 341941,
+        "eligible": 311721,
+        "excluded_derived": 30220
+      },
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    },
+    {
+      "id": "outside_current_windows",
+      "population": "Other 2023–25 populations, including dates after September 2025 or non-regular-season records",
+      "documented_roles": [],
+      "exposure_status": "availability_and_exposure_unknown",
+      "evidence_ids": [
+        "approved_paths",
+        "matrix_contract",
+        "history_and_split",
+        "p1_config",
+        "experiment_log"
+      ],
+      "interpretation": "The approved cache is regular-season only. Generic older split code permits DEV through December, and completed P1 documentation plus its configuration records 2025 holdout selection and 2023–25 training. These are evidence against assuming an untouched remainder, not proof of exact row coverage or availability. No raw directory traversal or candidate file opening was performed.",
+      "reported_counts": null,
+      "verified_unexposed": false,
+      "independent_confirmation_eligible": false
+    }
+  ],
+  "evidence": {
+    "matrix_contract": {
+      "path": "docs/contracts/ML-MATRIX-EXECUTION-v1.md",
+      "sha256": "2e445e9ce54b2571cd76c7677341e7efaf3a377a70f18ca81de8f7221923a0fc"
+    },
+    "whole_report": {
+      "path": "docs/reports/G0-whole-MLB-and-calibration-2026-09-27.md",
+      "sha256": "03090772d8586ccf49e174a835038ed4eb04820c940c2cf02076be0e62db848b"
+    },
+    "temporal_report": {
+      "path": "experiments/pitchmdp/TEMPORAL_BLEND_RESULTS.md",
+      "sha256": "e6a0760201515d99e72e4df7b26d37d15b78902f0132b38339ab432a55b41449"
+    },
+    "temporal_split": {
+      "path": "experiments/pitchmdp/scripts/run_temporal_blend.py",
+      "sha256": "e5f66eada969d28531ed0fc4483fe71210a0e60aaf6f8b6d8017c6e8e3e567c4"
+    },
+    "history_and_split": {
+      "path": "experiments/pitchmdp/pitchmdp/data.py",
+      "sha256": "5fb3a385985aecc9db1a1145b2a2ab0d6d9dd34e7faa8c44ca50f7eb79810608"
+    },
+    "legacy_cal_sampling": {
+      "path": "experiments/pitchmdp/scripts/run_sequence_ablations.py",
+      "sha256": "2a6452b96de9bd641d16827167ecd8ac1f66258a2893b23d64b8d4b0710919eb"
+    },
+    "legacy_cal_fit": {
+      "path": "experiments/pitchmdp/scripts/run_sequence_calibration.py",
+      "sha256": "951bada57ea33f34cc5440d9420943df7dc9cb782b27e9359c582e55b5cfa6bc"
+    },
+    "legacy_cal_report": {
+      "path": "experiments/pitchmdp/FOLLOWUP_RESULTS.md",
+      "sha256": "468b84e3c1effba51d4f1abd53d14c1daa00c16cd9982edca8bddf3ab177469b"
+    },
+    "p1_config": {
+      "path": "configs/EXP-P1-001.yaml",
+      "sha256": "8d1bb7acd59b9aa17b9c5205d39fb44c09a8700921d8096c83c9c4ed7b834061"
+    },
+    "experiment_log": {
+      "path": "docs/experiments.md",
+      "sha256": "647e7aadcd5c2897d931871d55d53aea66e1a597053035d8d4ad62391ef1d769"
+    },
+    "approved_paths": {
+      "path": "experiments/pitchmdp/configs/local.json",
+      "sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"
+    },
+    "matrix_train": {
+      "path": "experiments/pitchmdp/pitchmdp/matrix_data.py",
+      "sha256": "439912ef3adb52bfdbe6916b9fde464dd9fc9ef019e1066b2c32e4571b52d29b"
+    }
+  },
+  "june_support_constraints": {
+    "allowed_metadata": [
+      "game_pk",
+      "at_bat_number",
+      "pitch_number",
+      "game_date",
+      "split",
+      "pitcher",
+      "batter",
+      "frozen_eligible_key_membership",
+      "original_D100_TRAIN_volume",
+      "role",
+      "throwing_hand"
+    ],
+    "forbidden_new_reads": [
+      "labels",
+      "events",
+      "description",
+      "probabilities",
+      "losses",
+      "new_raw_current_pitch_coordinates",
+      "2026 datasets"
+    ],
+    "eligibility": "Use already frozen eligible keys; do not recompute target-dependent eligibility from new outcome or raw coordinate access.",
+    "group_assignment": "Original D100 TRAIN pitcher-volume mapping and frozen thresholds; never June or DEV quantiles.",
+    "support_reporting": "Report distinct games and pitches for zero/low/middle/high; 30 games AND 500 pitches per group are separate requirements. Report exact C-panel complement and shared-game counts.",
+    "cost": "Projection from existing measured 400-draw member wall and metadata row counts only; loading/fixed overhead and incremental/full recomputation assumptions explicit. No fresh profiling and no claim of observed expanded-June runtime.",
+    "interpretation": "Support is not calibration quality or untouched status; metadata inspection is itself logged exposure, though it does not expose new labels."
+  },
+  "future_confirmation_requirements": [
+    "Positively identify a non-2026 source and immutable version without inspecting labels or quality.",
+    "Establish row/date/game identity and provenance of prior access, sampling, fitting, feature/history/normalizer use, and evaluation; unresolved lineage stays unknown.",
+    "Check exact keys and game/time separation from known TRAIN/CAL/DEV and prior research, including older pipelines and online histories.",
+    "Freeze eligible target population, model, baseline, estimands, exclusions, multiplicity, budget and access process before outcome opening.",
+    "Log every subsequent metadata or outcome access; disclose adaptive selection and transport limits."
+  ],
+  "limitations": [
+    "Repository evidence audit is not a complete historical file-access audit; no absence-of-log argument is used.",
+    "No exact cross-run calibration membership intersection was computed.",
+    "Original raw byte identity remains historically incomplete, including the previously documented 2025 read timeout; no raw revalidation was attempted.",
+    "Pre-2023, other providers and missing candidate files were not searched or certified available.",
+    "No statement that untouched data cannot exist elsewhere.",
+    "2026 is excluded by project/user scope, not offered as a fallback holdout."
+  ]
+}

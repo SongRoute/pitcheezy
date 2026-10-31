@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "5363a42f0736fdf7bc9197d85eb38a45d3176a06b55f9c56e035fd2aca212c41",
+  "stage": "census",
+  "registered_inputs": {
+    "census": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a2/census.json",
+      "file_sha256": "18ab73e65d1f3d73e9c003f3ed336061a54c7977b2d6a307f5fb74692e64f827"
+    }
+  },
+  "note": "d124: re-pinned identity-independent sealed outputs. Re-chained as d126."
+}

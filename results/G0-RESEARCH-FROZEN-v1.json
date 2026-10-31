@@ -1,0 +1,17 @@
+{
+  "protocol": "g0_research_frozen_verification_v1",
+  "status": "PASS",
+  "bundle_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+  "file_count": 96,
+  "member_count": 5,
+  "execution_code_commit": "5e82bebc239ced378911919de48c106034ee24b0",
+  "evidence_head": "eef5417c0a035f11412fb7fe535bf32e57fe7f8e",
+  "research_only": true,
+  "new_fit_count": 0,
+  "inference_performed": false,
+  "independent_confirmation": false,
+  "service_promotion": false,
+  "archived_raw_identity_verified": false,
+  "runtime_binaries_verified": false,
+  "self_contained": false
+}

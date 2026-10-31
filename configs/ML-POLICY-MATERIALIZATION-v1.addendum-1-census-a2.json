@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "30e1f57f03ebe38cc576634650df2593b02f767954b6672ce201225a599e4457",
+  "stage": "census",
+  "registered_inputs": {
+    "census": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a2/census.json",
+      "file_sha256": "18ab73e65d1f3d73e9c003f3ed336061a54c7977b2d6a307f5fb74692e64f827"
+    }
+  },
+  "note": "D100: addendum 1 (a2) pins the sealed S0-census-a2 census.json (source 9c25d8e; counts identical to a1). The earlier addendum-1-census.json has the pre-D100 config as parent and is not used."
+}

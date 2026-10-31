@@ -1,0 +1,37 @@
+{
+  "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1",
+  "destination": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-FULL-001",
+  "source_code": "a5d3718",
+  "files": {
+    "dataset.json": "8ad2b369884265bb5197137499e002a32354930cce036253f92b91671dde479b",
+    "dataset_manifest.json": "82c0cefe2855f1f4fa3c220c325da54a34a77c7a0ea49c261475c972a9b24255"
+  },
+  "preserved_tables": {
+    "event_results": {
+      "rows": 2,
+      "sha256": "d3d5ad0f0ccbe77b80eff751be207a6822a969ccb8d8ec60d0a4ef7b668317ed"
+    },
+    "jobs": {
+      "rows": 2,
+      "sha256": "f1ced40747b5b5ae7c1dd264756f657e8e573e9f6795cf83508d96c31eab1f1a"
+    },
+    "manual_annotations": {
+      "rows": 2,
+      "sha256": "053a7c57ff7fb13e5baa4cdcfd74242e186f5ab7db8f651c33906fe76ca88211"
+    },
+    "recommendation_meta": {
+      "rows": 6,
+      "sha256": "d9359d43af5dad29e4d36becbdb482008a34c2afa5e242496b5a6cfbe285ef7a"
+    },
+    "recommendations": {
+      "rows": 6,
+      "sha256": "6d0d78265b0ff23e48dc13d49a3c4cd5f8c31dea6e201fb664f7551b64440846"
+    },
+    "sessions": {
+      "rows": 3,
+      "sha256": "bd67396166129f13486dc033c7f4be462671a48882726913dba45544a89980d7"
+    }
+  },
+  "source_database_sha256": "08455f5046a31893369e6d56d9c392ea439cee609c66bb75af430c1fea75728b",
+  "bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f"
+}

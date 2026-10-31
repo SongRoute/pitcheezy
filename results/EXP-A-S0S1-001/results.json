@@ -1,0 +1,441 @@
+{
+  "elapsed_seconds": 12.077,
+  "evaluation_code_sha256": "35955301157249b3dfcba0244bfbc108ee89df7939e9d95b68e8ba1370ca9b29",
+  "evaluation_config_sha256": "e2175b8858f67710f90ee5c99b401ce4c45fdffb3a6a26dc3db9df2fef1610f4",
+  "experiment_id": "EXP-A-S0S1-001",
+  "frozen_source_hashes_sha256": "6d6f777bacde98d5c60b2d61cd594fda172fd63f99c315a002b5e7291afb099a",
+  "git_commit": "ccda09ab02872e79586b34ad983237e300397cfd",
+  "maxrss_bytes_macos": 421773312,
+  "observer_adapter_sha256": "468552ba27633cf44005c29a091eb6eebbd06ad39d0fbdd9d075f2667e47d136",
+  "output_sha256": {
+    "baseline": "878b9219478c5e230d6baf9cb5ba2e821427eef4d0a749b6f7ce8b89376e4554",
+    "event_cases": "26024adf45fb1bc111f780f230f3d8d484286bf234cb54eaae347ae85ea0bbbf",
+    "internal_we": "0619d56fa4634664b9c3de71dc3abaccf7c79fe72ac8460cc6577074e4971837",
+    "observer_zone": "fc2c5bea0193777f04bbfcc71e039a536af521b7624819436ddb792286059335",
+    "predictions": "e506ff94d2124e17a3d09db47a66f53ef738b1f078ffef261b02f96302c96f78",
+    "selected_pitch_keys": "b4459221bfc56acd4332fe2ae5d813503b0f453b8e98cb0ad49f1f4bbab511be"
+  },
+  "phase": "evaluated_exploratory_dev",
+  "policy_causal_we": null,
+  "policy_causal_we_reason": "Intent/target intervention and behavior propensities are not identified; internal WE is not causal policy value.",
+  "source_manifest_sha256": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+  "support": {
+    "dev_cohort_pas": 160,
+    "dev_event_counts_in_full_games": {
+      "home_run": 13,
+      "strikeout": 102,
+      "strikeout_double_play": 0
+    },
+    "dev_excluded_pa_reasons": {
+      "missing_terminal": 1,
+      "state_changed_inside_pa": 3,
+      "unsupported_pa": 5
+    },
+    "dev_full_games": {
+      "games": 6,
+      "pas": 439,
+      "pitch_key_sha256": "0631b4a3c71c356c5cef4c4b8c5850fc63a7ccc025bcc0560acefcc6bb0cb7fe",
+      "pitches": 1690
+    },
+    "dev_pitcher_change_pa_keys": [],
+    "dev_supported_complete_pas": 151,
+    "observer_zone_s0": {
+      "attempted_games": 2,
+      "supported_recommendations": 2
+    },
+    "train_cohort_pas": 149,
+    "train_excluded_pa_reasons": {
+      "missing_terminal": 2,
+      "state_changed_inside_pa": 1,
+      "unsupported_pa": 1
+    },
+    "train_supported_complete_pas": 145
+  },
+  "tiers": {
+    "S0": {
+      "games": 2,
+      "models": {
+        "april_count": {
+          "brier_multiclass": 0.7237735258411294,
+          "class_counts": {
+            "ball": 74,
+            "double": 5,
+            "double_play": 2,
+            "foul": 32,
+            "hbp": 0,
+            "home_run": 1,
+            "out": 23,
+            "single": 2,
+            "strike": 72,
+            "triple": 0
+          },
+          "log_loss": 1.4760636481320606,
+          "n": 211,
+          "rare_class_metrics": {
+            "ball": {
+              "observed_count": 74,
+              "predicted_mean": 0.34646642126125743
+            },
+            "double": {
+              "observed_count": 5,
+              "predicted_mean": 0.014493995673094371
+            },
+            "double_play": {
+              "observed_count": 2,
+              "predicted_mean": 0.001195236281615519
+            },
+            "foul": {
+              "observed_count": 32,
+              "predicted_mean": 0.1768630155032628
+            },
+            "hbp": null,
+            "home_run": {
+              "observed_count": 1,
+              "predicted_mean": 0.006634460994218104
+            },
+            "out": {
+              "observed_count": 23,
+              "predicted_mean": 0.09824365900334052
+            },
+            "single": {
+              "observed_count": 2,
+              "predicted_mean": 0.03359955572925891
+            },
+            "strike": {
+              "observed_count": 72,
+              "predicted_mean": 0.31910273192339367
+            },
+            "triple": null
+          },
+          "top_label_ece10": 0.05181892615110439
+        },
+        "frozen_blend": {
+          "brier_multiclass": 0.702058158150724,
+          "class_counts": {
+            "ball": 74,
+            "double": 5,
+            "double_play": 2,
+            "foul": 32,
+            "hbp": 0,
+            "home_run": 1,
+            "out": 23,
+            "single": 2,
+            "strike": 72,
+            "triple": 0
+          },
+          "log_loss": 1.4177694369426803,
+          "n": 211,
+          "rare_class_metrics": {
+            "ball": {
+              "observed_count": 74,
+              "predicted_mean": 0.3423753636073986
+            },
+            "double": {
+              "observed_count": 5,
+              "predicted_mean": 0.009294120182392196
+            },
+            "double_play": {
+              "observed_count": 2,
+              "predicted_mean": 0.0013195909032694215
+            },
+            "foul": {
+              "observed_count": 32,
+              "predicted_mean": 0.1790585573564848
+            },
+            "hbp": null,
+            "home_run": {
+              "observed_count": 1,
+              "predicted_mean": 0.0061663452212682365
+            },
+            "out": {
+              "observed_count": 23,
+              "predicted_mean": 0.11078282550051081
+            },
+            "single": {
+              "observed_count": 2,
+              "predicted_mean": 0.036277437789363425
+            },
+            "strike": {
+              "observed_count": 72,
+              "predicted_mean": 0.31165947399610894
+            },
+            "triple": null
+          },
+          "top_label_ece10": 0.020325611012928974
+        },
+        "frozen_frequency": {
+          "brier_multiclass": 0.7107342987178895,
+          "class_counts": {
+            "ball": 74,
+            "double": 5,
+            "double_play": 2,
+            "foul": 32,
+            "hbp": 0,
+            "home_run": 1,
+            "out": 23,
+            "single": 2,
+            "strike": 72,
+            "triple": 0
+          },
+          "log_loss": 1.4562795259107113,
+          "n": 211,
+          "rare_class_metrics": {
+            "ball": {
+              "observed_count": 74,
+              "predicted_mean": 0.3570131530515725
+            },
+            "double": {
+              "observed_count": 5,
+              "predicted_mean": 0.010152617176538084
+            },
+            "double_play": {
+              "observed_count": 2,
+              "predicted_mean": 0.0012541614746889983
+            },
+            "foul": {
+              "observed_count": 32,
+              "predicted_mean": 0.182920662169389
+            },
+            "hbp": null,
+            "home_run": {
+              "observed_count": 1,
+              "predicted_mean": 0.006655897376831366
+            },
+            "out": {
+              "observed_count": 23,
+              "predicted_mean": 0.11655755450775297
+            },
+            "single": {
+              "observed_count": 2,
+              "predicted_mean": 0.03668653982432688
+            },
+            "strike": {
+              "observed_count": 72,
+              "predicted_mean": 0.28468464031167884
+            },
+            "triple": null
+          },
+          "top_label_ece10": 0.041333911485714775
+        }
+      },
+      "paired_blend_minus_april_count": {
+        "game_bootstrap95": [
+          -0.06723828380683038,
+          -0.049764216007923606
+        ],
+        "games": 2,
+        "mean_log_loss_delta": -0.05829421118938047,
+        "replicates": 1000,
+        "seed": 20260923
+      },
+      "paired_blend_minus_frozen_frequency": {
+        "game_bootstrap95": [
+          -0.04137208344926752,
+          -0.03578059423129636
+        ],
+        "games": 2,
+        "mean_log_loss_delta": -0.038510088968031105,
+        "replicates": 1000,
+        "seed": 20260923
+      },
+      "pitches": 211
+    },
+    "S1": {
+      "games": 6,
+      "models": {
+        "april_count": {
+          "brier_multiclass": 0.7466016890853308,
+          "class_counts": {
+            "ball": 197,
+            "double": 13,
+            "double_play": 5,
+            "foul": 93,
+            "hbp": 4,
+            "home_run": 6,
+            "out": 61,
+            "single": 18,
+            "strike": 166,
+            "triple": 0
+          },
+          "log_loss": 1.5896414946673698,
+          "n": 563,
+          "rare_class_metrics": {
+            "ball": {
+              "observed_count": 197,
+              "predicted_mean": 0.3464064553980533
+            },
+            "double": {
+              "observed_count": 13,
+              "predicted_mean": 0.015556033723979805
+            },
+            "double_play": {
+              "observed_count": 5,
+              "predicted_mean": 0.0015572944995111049
+            },
+            "foul": {
+              "observed_count": 93,
+              "predicted_mean": 0.1742163863085307
+            },
+            "hbp": {
+              "observed_count": 4,
+              "predicted_mean": 0.002499237809199111
+            },
+            "home_run": {
+              "observed_count": 6,
+              "predicted_mean": 0.006956487383430413
+            },
+            "out": {
+              "observed_count": 61,
+              "predicted_mean": 0.09745126220918543
+            },
+            "single": {
+              "observed_count": 18,
+              "predicted_mean": 0.0331911178664074
+            },
+            "strike": {
+              "observed_count": 166,
+              "predicted_mean": 0.3211422393462977
+            },
+            "triple": null
+          },
+          "top_label_ece10": 0.0183725676048605
+        },
+        "frozen_blend": {
+          "brier_multiclass": 0.7264025915917638,
+          "class_counts": {
+            "ball": 197,
+            "double": 13,
+            "double_play": 5,
+            "foul": 93,
+            "hbp": 4,
+            "home_run": 6,
+            "out": 61,
+            "single": 18,
+            "strike": 166,
+            "triple": 0
+          },
+          "log_loss": 1.5215655702264155,
+          "n": 563,
+          "rare_class_metrics": {
+            "ball": {
+              "observed_count": 197,
+              "predicted_mean": 0.34548491517135127
+            },
+            "double": {
+              "observed_count": 13,
+              "predicted_mean": 0.009602433662574735
+            },
+            "double_play": {
+              "observed_count": 5,
+              "predicted_mean": 0.0041563205715774475
+            },
+            "foul": {
+              "observed_count": 93,
+              "predicted_mean": 0.18277183038420078
+            },
+            "hbp": {
+              "observed_count": 4,
+              "predicted_mean": 0.0024088288413108352
+            },
+            "home_run": {
+              "observed_count": 6,
+              "predicted_mean": 0.0063674149295568925
+            },
+            "out": {
+              "observed_count": 61,
+              "predicted_mean": 0.11354999948782528
+            },
+            "single": {
+              "observed_count": 18,
+              "predicted_mean": 0.037199855650354156
+            },
+            "strike": {
+              "observed_count": 166,
+              "predicted_mean": 0.2976172809762764
+            },
+            "triple": null
+          },
+          "top_label_ece10": 0.00921828771342115
+        },
+        "frozen_frequency": {
+          "brier_multiclass": 0.7346949807039924,
+          "class_counts": {
+            "ball": 197,
+            "double": 13,
+            "double_play": 5,
+            "foul": 93,
+            "hbp": 4,
+            "home_run": 6,
+            "out": 61,
+            "single": 18,
+            "strike": 166,
+            "triple": 0
+          },
+          "log_loss": 1.5555409882282947,
+          "n": 563,
+          "rare_class_metrics": {
+            "ball": {
+              "observed_count": 197,
+              "predicted_mean": 0.35660995782240507
+            },
+            "double": {
+              "observed_count": 13,
+              "predicted_mean": 0.010193439830914176
+            },
+            "double_play": {
+              "observed_count": 5,
+              "predicted_mean": 0.0028458124741183323
+            },
+            "foul": {
+              "observed_count": 93,
+              "predicted_mean": 0.1799181554385418
+            },
+            "hbp": {
+              "observed_count": 4,
+              "predicted_mean": 0.0031229188357511264
+            },
+            "home_run": {
+              "observed_count": 6,
+              "predicted_mean": 0.0069561568605417765
+            },
+            "out": {
+              "observed_count": 61,
+              "predicted_mean": 0.11444027765683447
+            },
+            "single": {
+              "observed_count": 18,
+              "predicted_mean": 0.03627090426344654
+            },
+            "strike": {
+              "observed_count": 166,
+              "predicted_mean": 0.2888091171364519
+            },
+            "triple": null
+          },
+          "top_label_ece10": 0.047247323605751734
+        }
+      },
+      "paired_blend_minus_april_count": {
+        "game_bootstrap95": [
+          -0.10707377971174696,
+          -0.03312815358695797
+        ],
+        "games": 6,
+        "mean_log_loss_delta": -0.06807592444095445,
+        "replicates": 1000,
+        "seed": 20260923
+      },
+      "paired_blend_minus_frozen_frequency": {
+        "game_bootstrap95": [
+          -0.049474536547037255,
+          -0.009452359226638406
+        ],
+        "games": 6,
+        "mean_log_loss_delta": -0.033975418001879316,
+        "replicates": 1000,
+        "seed": 20260923
+      },
+      "pitches": 563
+    }
+  }
+}

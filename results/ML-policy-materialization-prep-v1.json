@@ -1,0 +1,218 @@
+{
+ "schema_version": 1,
+ "task": "COOP-017",
+ "decision": "D92",
+ "status": "IMPLEMENTED_SYNTHETIC_ONLY_PENDING_INDEPENDENT_REVIEW",
+ "created_utc": "2026-09-28T22:24:37.191101+00:00",
+ "mode": "claude_direct_resume_without_codex_supervisor",
+ "roles_observed": {
+  "main": "claude-opus-5-5",
+  "support_sol": null,
+  "focused_review_astra": null,
+  "same_model_subagent_self_check": "claude-opus-5-5 (not an independent review)"
+ },
+ "sol_astra_available_in_environment": false,
+ "circular_codex_call": false,
+ "fable_calls": 0,
+ "base_commit": "713c7ea8c37933998c52334e86c275c4ad029ca9",
+ "commits": {
+  "code": "51939ef2edea557adaacefa5a985a00805f3bcd9",
+  "documents": "5953ea7541bf39ce429f52ebe118240ae9c8bdb5"
+ },
+ "file_sha256_at_documents_commit": {
+  "experiments/pitchmdp/pitchmdp/policy_identity.py": "59a612fe9e33e0649a232b0e1393c05beb7051406b696108efa7162213daeebc",
+  "experiments/pitchmdp/pitchmdp/policy_runtime.py": "973496560f81bb6421dedf237f010589fc034dc095653bbed93c18ca5b61d2b9",
+  "experiments/pitchmdp/tests/test_policy_identity.py": "ce2de020d9a725c95f64652091fb069df4aee81f81b618e1a29f64cf658b667e",
+  "experiments/pitchmdp/tests/test_policy_runtime.py": "6d178fbba6871873f24e7414ca0b4f312f4640d78460237fe726fc69e262dfe2",
+  "configs/ML-POLICY-MATERIALIZATION-v1.json": "8bb4d431533b2e4db294b210d451f704b6c40bba36024523f6817afc993cb78e",
+  "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md": "97fefe1c2540510fdf6f0d2eb110c9e17a74a21d496a5d53bd2aa9022d5506ab",
+  "docs/reports/ML-policy-materialization-prep-2026-09-29.md": "93a72c7eb5e899ab5461ddc848f9d71585be53511c4cb160add9433a4623efba",
+  "docs/reviews/COOP-017-policy-materialization-review-packet-2026-09-29.md": "886f7b574a91ea7a1e1ab0b590f985bda6dca33c79258de4b2765b75d22bff85"
+ },
+ "real_data_access": 0,
+ "payload_opened_or_hashed": 0,
+ "new_2026_access": 0,
+ "real_data_fit_inference_ope_runs": 0,
+ "policy_frozen": false,
+ "execution_authorized_by_this_record": false,
+ "metadata_json_read": [
+  "configs/G0-RESEARCH-FROZEN-v1.json",
+  "configs/EXP-P8-001.yaml",
+  "configs/EXP-P8-001-execution.json",
+  "configs/EXP-P11-001.yaml",
+  "docs/contracts/model-v1.json",
+  "SSD EXP-P4-001/{preparation,architecture_preparation,parent_preparation}.json",
+  "SSD EXP-P11-001/{preparation,frozen_calibration}.json",
+  "SSD EXP-P8-001/preparation.json and stages/*/runtime.json",
+  "SSD minimal-pitch-service-v1/{source_hashes,bundle_manifest}.json",
+  "SSD coordination/20260928-policy-runtime/board.json"
+ ],
+ "metadata_facts_verified": {
+  "p4_preparation_sha_equals_bundle_pin": true,
+  "aux_sha_in_preparation_equals_bundle_p4_auxiliary": true,
+  "p11_frozen_calibration_sha_equals_bundle_pin": true,
+  "june_ensemble_model_weight": 0.7467754577062221,
+  "frequency_temperature": 1.030298001849738,
+  "current_sources_equal_g0_execution_sources": 30,
+  "we_source_files_equal_bundle_lineage": 3
+ },
+ "commands": [
+  {
+   "cmd": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider experiments/pitchmdp/tests/test_policy_runtime.py",
+   "attempts": [
+    {
+     "n": 1,
+     "result": "15 passed",
+     "note": "baseline before any change"
+    }
+   ]
+  },
+  {
+   "cmd": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider experiments/pitchmdp/tests/test_policy_identity.py experiments/pitchmdp/tests/test_policy_runtime.py",
+   "attempts": [
+    {
+     "n": 1,
+     "result": "22 passed, 15 subtests",
+     "note": "first implementation"
+    },
+    {
+     "n": 2,
+     "result": "22 passed, 15 subtests",
+     "note": "after import-closure addition"
+    },
+    {
+     "n": 3,
+     "result": "1 failed, 22 passed, 23 subtests",
+     "cause": "identity key-set assertion lacked the new g0_bundle_file_sha256 (expected)",
+     "fix": "test assertion"
+    },
+    {
+     "n": 4,
+     "result": "23 passed, 23 subtests",
+     "note": "final, after self-check fixes"
+    }
+   ]
+  },
+  {
+   "cmd": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider experiments/pitchmdp/tests/test_policy_identity.py experiments/pitchmdp/tests/test_policy_runtime.py tests/test_2026_policy_contract.py experiments/pitchmdp/tests/test_matrix_policy.py experiments/pitchmdp/tests/test_rollout_policy.py",
+   "attempts": [
+    {
+     "n": 1,
+     "result": "61 passed, 15 subtests"
+    },
+    {
+     "n": 2,
+     "result": "62 passed, 23 subtests",
+     "note": "final"
+    }
+   ],
+   "overlap_note": "includes the focused tests; do not add counts"
+  },
+  {
+   "cmd": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python scripts/check_2026_policy_contract.py",
+   "attempts": [
+    {
+     "n": 1,
+     "result": "exit 0, all_pass true"
+    },
+    {
+     "n": 2,
+     "result": "exit 0, all_pass true"
+    }
+   ]
+  },
+  {
+   "cmd": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider experiments/pitchmdp/tests/test_g0_whole_mlb.py experiments/pitchmdp/tests/test_g0_whole_metrics.py",
+   "attempts": [
+    {
+     "n": 1,
+     "result": "24 passed",
+     "note": "impact check"
+    }
+   ]
+  },
+  {
+   "cmd": "graphify update .",
+   "attempts": [
+    {
+     "n": 1,
+     "result": "6552 nodes, 18433 edges, 268 communities (AST only)"
+    }
+   ]
+  }
+ ],
+ "probe": {
+  "path": "bind_components -> integrated_predictions vs predict_streamed/temperature_predictions primary",
+  "rows_compared": 12,
+  "max_abs_difference": 4.440892098500626e-16,
+  "fallback_rows_refused": 3,
+  "swap_max_abs_difference": {
+   "pool_seed_43": 0.006234234303125835,
+   "clusters": 0.0070054129535121745,
+   "frequency_temperature": 0.008810772362258384,
+   "member_temperatures_reordered": 0.02403371281681041
+  }
+ },
+ "mutation_checks": {
+  "method": "temporary single edit, run the two focused test files, restore bytes, confirm with git status",
+  "caught": [
+   "support check removed",
+   "support check after empty refusal",
+   "wiring check removed",
+   "content digest check removed",
+   "source recheck removed",
+   "report equality removed",
+   "pool descriptor removed",
+   "member record check removed",
+   "loaded network check removed",
+   "WE lineage check removed",
+   "WE dropped from identity",
+   "loader dropped from identity",
+   "identity pin ignored",
+   "probe uses one draw",
+   "pool arrays left writable",
+   "import closure removed",
+   "link check removed",
+   "rows/contexts not digested",
+   "class TIERS not digested",
+   "row/side check removed",
+   "context not in fingerprint",
+   "vacuous verify allowed",
+   "identity hash check removed",
+   "bundle read unpinned",
+   "repository class check removed",
+   "post-load checkpoint rehash removed",
+   "calibration cross-check removed",
+   "ValueError not wrapped"
+  ],
+  "count": 28,
+  "not_counted": "first import-closure mutation left an empty loop body (syntax error); replaced by pass and caught",
+  "restored": true
+ },
+ "self_check": {
+  "by": "same-model Claude subagent, read-only, synthetic demos only; not Sol/Astra",
+  "findings": {
+   "major": 3,
+   "minor": 6,
+   "all_fixed_or_recorded": true
+  },
+  "items": [
+   "verify missed objects on the inference path (frequency, inputs.delivery, g0.inputs, contexts, class TIERS)",
+   "context row values absent from identity and request fingerprint",
+   "pitcher/side mismatch became EMPTY_SUPPORT and poisoned the support cache",
+   "direct candidate PolicyRuntime verified vacuously",
+   "narrow exception wrapping in bind",
+   "bundle dict unpinned; checkpoint reopen window; registered class outside repository",
+   "EMPTY_SUPPORT -> FAILED_INTEGRITY state change unrecorded",
+   "identity dict mutable",
+   "fallback probe test used an out-of-vocabulary action; probe bypassed bind"
+  ]
+ },
+ "not_run": [
+  "full test suite",
+  "any real payload/model/data check",
+  "Sol reproduction",
+  "Astra review"
+ ],
+ "coordination_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260929-policy-materialization"
+}

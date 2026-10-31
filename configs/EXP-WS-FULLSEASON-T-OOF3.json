@@ -1,0 +1,211 @@
+{
+  "id": "EXP-WS-FULLSEASON-T-OOF3",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "mode": "post-hoc recipe conditional historical reconstruction",
+  "selection_basis": "T30 seeds0/1/2 expanding folds fixed before OOF1 score read; no result-driven changes; C preserved without new fit",
+  "source_base": "5af6abb",
+  "arm": "T",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "window": {
+    "fit": [
+      "2026-03-25",
+      "2026-08-31"
+    ],
+    "oof": [
+      "2026-09-01",
+      "2026-09-30"
+    ]
+  },
+  "base": {
+    "id": "EXP-WS-SEQ-001",
+    "phase": "WS-adaptation",
+    "baseline": "E1b arm P (prequential-refit LightGBM 10+2 backbone, 199 prequential features)",
+    "change": "neural classifier on the same 199 prequential pre-pitch features (N0), plus a transformer encoder over up to 32 earlier pitches of the same pitcher in the same game (N1)",
+    "data_version": "d20260930-h2026f",
+    "data_role": "2026 EXPOSED DEVELOPMENT",
+    "authoritative": "configs/EXP-WS-SEQ-001.json",
+    "arms": [
+      "N0",
+      "N1"
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "inputs": {
+      "features_file": "x-prequential.npy",
+      "corpus_file": "corpus-subset.npz",
+      "sequence_file": "seq-inputs.npz",
+      "manifest_file": "manifest.json",
+      "feature_dimension": 199
+    },
+    "labels": {
+      "parent_classes": 10,
+      "whiff_parent_class": 1,
+      "bip_classes": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        9
+      ],
+      "leaf_order": [
+        "ball",
+        "foul",
+        "hit_by_pitch",
+        "narrow_whiff",
+        "other_strike",
+        "ground_ball_in_play",
+        "other_in_play"
+      ]
+    },
+    "context": {
+      "max_length": 32,
+      "pitch_type_vocab": 19,
+      "outcome_vocab": 10,
+      "balls_vocab": 4,
+      "strikes_vocab": 3,
+      "same_batter_vocab": 2,
+      "position_vocab": 33
+    },
+    "model": {
+      "trunk_hidden": [
+        256,
+        128
+      ],
+      "activation": "gelu",
+      "dropout": 0.1,
+      "layer_norm": true,
+      "token_dim": 64,
+      "encoder_layers": 2,
+      "encoder_heads": 4,
+      "encoder_ff": 128,
+      "encoder_dropout": 0.1,
+      "encoder_activation": "gelu"
+    },
+    "training": {
+      "optimizer": "adamw",
+      "lr": 0.001,
+      "weight_decay": 0.0001,
+      "batch_size": 2048,
+      "max_epochs": 30,
+      "patience": 0,
+      "loss_weights": {
+        "parent": 1.0,
+        "narrow_whiff": 1.0,
+        "ground_ball_per_pitch": 1.0
+      },
+      "precision": "fp32",
+      "eval_batch_size": 8192,
+      "wall_cap_seconds": 3600
+    },
+    "temperature": {
+      "bounds_T": [
+        0.05,
+        20.0
+      ]
+    },
+    "nll_clip": 1e-15
+  },
+  "training_rule": {
+    "epochs": 30,
+    "checkpoint": "final epoch only",
+    "early_stopping": false,
+    "SELECT_rows": 0,
+    "CAL_rows": 0,
+    "temperature": 1.0,
+    "optimizer_fit": "every accepted FIT key each epoch once; no drop_last",
+    "epoch_basis": "prior config max_epochs reused as fixed development schedule before new OOF results; optimality unclaimed"
+  },
+  "history": {
+    "profiles": "FIT donors only; donor game_date strictly before query date; frozen 2026-08-31 for OOF",
+    "encoder": "fresh FIT-only median/mean/std/continuous-column detection/quantile per fold",
+    "vocabulary": "static original 19 types and 10 outcomes; no player embeddings learned",
+    "sequence": "up to32 earlier pitches by same pitcher in same game including earlier OOF outcomes; retrospective intra-game prequential reconstruction",
+    "arrival": "UNKNOWN: corrected September30 snapshot cannot establish historical OOF live-arrival or correction availability",
+    "query_current": "current physical/outcome values forbidden in feature query; actual observed pitch type is a candidate-conditional covariate, not proof of intended action"
+  },
+  "row_policy": {
+    "game_type": "R",
+    "start": "2026-03-25",
+    "end": "2026-09-30",
+    "segregation_game_pks": [
+      849845,
+      849843,
+      849832,
+      849844,
+      849831
+    ],
+    "types": [
+      "UNKNOWN",
+      "CH",
+      "CS",
+      "CU",
+      "EP",
+      "FA",
+      "FC",
+      "FF",
+      "FO",
+      "FS",
+      "KC",
+      "KN",
+      "PO",
+      "SC",
+      "SI",
+      "SL",
+      "ST",
+      "SV",
+      "UN"
+    ],
+    "stop_share": {
+      "excluded_duplicate_key": 0.001,
+      "quarantined_multi_date_game": 0.01,
+      "excluded_invalid_state": 0.001,
+      "excluded_missing_handedness": 0.001,
+      "excluded_unmapped_label": 0.01,
+      "excluded_bip_missing_bb_type": 0.001,
+      "excluded_nonbip_with_bb_type": 0.001,
+      "excluded_bip_unknown_bb_type": 0.001
+    },
+    "bb_types": [
+      "ground_ball",
+      "line_drive",
+      "fly_ball",
+      "popup"
+    ],
+    "implementation": "abc_corpus.project unchanged (every source row gets exactly one old fate), with labels10 = scale_safe.outcome_labels (model.py 26-41) and head_labels = scale_safe.head_labels",
+    "pitch_type_unknown": "accepted rows whose pitch_type is null or outside types are KEPT with pitch_type UNKNOWN and counted in projection.json pitch_type_mapped_unknown (the earlier ABC corpus had 367). Label eligibility is not action/service coverage."
+  },
+  "research_acceptance": [
+    "all source/row/role/quality accounting passes",
+    "strict prior perturbation checks pass",
+    "three fixed seed receipts and complete per-epoch consumed-key coverage",
+    "all OOF keys receive finite normalized raw probabilities"
+  ],
+  "metrics_frozen": [
+    "seven-leaf NLL clip1e-15",
+    "Brier sum over7leaves",
+    "top-label ECE10"
+  ],
+  "operation_ready": false,
+  "budgets_proposed": {
+    "first_window_fits": 3,
+    "epochs_each": 30,
+    "gpu_index": 3,
+    "concurrent_jobs": 1,
+    "wall_seconds_each": 3600,
+    "rss_bytes": 8589934592,
+    "vram_bytes": 17179869184,
+    "output_bytes_each": 536870912,
+    "full_program_fit_ceiling": 15,
+    "new_fit_execution_requires_separate_grant": true
+  },
+  "fold": "OOF3",
+  "observed_coverage_rule": "report retained observed dates; source S2 manifest ends2026-09-27, which alone does not establish whether later calendar days had scheduled games"
+}

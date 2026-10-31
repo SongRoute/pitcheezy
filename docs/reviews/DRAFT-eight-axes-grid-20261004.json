@@ -1,0 +1,22 @@
+{
+  "status": "DRAFT_UNREGISTERED",
+  "author": "Opus 5.5 research inventory worker, 2026-10-04",
+  "report": "docs/reviews/PM-research-eight-axes-2026-10-04.md",
+  "scope": "exploratory repeated 2025 DEV (Cpanel 12,334 / MLB 311,721); no 2026 fit/tune/select; D131/D155 policy gates unchanged; predictive NLL is not policy value",
+  "shared_budget_from_cuda_pipeline": {"model": "flatten128 MLP", "epochs": 30, "patience": 5, "lr": 0.0005, "batch": 1024, "seeds": [0, 1, 2], "current_physics": "zero"},
+  "order": [
+    {"id": "Z1", "kind": "zero_fit_search", "change": "same-family seed pair average (P15 seeds 0-2 + P16 seeds 3-4) mixed with G0 at w=0.75", "comparator": "P23 cross-family pairs w0.75", "fits": 0, "new_export": false},
+    {"id": "Z2", "kind": "zero_fit_search", "change": "direct weight w in {0.85, 1.0} for P23 top families", "comparator": "same family w0.75", "fits": 0, "new_export": false, "note": "post-hoc edge-of-grid extension; disclose"},
+    {"id": "A1a", "kind": "fit", "change": "plain MLP widened to ~1.20x control params", "comparator": "P21 residual", "fits": 3, "new_export": false},
+    {"id": "A1b", "kind": "fit", "change": "plain MLP widened to ~2.02x control params", "comparator": "P22 periodic", "fits": 3, "new_export": false},
+    {"id": "A3", "kind": "fit", "change": "fixed dropout 0.1 + weight_decay 1e-4", "comparator": "CUDA control", "fits": 3, "new_export": false},
+    {"id": "B1", "kind": "fit", "change": "zero batter representation block (17 values) in train and predict", "comparator": "CUDA control", "fits": 3, "new_export": "column-group map only"},
+    {"id": "B2", "kind": "fit", "change": "zero batter soft cluster membership (5 values) only", "comparator": "CUDA control", "fits": 3, "new_export": "column-group map only"},
+    {"id": "A2", "kind": "fit", "change": "periodic numeric embedding + residual backbone in one model", "comparator": "P21, P22, P21+P22 pair", "fits": 3, "new_export": false},
+    {"id": "A4", "kind": "fit", "change": "TabM-mini shared-weight ensemble k=8", "comparator": "control 3-seed mean", "fits": 3, "new_export": false}
+  ],
+  "drop_order_if_time_short": ["A4", "A2", "B2"],
+  "deferred_new_export": ["pitcher ID embedding (TRAIN vocab)", "handedness mirror augmentation", "P13 arsenal 9ch", "F4 prior-PA 128"],
+  "not_tonight": ["cluster refits G5-G7", "offline RL (code/<=2025 diagnostic only, model-internal value)"],
+  "stop_rules": {"no_new_fit_after_kst": "15:00", "kill_own_jobs_kst": "15:30", "score_only_after_all_registered_seeds": true}
+}

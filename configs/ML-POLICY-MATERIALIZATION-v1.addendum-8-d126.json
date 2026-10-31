@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "9efb59c9835040b8806627055d5b4bae382275d05d0933b8d42754be000df219",
+  "stage": "dr-evaluate",
+  "registered_inputs": {
+    "s6_dr": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a5/dr.json",
+      "file_sha256": "5e56119ddff97215bea0e459af03257e72bdb55c6bd4d602e3bdba5568f27d38"
+    }
+  },
+  "note": "D126: addendum 8 pins the sealed S6-dr-a5 (runtime v3 + L1-R rehearsal on source 9024bd9; identical to S6-dr-a4) as the 2026 rehearsal/hang-guard base."
+}

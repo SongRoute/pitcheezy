@@ -1,0 +1,13 @@
+{
+  "archive_script_sha256": "8cd4aebed9d7763891495e0dc9e2b44824547760e0b8e1c5b4ca1d8ee37eac51",
+  "checkpoint_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-001/fitted_count_tables.pkl",
+  "checkpoint_sha256": "a75e270fd3c161e580c49b872a4502b014f0ceb2a0e0623b172b10e83237f411",
+  "config_sha256": "9ed4af0267189093b5c950e2970b5c85eb5a5f7cea984918a9864c248a2ed939",
+  "dev_full_games_sha256": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+  "experiment_id": "EXP-B-PAHISTORY-001",
+  "purpose": "Deterministic frozen-config refit and restore of already scored B count tables; no new scoring or tuning",
+  "restored_predictions_exactly_match_scored": true,
+  "score_result_sha256": "5b10e2bd50337aee2e114a12d8ee18b77c86f329ffc8aef7026a767a50c457d9",
+  "scored_predictions_sha256": "6b15d27f468ec20434df56a03e1672253c62feabc126ac2f10af2c281be62d3d",
+  "train_full_games_sha256": "a75488855c59963c16826fb55e3e50b8e38fe80659e11847d52b5ad14c167852"
+}

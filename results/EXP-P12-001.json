@@ -1,0 +1,137 @@
+{
+  "experiment_id": "EXP-P12-001",
+  "family_id": "ML-JUNE-CALIBRATION-v1",
+  "status": "completed",
+  "scope": "Previously exposed eligible 2025 whole-MLB DEV",
+  "family_summary": "results/ML-JUNE-CALIBRATION-v1.json",
+  "source": {
+    "full_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/analysis/results.json",
+      "sha256": "31f72b0202a2cc7c06a595094ab36be95d3edd6de2a9455f173da8bc15c034e9"
+    },
+    "analysis_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/analysis/manifest.json",
+      "sha256": "a296c8ec4c3a379904706b4a88fc2f62e1bacb5c93c24d510345e333efa37fcc"
+    },
+    "fit_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/fit/manifest.json",
+      "sha256": "eb0dec3ccac973643ede9263ef4103665fae2f46f340db7e34aed9eb1eeae6ea"
+    },
+    "parameters": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/fit/parameters.json",
+      "sha256": "fab0aff37e3b381d7f9dcb53677a436a36357e7e8a50ad3ed3bd4292e1121e9f"
+    },
+    "queue_status": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/status.json",
+      "sha256": "de0c5fe28ee9c53ec273eb1c4f6536e137c123bc47102ab5c4be7ed4b6959609"
+    },
+    "execution_plan": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-plan.json",
+      "sha256": "74fbfa5e6395f6bbf5b92d62605aad7fce65d4329b08b9e846f30fef115dbbfb"
+    },
+    "execution_registration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-registration.json",
+      "sha256": "5ba9f82f4378363eb1ed7f521564e79575d3b69a5403f52f97e2d1c387c6b307"
+    },
+    "runtime_release": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/runtime-release.json",
+      "sha256": "8057ed19cceb827adb550e4d83c528423f0d1a8b0ab65588366bfa225c861392"
+    },
+    "terminal_evidence": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/terminal-execution-evidence-001.json",
+      "sha256": "df8de2f023775f0ce625b54e54a886ea96051cddac2b37f9caf8473d4c2e2f0b"
+    },
+    "scientific_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-v1.json",
+      "sha256": "a0bff3b34079ac736b2dff7c69a29faa5a5268316b53ad06e113945684ba6ab8"
+    },
+    "execution_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-EXECUTION-v1.json",
+      "sha256": "792f89c6e752e2955ae6ca48d8db2fab94d109da2bf7bfda01342bab54f8e917"
+    },
+    "contract": {
+      "path": "/Users/song/Projects/pitcheezy/docs/contracts/ML-JUNE-CALIBRATION-v1.md",
+      "sha256": "e155315dcf732c55009755443f4db8117f260851273d7c54c760e2f29c701d4c"
+    },
+    "code_commit_c": "1002f57ea09d14df279212c68100da755bc573dc",
+    "registration_commit_d": "61b056caa5d752787d84c7ae74b2a627818c34b3"
+  },
+  "N": {
+    "B1-B0": {
+      "contrast": "B1-B0",
+      "candidate": "B1",
+      "control": "B0",
+      "n": 311721,
+      "games": 1161,
+      "draws": 10000,
+      "seed": 20260924,
+      "status": "measured",
+      "estimand": "pitch-weighted mean paired loss difference; negative favors candidate",
+      "nll": {
+        "delta": -0.0005790967764688547,
+        "ci95": [
+          -0.0007044085814310439,
+          -0.000456415431635658
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "brier": {
+        "delta": -0.0005672250369111795,
+        "ci95": [
+          -0.0006226582637235096,
+          -0.000512912470034648
+        ],
+        "p_less": 9.999000099990002e-05
+      },
+      "seed_nll_deltas": [
+        -0.0008333867764815868,
+        -0.0007622513697977206,
+        -0.00035701000408065156,
+        -0.0004938805311413035,
+        -0.00032807941832721337
+      ],
+      "seed_brier_deltas": [
+        -0.0006709702618834697,
+        -0.0006331990512097277,
+        -0.000383894145007936,
+        -0.000492878965922524,
+        -0.00040979701370003193
+      ],
+      "adjusted_p": 0.00029997000299970003,
+      "decision": {
+        "status": "inconclusive",
+        "criteria": {
+          "delta_nll_at_most_minus_0.003": false,
+          "nll_ci95_upper_below_zero": true,
+          "holm_adjusted_p_at_most_0.05": true,
+          "brier_ci95_upper_at_most_0.001": true,
+          "at_least_4_of_5_seed_nll_negative": true
+        },
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00029997000299970003
+      }
+    }
+  },
+  "R_status": {
+    "B1-B0": "passed"
+  },
+  "candidate": {
+    "required_contrasts": [
+      "B1-B0"
+    ],
+    "checks": {
+      "B1-B0": {
+        "N": "inconclusive",
+        "R": "passed"
+      }
+    },
+    "research_improvement_candidate": false,
+    "service_promotion": false
+  },
+  "cost_accounting": "Shared family cost recorded once in results/ML-JUNE-CALIBRATION-v1.json; do not sum this cost per experiment",
+  "independent_confirmation": null,
+  "held_out_confirmation": false,
+  "policy_effect": null,
+  "service_adoption": null
+}

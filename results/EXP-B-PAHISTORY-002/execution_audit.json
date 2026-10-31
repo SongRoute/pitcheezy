@@ -1,0 +1,62 @@
+{
+  "experiment_id": "EXP-B-PAHISTORY-002",
+  "status": "completed_not_adopted",
+  "source_commit": "4ccd31ffa51b04bdf26272bde3cf89811b8c2a2a",
+  "train_selection_commit": "fa07bbb581d277d8272ab5f3f52d962d174f93e7",
+  "selected_alpha": 0.75,
+  "phase_order": "source committed -> TRAIN -> selection and checkpoint committed -> single DEV run",
+  "dev_tuning": false,
+  "full_fits": 3,
+  "checkpoint_and_artifact_hashes_verified": true,
+  "repo_ssd_copies_identical": true,
+  "first_pitch_count": 151,
+  "first_pitch_nll_delta": 0.0,
+  "fallback_count": 244,
+  "fallback_exact_parent": true,
+  "history_context_count": 319,
+  "per_game_dev_nll_delta": [
+    {
+      "game_pk": 777063,
+      "pitches": 92,
+      "delta_nll": 0.004788992245810469
+    },
+    {
+      "game_pk": 777094,
+      "pitches": 77,
+      "delta_nll": 0.005208176619408753
+    },
+    {
+      "game_pk": 777126,
+      "pitches": 99,
+      "delta_nll": 0.00792611327408376
+    },
+    {
+      "game_pk": 777143,
+      "pitches": 84,
+      "delta_nll": 0.004181158353094753
+    },
+    {
+      "game_pk": 777217,
+      "pitches": 103,
+      "delta_nll": 0.003513027971827156
+    },
+    {
+      "game_pk": 777227,
+      "pitches": 108,
+      "delta_nll": 0.005143566733800015
+    }
+  ],
+  "posthoc_interpretation": "Accounting from the single saved DEV prediction artifact, no refit or reselection; predictive deterioration does not identify a causal cause.",
+  "policy_value": null,
+  "service_adoption": false,
+  "cv": "excluded",
+  "new_2026_game_data": false,
+  "final_holdout_opened": false,
+  "validation_log": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-002/pytest-final.log",
+  "validation_log_sha256": "13be79c7b0a9e9a065aca5e150d65fa89826c66210ed5818454938b921f2af20",
+  "sha256": {
+    "train_selection.json": "63a5506f6ce977801499f6adf99a887dd2a999c6b0638e0a70c1172c0cfdfccd",
+    "checkpoint.json": "11bb5b40ecaed50d068bbbe2a70e58ebd57bc4f2e7d2ba5dcfcf08e6435c04bf",
+    "dev_results.json": "c14cadeb067ad899ca077f621d95ba5c9fb1ac58711d79280d9e912e0879ebad"
+  }
+}
