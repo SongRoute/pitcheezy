@@ -96,8 +96,8 @@ function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side, today,
 /** Pitcher's view: a right-handed batter stands on the SCREEN RIGHT, a left-handed batter on the left (broadcast camera).
  *  The figure holds the bat on the side away from the plate. */
 function Silhouette({ side }: { side: 'L' | 'R' }) {
-  const atLeft = side === 'R';
-  return <svg className={`sv-batter ${side}`} viewBox="0 0 40 100" role="img" aria-label={side === 'R' ? '우타자, 화면 왼쪽 타석' : '좌타자, 화면 오른쪽 타석'}>
+  const atLeft = side === 'L';
+  return <svg className={`sv-batter ${side}`} viewBox="0 0 40 100" role="img" aria-label={side === 'R' ? '우타자, 화면 오른쪽 타석' : '좌타자, 화면 왼쪽 타석'}>
     <circle cx="20" cy="12" r="8" /><path d="M10 26h20l3 34h-7l-2 36h-6l-1-30-1 30h-6l-2-36H7z" />
     <line x1={atLeft ? 10 : 30} y1="30" x2={atLeft ? 2 : 38} y2="4" />
   </svg>;
@@ -468,6 +468,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
     : publishStale ? { kind: 'late', text: `${LATE} 갱신 지연` } : publishChecking ? { kind: 'ok', text: '확인 중…' }
     : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
+    /* game-level 확인 중 from the server: the line tells the chip's story, never 실시간으로 받는 중 beside it */
+    : live && auto && disp?.state === 'unconfirmed' ? { kind: 'ok', text: '확인 중…' }
     : { kind: 'ok', text: live ? (auto ? (behind > 0 ? `${behind}초 늦춰 보는 중` : '실시간으로 받는 중') : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
   let clientNote: string | null = null;
@@ -594,17 +596,17 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         <span title={pitcherP?.name ?? undefined}><b>투수: {pitcherP?.name ?? '선수 미확인'}</b></span>
       </div>}
       <div className="sv-recommend-heading"><h2>추천 구종 · 대략 위치</h2><small>{nextNumber ? `${nextNumber}구` : "최근 기록"}</small></div>
-      {/* Catcher's view, with the batter on the correct screen side. The zone owns the centre;
+      {/* Pitcher's view, with the batter on the correct screen side. The zone owns the centre;
           recommendations now live below it, leaving its outside-coordinate margin unobstructed. */}
       <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}${held ? ' held' : ''}`}>
-        {side && <div className={`sv-batband ${side === 'R' ? 'at-left' : 'at-right'}`}><Silhouette side={side} /></div>}
+        {side && <div className={`sv-batband ${side === 'R' ? 'at-right' : 'at-left'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
           <Zone bounds={detail.zone_bounds} candidates={cands} actuals={nextPhase && !fold ? paPitches.filter(p => !unconfirmed(p) && p.actual?.x != null && p.actual?.z != null).slice(allPitches ? 0 : -3).map(p => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number })) : []}
             actual={!nextPhase && !fold && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
             setupX={!nextPhase && !fold ? actual?.setup_x ?? null : null} />
         </div>
       </div>
-      <p className="sv-zone-legend"><span>▣ 추천</span><span>● 실제 투구</span><span>포수 시점 · 회색은 존 밖</span></p>
+      <p className="sv-zone-legend"><span>▣ 추천</span><span>● 실제 투구</span><span>투수 시점 · 회색은 존 밖</span></p>
       {stateSlot ? <div className={`sv-pitch-summary sv-state${shownRec ? ' has-rec' : ''}${held ? ' held' : ''}`} data-state={eff!.state} data-pitch={disp!.pitch_key ?? undefined}>
         {/* ONE state at a time, in a slot of constant height: chip (words + mark), then the candidates and/or one calm sentence. */}
         <div className="sv-state-head">

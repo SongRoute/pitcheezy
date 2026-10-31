@@ -8,10 +8,13 @@ range: a field seen only as a string may be null in another game. Schemas never 
 false`` for a keyed object, so adding a field stays a compatible (v1) change.
 
 Keywords used: ``type`` (name or list), ``properties``, ``required``, ``items``, ``additionalProperties`` (a
-schema), ``const``, ``enum``, ``minimum``. ``validate`` checks those and nothing else.
+schema), ``const``, ``enum``, ``minimum``, ``maximum``, ``pattern``. ``validate`` checks those and nothing else.
+Hand-written parts (not inferred): the ``publish`` block, the optional UI additions and ``next.reference``
+(``REFERENCE``, the A2 card ``service_extras`` emits; strict about the keys and types it carries).
 """
 from __future__ import annotations
 
+import copy
 import re
 
 DRAFT = 'https://json-schema.org/draft/2020-12/schema'
@@ -79,6 +82,10 @@ def validate(instance, schema, path='$'):
             return errors+[f'{path}: {actual} is not {" or ".join(allowed)}']
     if isinstance(instance, (int, float)) and not isinstance(instance, bool) and 'minimum' in schema and instance < schema['minimum']:
         errors.append(f"{path}: {instance} is below {schema['minimum']}")
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool) and 'maximum' in schema and instance > schema['maximum']:
+        errors.append(f"{path}: {instance} is above {schema['maximum']}")
+    if isinstance(instance, str) and 'pattern' in schema and re.search(schema['pattern'], instance) is None:
+        errors.append(f"{path}: {instance!r} does not match {schema['pattern']!r}")
     if isinstance(instance, dict):
         errors += [f'{path}: missing {key!r}' for key in schema.get('required', []) if key not in instance]
         known = schema.get('properties', {})
@@ -112,6 +119,10 @@ def problems(instance, schema, pointer=''):
             return out
     if isinstance(instance, (int, float)) and not isinstance(instance, bool) and 'minimum' in schema and instance < schema['minimum']:
         add('minimum', _type(instance))
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool) and 'maximum' in schema and instance > schema['maximum']:
+        add('maximum', _type(instance))
+    if isinstance(instance, str) and 'pattern' in schema and re.search(schema['pattern'], instance) is None:
+        add('pattern', _type(instance))
     if isinstance(instance, dict):
         for key in schema.get('required', []):
             if key not in instance:
@@ -161,6 +172,32 @@ CONTRACT_TYPES = {
     'manifest': [(('commit',), ('string', 'null'), False), (('commit_dirty',), ('boolean', 'null'), False)],
 }
 _ORDER = ('object', 'array', 'string', 'number', 'integer', 'boolean', 'null')
+
+# ``next.reference`` (A2, ``service_extras.REFERENCE_PUBLIC``): past pitch-type frequencies of a pitcher the
+# recommender does not support. Optional: present only while the pending pitch is ``unsupported`` for a pitcher-level
+# reason and the publisher's switch is on. Exactly what ``Extras._public_card`` emits; no rank, target or location.
+_PERCENT = {'type': 'integer', 'minimum': 0, 'maximum': 100}
+_DAY = {'type': 'string', 'pattern': r'^\d{4}-\d{2}-\d{2}$'}
+REFERENCE = {
+    'type': 'object',
+    'description': 'A2 reference card: shares of pitch types this pitcher actually threw this season in the same count '
+                   'and against the same batter side, from a profile whose cutoff (as_of) is strictly before the game '
+                   'date. Not a recommendation and not a prediction of the next pitch. stale = as_of is more than 2 days '
+                   'before the game date (provisional).',
+    'properties': {
+        'kind': {'const': 'profile_reference'}, 'reason_code': {'const': 'unsupported/profile_reference'},
+        'chip': {'const': '참고 · 기록 통계'},
+        'title': {'enum': ['이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', '이 투수가 올해 이 타자 방향에서 자주 던진 공 (모든 카운트)']},
+        'items': {'type': 'array', 'items': {'type': 'object', 'properties': {
+            'pitch_type': {'type': 'string'}, 'pitch_label': {'type': 'string'}, 'share_pct': _PERCENT},
+            'required': ['pitch_label', 'pitch_type', 'share_pct']}},
+        'other': {'type': ['object', 'null'], 'properties': {'share_pct': _PERCENT}, 'required': ['share_pct']},
+        'sample': {'type': 'object', 'properties': {
+            'pitches': {'type': 'integer', 'minimum': 1}, 'batter_side': {'enum': ['L', 'R']},
+            'balls': {'type': 'integer', 'minimum': 0, 'maximum': 3}, 'strikes': {'type': 'integer', 'minimum': 0, 'maximum': 2}},
+            'required': ['batter_side', 'pitches']},
+        'as_of': _DAY, 'stale': {'type': 'boolean'}, 'note': {'type': 'string'}},
+    'required': ['as_of', 'chip', 'items', 'kind', 'note', 'other', 'reason_code', 'sample', 'stale', 'title']}
 
 
 def _add_types(schema, types):
@@ -247,11 +284,15 @@ def document(kind, samples, *, final, source):
             'status': {'enum': ['available', 'unavailable']}, 'home_probability': {'type': ['number', 'null']},
             **{key: {'type': ['string', 'null']} for key in ('basis', 'perspective', 'source', 'policy_identity', 'pitch_key', 'reason')}}}
         schema['required'] = [key for key in schema.get('required', []) if key != 'win_expectancy']
+        following = schema['properties']['next']
+        following.setdefault('properties', {})['reference'] = copy.deepcopy(REFERENCE)
+        following['required'] = [key for key in following.get('required', []) if key != 'reference']
     schema['properties']['publish'] = publish_block(final=final)
     schema['required'] = sorted({*schema.get('required', []), 'publish'})
     return {'$schema': DRAFT, '$id': f'pitcheezy-publish-v1-{kind}', 'title': f'Pitcheezy public publish v1: {kind}',
             'description': (f'Inferred from {len(bodies)} synthetic fixture bodies ({source}) built by the same code that '
                             'answers the service routes, then widened where the builder code can produce another type '
                             '(publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance '
-                            'people and indices, optional batting_order, unknown commit); the publish block is fixed. '
+                            'people and indices, optional batting_order, unknown commit); the publish block and the '
+                            'optional next.reference card (publish_schema.REFERENCE) are hand-written. '
                             'Treat a type listed here as the minimum a reader must accept, and accept unknown keys.')} | schema

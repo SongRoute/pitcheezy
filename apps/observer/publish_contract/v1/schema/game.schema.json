@@ -1,7 +1,7 @@
 {
  "$id": "pitcheezy-publish-v1-game",
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "description": "Inferred from 12 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "description": "Inferred from 13 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block and the optional next.reference card (publish_schema.REFERENCE) are hand-written. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
  "properties": {
   "current": {
    "properties": {
@@ -1261,6 +1261,118 @@
       "reason",
       "recorded_at",
       "status"
+     ],
+     "type": "object"
+    },
+    "reference": {
+     "description": "A2 reference card: shares of pitch types this pitcher actually threw this season in the same count and against the same batter side, from a profile whose cutoff (as_of) is strictly before the game date. Not a recommendation and not a prediction of the next pitch. stale = as_of is more than 2 days before the game date (provisional).",
+     "properties": {
+      "as_of": {
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+       "type": "string"
+      },
+      "chip": {
+       "const": "참고 · 기록 통계"
+      },
+      "items": {
+       "items": {
+        "properties": {
+         "pitch_label": {
+          "type": "string"
+         },
+         "pitch_type": {
+          "type": "string"
+         },
+         "share_pct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+         }
+        },
+        "required": [
+         "pitch_label",
+         "pitch_type",
+         "share_pct"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "kind": {
+       "const": "profile_reference"
+      },
+      "note": {
+       "type": "string"
+      },
+      "other": {
+       "properties": {
+        "share_pct": {
+         "maximum": 100,
+         "minimum": 0,
+         "type": "integer"
+        }
+       },
+       "required": [
+        "share_pct"
+       ],
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "reason_code": {
+       "const": "unsupported/profile_reference"
+      },
+      "sample": {
+       "properties": {
+        "balls": {
+         "maximum": 3,
+         "minimum": 0,
+         "type": "integer"
+        },
+        "batter_side": {
+         "enum": [
+          "L",
+          "R"
+         ]
+        },
+        "pitches": {
+         "minimum": 1,
+         "type": "integer"
+        },
+        "strikes": {
+         "maximum": 2,
+         "minimum": 0,
+         "type": "integer"
+        }
+       },
+       "required": [
+        "batter_side",
+        "pitches"
+       ],
+       "type": "object"
+      },
+      "stale": {
+       "type": "boolean"
+      },
+      "title": {
+       "enum": [
+        "이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공",
+        "이 투수가 올해 이 타자 방향에서 자주 던진 공 (모든 카운트)"
+       ]
+      }
+     },
+     "required": [
+      "as_of",
+      "chip",
+      "items",
+      "kind",
+      "note",
+      "other",
+      "reason_code",
+      "sample",
+      "stale",
+      "title"
      ],
      "type": "object"
     }

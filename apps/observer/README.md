@@ -100,6 +100,7 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
 - 리허설(경기가 없을 때 지연 중계 화면 시험): `.venv/bin/python scripts/demo_precompute.py live-replay --game-pk 849843 --start 40 --count 40` 뒤 `PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR=<출력 폴더> PITCHEEZY_OBSERVER_LIVE_DELAY_S=15 sh apps/observer/serve.sh`, `/live?game=849843`. 10초마다 한 공씩 진행한다.
 - 저장소를 켠 실행(RC, `rc/ws-2026`): `PITCHEEZY_OBSERVER_LIVE_STORE=<새 SQLite 경로>`를 주면 폴링한 스냅샷이 `live_store.py`를 거친다(투구 식별·최초 수신 불변·정정 append-only·중복/지연 도착/재시작 복원). 이때 투구 전 추천은 `served_recommendations` 원장에 먼저 기록된 것만 화면에 나가고, 기록하지 못하면 그 추천은 표시하지 않는다(`PITCHEEZY_OBSERVER_REC_LEDGER=0`으로 원장만 끌 수 있다). 수신 시각 `fetched`는 응답을 다 받은 뒤의 시각이고 요청을 보낸 시각은 `requested`로 따로 남는다. 녹화 재생(`PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR`)과 함께 쓰면 저장 행의 source가 `replay_poll`, 시계가 `unverified`로 남아 실제 경기 수신 기록과 섞이지 않는다. 운영 DB와 다른 새 경로를 쓴다. 재생은 upstream 폴링 한 번에 본문 하나씩 나가므로 기본 속도는 폴링 간격(10초, 빠른 시청자 5초)이다. 리허설을 빨리 돌리려면 `PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=<초>`(재생 폴더를 줄 때만 적용, 0 = 요청마다 한 개)를 준다. 실제 MLB 폴링 간격은 이 값으로 바뀌지 않는다.
 - 화면 상태(`display_state`, `backend/observer_app/display_state.py`): 실시간 경기의 `/api/service/games/{pk}`와 `/api/live/{pk}/state`는 다음 공 자리마다 상태 하나와 사유 코드를 싣는다. `recommended`(원장에 먼저 기록된 추천), `unconfirmed`(확인 중: 저장 버전의 제공처 순서가 `ordered`가 아니거나, 진행 중 타석·가장 최근 투구의 본문이 투구 원장에서 수용되지 않음. SVC-WS-03 합성 경기와 같은 `admit_body` 규칙), `unsupported`(`unknown_pitcher`/`no_supported_pitch_types`/`at_bat_rejected`), `feed_delayed`(이 사건을 담지 못한 직전 성공 폴링이 사건보다 `live_config.json` `display.feed_lag_delayed_s`초 넘게 뒤였음. **잠정값**. `lag_s`는 그렇게 증명된 최소 지연, `lag_max_s`는 상한. 직전 폴링이 없거나 재생 실행이면 측정 안 함), `disconnected`(폴링 실패. 이미 기록된 추천만 유지하고 새로 계산·기록하지 않음), `ledger_unavailable`(계산했지만 기록하지 못했거나, 이전 표시 이력을 읽지 못했거나, 설정한 저장소를 열지 못해 미표시), `waiting`, `unavailable`, `pregame`, `final`. 같은 다음 공에 이미 다른 추천을 보여 준 뒤 내용이 바뀌면 `correction`(`replaced`/`withdrawn`, 이전 1순위 포함)으로 알린다(조용한 뒤집힘 없음, 원장 기준이라 재시작 뒤에도 유지). 저장소를 켜면 각 투구에 `receipt`가 붙고, 수용되지 않은 본문은 구종·속도·위치·결과를 비우고 `확인 중`으로만 내보낸다. 판정은 서빙 중인 저장 버전 시점 기준이라 지연이 긴 시청자에게 이후 결정이 새지 않는다. `currentPlay`가 `allPlays` 마지막 타석과 타석 번호·투구 목록이 다르면(뒤처진 경우 포함) 확인 중으로 두고, `allPlays`에 없거나 본문이 다른 `currentPlay` 투구는 수용 기록이 없으므로 `/api/live/{pk}/state`에서도 비워서 `확인 중`으로 내보내고, 두 경로 모두 추천을 계산·기록하지 않는다(`prior_pitch_unconfirmed`). `확인 중` 계열 문장은 두 가지뿐이다: "경기 상황을 다시 확인하고 있어요. 확인되면 추천을 보여 드려요." / "방금 던진 공을 다시 확인하고 있어요. 확인되면 추천을 보여 드려요."(`prior_pitch_unconfirmed`). 남은 한계: 볼카운트·점수·타석 결과는 선택된 스냅샷 그대로라 미확인 본문의 영향이 남을 수 있다.
+- 확인 중 완화(Song 2026-10-12, 브랜치 `ws/launch-b-1017`): 한 번이라도 투구 원장에 수용된 투구는, 지금 받은 본문이 거부돼도 마지막으로 수용된 본문으로 계속 보인다(`receipt.reason: held_last_accepted`). 한 번도 수용되지 않은 투구만 `확인 중`이다. 다만 진행 중 타석이나 가장 최근 투구가 이 상태면 정책이 받은 본문을 읽으므로 추천은 보류한다. 경기 단위 같은 제공처 시각 충돌은 추천 입력(`live_armb.state_key`: 타석·카운트·주자·아웃·점수·투수/타자와 좌우·최근 투구 본문·모든 사건의 카운트와 주자 이동)이 다를 때만 막고, 날씨·관중·박스스코어만 다르면 막지 않는다. **투구가 0개인 경기에서는 같은 시각 충돌로 막지 않는다**(투수·타자가 달라도 마찬가지, Song 승인). 오래된·순서 불명 시각은 그대로 막는다. `corrected`는 이미 보인 칸(구종·판정·카운트·구속·회전·무브먼트·위치·타구값)이 바뀌거나 사라질 때만 붙고, 제공처가 `endTime`·`typeConfidence`·`breakAngle` 등만 고쳐 다시 보낸 경우와 빈 값이 채워진 경우는 붙지 않는다.
 - 지나간 공의 추천(`backend/observer_app/rec_pairing.py`): 실시간 경기의 `/api/service/games/{pk}`는 지나간 공마다 `rec`에 "투구 전에 기록된 추천"을 다음 공 추천과 같은 모양(`provenance: captured_live`, `ledger`, `recorded_at`, `candidates`)으로 싣는다. 원장은 결정만 기록하므로 "그때 화면에 있었다"는 뜻이 아니다. 붙이는 조건: 그 공의 `receipt`가 `received`, 같은 투구 키의 `first` 행(`conflict` 행 제외), 그 행의 스냅샷 `store_seq`가 그 공이 처음 담긴 본문보다 앞이고 기록 시각도 그 본문 수신보다 앞, 그런 행 중 가장 마지막 상태, 같은 타석의 직전 공이 그 스냅샷에 이미 있음, 결정 입력(투수·타자·이닝·초말·아웃·볼·스트라이크·주자·점수)이 실제 공과 같음. 하나라도 어긋나면 `provenance: absent` + "이 공은 기록된 추천이 없어요."이고 `rec.pairing.rule`에 사유 코드가 남는다(화면 비표시). 원장 행에는 결정 입력 `inputs`를 함께 기록하고, 그 전 행은 저장된 스냅샷에서 읽어 확인한다. 원장을 읽지 못하는 동안에는 아무것도 붙이지 않고 `receipts.version`에 표식이 붙어, 열려 있는 화면이 복구 뒤 전체를 다시 받는다. `receipts.paired`는 붙은 공 수. 공수 교대 중 `current`는 `situation`·`batter`·`pitcher`·`pa_key`가 모두 null이고 `finished_half`(방금 끝난 이닝·초말)만 싣는다. 카드 점수는 유지한다.
 - 폰 폭 확인: `node apps/observer/web/tests/service-smoke.mjs http://127.0.0.1:8766 [라이브 gamePk|-] [스크린샷 폴더|-] [다시 보기 gamePk]`.
 - 실경기 측정(서비스 시간·지원 범위, 모델 평가 아님): `python3 scripts/live_rehearsal.py record --game-pk N --server http://…:8766 --output DIR [--not-before 2026-10-03T16:50:00Z]`가 폰처럼 상태를 조회해 한 줄씩 기록하고, 경기가 끝나면 `report --game-pk N --output DIR --snapshots apps/observer/live_snapshots`가 피드 도착 지연·다음 공 전 여유·추천 가능 비율·응답 시간을 낸다. `simulate --feeds …/DEMO-WS-2026/feeds --lags 5 10 15`는 끝난 경기의 투구 시각으로 조회 간격별 "5초 전 추천" 비율을 계산한다.
@@ -110,13 +111,14 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
   - `PITCHEEZY_OBSERVER_VIEWER_DELAY=1`: 팬 화면 시청 지연. **기본 꺼짐.** 공개 서비스는 지연 0 본문 하나를 모두에게 배포하므로, 시청자별 지연은 이 서버에 직접 붙는 경로(폰 시연·내부)에서만 켠다.
   - `PITCHEEZY_OBSERVER_VIEWER_DELAY_DEFAULT_S`(기본 30), `PITCHEEZY_OBSERVER_VIEWER_SYNC_PROMPT`(0 = 첫 화면에서 묻지 않음).
   - `PITCHEEZY_OBSERVER_PROFILE_REFERENCE`, `PITCHEEZY_OBSERVER_PROFILE_SOURCES`, `PITCHEEZY_OBSERVER_STEP5_EXPECTATION`, `PITCHEEZY_OBSERVER_STEP5_LEDGER`, `PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED`: 기본 꺼짐. 값만 전달하고 동작은 각 모듈이 정한다.
-- 꺼져 있을 때: `?delay=`는 경기·목록에서 무시되고(지연 0), 응답에는 `features`와 `viewer`(`enabled: false`, `delay_s: 0`)만 더해진다. 그 밖의 본문은 a72f1fa와 같다(`tests/test_viewer_off_golden.py`). a72f1fa에 없던 경로와 값: `GET /api/service/features`(200, 스위치의 공개 부분), `GET /api/service/games/{pk}/tap`(어떤 요청이든 404 "이 실행에서는 중계 맞추기를 쓰지 않아요."), `/api/health`의 `service_extras`(운영자용).
+- 꺼져 있을 때: `?delay=`는 경기·목록에서 무시되고(지연 0), 응답에는 `features`와 `viewer`(`enabled: false`, `delay_s: 0`)만 더해진다. 그 밖의 본문은 기준선 505932e와 같다(`tests/test_viewer_off_golden.py`; 처음 기준선 a72f1fa에서 의도된 커밋 0fe66af9·a52012eb·75e25189로 바뀐 본문을 2026-10-19에 다시 잡음). a72f1fa에 없던 경로와 값: `GET /api/service/features`(200, 스위치의 공개 부분), `GET /api/service/games/{pk}/tap`(어떤 요청이든 404 "이 실행에서는 중계 맞추기를 쓰지 않아요."), `/api/health`의 `service_extras`(운영자용).
 - 켜져 있을 때:
   - `GET /api/service/games/{pk}?delay=<초>`: 중계가 그만큼 늦은 시청자의 시점(가장 새 사건이 그만큼 지난 본문 중 최신)으로 본문 전체를 만든다. 상한은 `max_delay_s`(120). 아직 그 시점의 본문이 없으면 점수·투구 없이 `viewer.buffering: true`와 "내 중계 시점까지 기다리는 중이에요 (약 N초)."를 준다. 더 새 본문으로 대신하지 않는다.
   - `GET /api/service/games?date=&delay=`: 진행 중 경기 카드는 점수·이닝 없이 `score_hidden: true`.
   - `GET /api/service/games/{pk}/tap?ago=<초,초…>&current=<초>&sure=0|1`: 내 TV에서 공이 미트에 들어온 순간을 누른 뒤 지난 시간(기기에서 잰 값). 답은 `status: ok|wait|unclear`와 지연 초뿐이고 경기 내용은 없다. 한 번으로 어느 공인지 가리지 못하면 다음 공에서 한 번 더 누르게 한다.
   - 수신 즉시 기록(`record_at_receipt`): 지연 시청자만 있어도 가장 새 본문의 추천을 같은 게이트를 거쳐 원장에 바로 기록한다. 그 시청자에게는 보여 주지 않는다.
 - 참고 카드(A2, `PITCHEEZY_OBSERVER_PROFILE_REFERENCE=1` + `PITCHEEZY_OBSERVER_PROFILE_SOURCES`): 다음 공의 상태가 "추천 없음"이고 사유가 투수 단위(기록 없는 투수, 구종 기록 부족)일 때만 `next.reference`에 `profile_reference` 카드를 싣는다. 상태·사유는 그대로다. 화면은 상태 칸 안 한 줄("참고 · 기록 통계 자주 던진 공 싱커 29% · 포심 28% …"; 좁은 화면은 첫 구종만)을 보이고, 누르면 카드 전체(제목, 구종별 비율, 표본, "추천이나 다음 공 예측이 아닙니다")를 연다. 순위·위치·추천 색은 쓰지 않는다.
+  - 공개 발행기: `publish_config.json` `profile_reference`(2026-10-18 Song 결정으로 켬, 경로는 `PITCHEEZY_OBSERVER_PROFILE_SOURCES`로 일일 갱신 포인터 `LATEST.json`을 준다; `PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0`이 이긴다). 카드는 `as_of`(프로필 마감일, 경기일보다 엄격히 앞)와 `stale`(마감일이 경기일보다 2일 넘게 앞, 잠정)을 싣고, stale이면 화면 줄에 "기록 기준 MM/DD"가 붙는다. 공개 계약은 `publish_contract/v1/schema/game.schema.json` `next.reference`, 예시 `examples/game-live-unsupported-reference.json`. 운영은 `docs/pm/service/ws-operations-runbook.md`.
 - 던지기 전 예상(B2, `PITCHEEZY_OBSERVER_STEP5_EXPECTATION=1` + `PITCHEEZY_OBSERVER_STEP5_LEDGER`, 재생 원장은 `PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED=1`일 때만): 주요 장면(삼진·홈런·병살 등 잠정 목록)으로 타석을 끝낸, 수신 확인된 지난 공에만 `pitches[i].expectation`을 싣는다. 화면은 그 공의 "자세히" 안 실제 투구 부분에 한 줄로만 보인다. 보이기 전 조건(`shadow_expectation.py`): ① 원장의 실행 기록(`shadow_run`)이 `fan_facing_output: true`라고 명시해야 한다. 지금 있는 849831 재생 원장은 `false`라서 `ALLOW_REPLAYED=1`이어도 아무것도 보이지 않는다(운영자 사유 `run_not_granted_fan_facing`). ② "던지기 전 예상"이라는 말은 실시간 원장에서, 실행기 자체의 순서 대조 행(`provider_time_after_decision_unverified`)이 있을 때만 쓴다. 그 행이 없으면 우리 서버 수신 순서만 아는 것이므로 `ALLOW_REPLAYED=1`일 때에 한해 "던지기 전 정보로 본 예상 … · 2024 모델 · 참고 · 이 공의 기록이 도착하기 전에 계산"으로만 보이고, 아니면 보이지 않는다. ③ 원장이 나중에 연결을 끊으면(격리, 늦음 판정, 경기 뒤 대조에서 분리, 타석 중 다른 선수 관측) 다음 요청부터 줄이 사라진다(요청마다 다시 묻는다). ④ 상한: 헛스윙 30% 미만, 땅볼 **20% 미만**만 보인다(`PITCHEEZY_OBSERVER_STEP5_WHIFF_CAP`, `PITCHEEZY_OBSERVER_STEP5_GROUND_BALL_CAP`; 0.30보다 큰 값은 무시). 땅볼 0.20은 잠정값이다: PM 규칙은 "30% 이상은 보이지 않는다"이고, 20~30% 구간은 보정 표본이 611개로 실험 자체 기준(1,000개)에 못 미쳐 더 엄격하게 잡았다. 소유자 결정이 남아 있다.
 - 두 기능의 서버 쪽 연결은 `backend/observer_app/service_extras.py` 한 곳이고, 운영자용 상태는 `/api/health`의 `service_extras`에만 나온다. 꺼져 있으면 필드가 없다.
 - `?delay=` 값이 숫자가 아니거나 음수이면 없는 것으로 본다(요청을 거절하지 않는다). 꺼져 있으면 값을 보지도 않는다.
@@ -152,7 +154,7 @@ find "$T/out" -type f
 ### 파일
 
 - `v1/manifest.json` — 계약 버전, 코드 커밋(`commit`, 커밋 안 된 변경이 있으면 `commit_dirty: true`), 발행 시각, 발행 간격, 고정 지연, 매 주기 다시 만드는 날짜.
-- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들거나 쓰지 못한 경기는 `unavailable_games`(`game_pk`, `status`, 정해진 `code`: `refused`·`build_failed`·`write_failed`·`setup_failed`·`not_public`·`withdraw_failed`(지워야 할 파일을 지우지 못함)·`archive_unread`(보관 폴더에 들어온 최종 피드를 읽지 못함, 읽힐 때까지 계속 표시))에, 날짜 목록은 `unavailable_dates`(날짜만)에, 피드가 응답하지 않아 마지막 상태로 만든 경기는 `feed_failing_games`에 남는다. 경로나 오류 문장은 싣지 않는다. 한 경기의 실패는 다른 경기와 health 발행을 막지 않는다.
+- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들거나 쓰지 못한 경기는 `unavailable_games`(`game_pk`, `status`, 정해진 `code`: `refused`·`build_failed`·`write_failed`·`setup_failed`·`not_public`·`withdraw_failed`(지워야 할 파일을 지우지 못함)·`archive_unread`(보관 폴더에 들어온 최종 피드를 읽지 못함, 읽힐 때까지 계속 표시)·`schedule_unavailable`(스케줄을 받지 못해 마지막 정상 목록의 경기를 계속 확인 중, 피드 실패로 세지 않음))에, 날짜 목록은 `unavailable_dates`(날짜만)에, 피드가 응답하지 않아 마지막 상태로 만든 경기는 `feed_failing_games`에 남는다. 경로나 오류 문장은 싣지 않는다. 한 경기의 실패는 다른 경기와 health 발행을 막지 않는다.
 - `v1/dates.json` — `GET /api/service/dates`와 같은 본문.
 - `v1/games/<YYYY-MM-DD>.json` — `GET /api/service/games?date=`와 같은 본문.
 - `v1/game/<game_pk>.json` — `GET /api/service/games/{pk}`와 같은 본문(항상 전체, `after` 없음).
@@ -218,6 +220,34 @@ PYTHONPATH=apps/observer/backend .venv-observer/bin/python apps/observer/scripts
 ```
 
 `test_publisher.py`가 커밋된 폴더와 지금 코드가 쓰는 결과가 같은지 확인한다. 업로드는 `publisher.HttpSink`와 `MirrorSink`가 맡으며 본문을 만드는 함수는 그대로다.
+
+### 월드시리즈 운영 실행기 (`ops/ws_operate.py`, 검증 전)
+
+맥미니에서 실제 월드시리즈 경기 날짜 하나(KST)에 발행기를 붙여 돌리는 실행기다. stdlib만 쓴다. 리허설 도구(F-rehearsal `rehearse.py`)의 분리 감독·caffeinate·최소 자식 환경·childwatch·보호 프로세스 기록·자원 가드를 가져왔고, 계획된 개입 대신 재시작 정책과 배포 가드를 넣었다. 설정은 `apps/observer/ops/ws_ops_config.json`(값은 모두 잠정), 상태 파일 계약은 `docs/pm/service/ws-ops-status-contract.md`.
+
+```sh
+OPS=apps/observer/ops/ws_operate.py
+python3 $OPS plan                                   # 오늘부터 14일 안의 WS 경기와 날짜별 시간표 (일정 요청 1회, 메타데이터만)
+python3 $OPS start --date 2026-10-24 --dry-run      # 사전 점검·명령·환경만 출력. 쓰기·실행·신호 없음
+PITCHEEZY_OBSERVER_PROFILE_SOURCES=$HOME/Projects/pitcheezy-pm-jobs/profile-refresh-daily/profiles/LATEST.json \
+  python3 $OPS start --date 2026-10-24              # 분리된 감독만 뜨고 첫 투구 30분 전까지 잔다
+python3 $OPS status                                 # <ops_root>/status.json + 기록된 프로세스가 아직 맞는지
+python3 $OPS stop --date 2026-10-24                 # STOP 파일 -> 감독이 자기 발행기만 SIGINT로 정상 종료
+python3 $OPS stop --date 2026-10-24 --publisher-only  # 감독이 죽었을 때: pid+시작 시각+명령줄이 맞을 때만 SIGINT
+```
+
+- 시간: 시작 = 그날 첫 경기 예정 시각 − `lead_min`(30분). 끝 = 운영 경기가 모두 발행 파일에서 final이 된 뒤 `settle_s`(15분), 또는 마지막 경기 예정 + `hard_end_min`(9시간).
+- 시작 직전 다시 확인: 일정(연기·취소·이미 종료, 같은 날 다른 미종료 경기), 메모리·디스크·T7, 다른 발행기·리허설 감독, 코드 HEAD(추적 파일 깨끗, `--expect-commit`).
+- `start` 명령 자체도 일시적인 문제는 60초마다 최대 30분(발행기 시작 시각 전까지) 다시 확인한다. 끝내 거부하면 `status.json`에 `refused` + 긴급 `start_refused`를 써서 경고 감시기가 알린다(다른 감독이 돌고 있으면 쓰지 않음). 경기 없는 날·이미 모두 종료·그날 상한 지남은 문제가 아니므로 쓰지 않는다. 재시도 중 Ctrl-C로 끊으면 아무것도 쓰지 않는다. 리허설(다른 발행기·리허설 감독)이 도는 날 아침에 매일 start가 겹치면 30분 재시도 뒤 긴급 거부가 나므로, 리허설과 자동 start 시각을 겹치지 않게 잡는다. 다음 감독이 뜨면 이전 문제는 `active: false`로 정리된다.
+- 일시적인 문제(일정 요청 실패, 메모리·디스크 하한, T7, 다른 발행기, 다른 미종료 경기)는 첫 투구까지 60초마다 다시 확인하고, 그래도 안 되면 `refused` + 긴급 문제(`prestart_refused`)로 끝낸다. 일정 요청이 실패하면 start 때 기록한 경기 목록(RUN.json)을 쓴다. 코드·배포 가드·업로드 설정 문제는 바로 거부한다.
+- 재시작: 예상 밖 종료 또는 health가 300초 멈추면(세그먼트 시작 뒤 최소 300초부터) `backoff_s` 30/60/120초 뒤 최대 3번. 발행기는 언제나 하나(감독 lock + 프로세스 표 + 발행기 출력 lock).
+- 배포 가드: 그날 처음 띄운 커밋과 HEAD가 다르면 경기가 final이 아닌 동안 재시작·새 start를 거부한다(B가 결정 ID를 바꾸므로 경기 사이에만 교체).
+- 업로드: 기본 꺼짐. `--upload` + 설정 `upload.allowed: true` + 환경의 토큰(`PITCHEEZY_PUBLISH_TOKEN` 또는 토큰 파일 경로 `PITCHEEZY_WS_OPS_TOKEN_FILE`)·주소(`PITCHEEZY_WS_OPS_UPLOAD_BASE_URL`)가 모두 있어야 켠다. 값은 출력·로그에 쓰지 않고 있음/없음만 남긴다. 주소는 실행 폴더의 `publish_config.runtime.json`(권한 0600, 저장소 밖)에만 들어간다.
+- 공통 지연: `fixed_delay_s`(지금 0, Song의 0/15초 결정 대기). 실행마다 런타임 설정에 넣고 저장소 파일은 고치지 않는다.
+- `runs/` 폴더(실행 기록, 런타임 설정에 업로드 주소 포함)는 이슈·저장소·채팅에 복사하지 않는다. 공유가 필요하면 `status.json`의 필요한 줄만 옮긴다.
+- 자동 시작 예시(설치하지 않음): `apps/observer/ops/com.pitcheezy.ws-operate.plist.example`.
+- 시험: `PYTHONPATH=apps/observer/backend .venv-observer/bin/python -m pytest apps/observer/backend/tests/test_ws_operate.py -q` (가짜 발행기, MLB·네트워크 없음).
+- 경고 감시기와 함께: 감시기 `apps/observer/ops/ws_alert.py --loop`를 `--out` 없이 띄우면 `status.json`의 `out_dir`·`state_path`를 따라간다(런북 `docs/pm/service/ws-operations-runbook.md` 7.6). 통합 시험: `python -m pytest apps/observer/ops/tests/ -q`(실제 감독 + 가짜 발행기 + 감시기 `--once`, 가짜 알림만).
 
 ## 현재 구성
 

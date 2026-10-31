@@ -6,11 +6,12 @@ import { Sheet } from './Sheets';
  *  the frequencies in words. It opens the full card. No rank, no zone mark, none of the recommendation colours. */
 export function ReferenceTeaser({ card, onOpen }: { card: ReferenceCard; onOpen: () => void }) {
   return <button className="sv-ref-teaser" onClick={onOpen} aria-haspopup="dialog"
-    aria-label={`${card.chip}. ${card.title}: ${referenceLine(card)}. 추천이 아니에요. 자세히 보기`}>
+    aria-label={`${card.chip}. ${card.title}: ${referenceLine(card)}.${card.stale_label ? ` ${card.stale_label}.` : ''} 추천이 아니에요. 자세히 보기`}>
     {/* the chip is never cut; the line says what the numbers are ("자주 던진 공") and names as many of the first two as fit */}
     <span className="sv-ref-chip" aria-hidden="true">{card.chip}</span>
     <span className="sv-ref-line" aria-hidden="true"><span className="sv-ref-what">자주 던진 공</span>{' '}<b>{card.items[0].label} {card.items[0].pct}%</b>
       {card.items[1] && <b className="second"> · {card.items[1].label} {card.items[1].pct}%</b>}<span className="sv-ref-more wide">{card.items.length > 2 ? ' …' : ''}</span><span className="sv-ref-more narrow">{card.items.length > 1 ? ' …' : ''}</span></span>
+    {card.stale_label && <span className="sv-ref-asof" aria-hidden="true">{card.stale_label}</span>}
     <i aria-hidden="true">›</i></button>;
 }
 
@@ -25,6 +26,7 @@ export function ReferenceSheet({ card, state, onClose }: { card: ReferenceCard; 
       <ul>{card.items.map(i => <li key={i.pitch_type}><span>{i.label}</span><b>{i.pct}%</b></li>)}
         {card.other_pct !== null && card.other_pct > 0 && <li className="other"><span>그 밖의 공</span><b>{card.other_pct}%</b></li>}</ul>
       {card.sample && <p className="sv-ref-sample">{card.sample}</p>}
+      {card.stale_label && <p className="sv-ref-stale">{card.stale_label} · 최근 경기 기록은 아직 반영되지 않았어요.</p>}
       <p className="sv-ref-note">{card.note}</p>
     </section>
   </Sheet>;

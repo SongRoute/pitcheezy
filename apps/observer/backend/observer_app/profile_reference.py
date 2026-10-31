@@ -28,6 +28,10 @@ pitches of that type in that count against that batter side. The store adds a ro
 has a pitch type and all four of release_speed, release_spin_rate, pfx_x, pfx_z are finite, so a cell can hold
 slightly fewer pitches than were thrown. Shares are over all of the pitcher's counted pitches in the cell.
 
+Freshness: every card carries ``as_of`` (the profile cutoff) and ``stale`` (cutoff more than
+``FRESHNESS['stale_after_days']`` days before officialDate, i.e. at least two daily refreshes missed). A stale card
+is not withheld; the screen shows its date up front ("기록 기준 MM/DD").
+
 ``card()`` never raises: a missing, corrupt, uncommitted or not strictly prior source gives ``None``; the reason is
 kept for an operator (``explain``, ``health``) and must never reach the fan screen.
 """
@@ -63,6 +67,10 @@ SAMPLE_RULE = {
     'cell_min_pitches': 20,
     'status': 'provisional_awaiting_pm_decision'}
 DISPLAY = {'max_items': 4, 'min_item_share': .05}  # presentation only; not a sample rule
+# Freshness (PM choice 2026-10-18, provisional): the daily refresh normally gives a cutoff one day before the game's
+# officialDate. A card whose profile cutoff is MORE than ``stale_after_days`` before officialDate is still served
+# (its as_of is always on the card) but marked ``stale: true`` so the screen says "기록 기준 MM/DD" up front.
+FRESHNESS = {'stale_after_days': 2, 'status': 'provisional_pm_choice_2026-10-18'}
 
 KIND, REASON_CODE = 'profile_reference', 'unsupported/profile_reference'
 TITLE, CHIP = '이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', '참고 · 기록 통계'
@@ -160,12 +168,13 @@ class ProfileReference:
     """
 
     def __init__(self, sources, *, source=None, sample_rule=None, display=None, broad_fallback=False,
-                 recheck_seconds=30., clock=time.monotonic):
+                 recheck_seconds=30., clock=time.monotonic, freshness=None):
         listed = [Path(p) for p in ([sources] if isinstance(sources, (str, os.PathLike)) else list(sources or ()))]
         self._sources, self._dropped = listed[:MAX_SOURCES], [str(p) for p in listed[MAX_SOURCES:]]
         self._source = source or SOURCE
         self._rule, self._display = dict(SAMPLE_RULE) | dict(sample_rule or {}), dict(DISPLAY) | dict(display or {})
         self._broad, self._recheck, self._clock = bool(broad_fallback), float(recheck_seconds), clock
+        self._fresh = dict(FRESHNESS) | dict(freshness or {})
         self._lock, self._stat_lock = threading.RLock(), threading.Lock()
         self._modules, self._modules_error, self._modules_tried = None, None, None
         self._cache = {}  # resolved attempt directory -> {'signature', 'profile' | None, 'reason', 'sha256', ...}
@@ -344,6 +353,7 @@ class ProfileReference:
             return None, 'no_listed_pitch_type_in_cell'
         rest = total-sum(i['count'] for i in items)
         cutoff = entry['cutoff']
+        age_days = (_official_date(official_date)-cutoff).days  # >= 1: strictly prior
         sample = {'pitches': total, 'batter_side': batter_side, 'scope': scope}
         if scope == 'count_and_batter_side':
             sample |= {'balls': balls, 'strikes': strikes}
@@ -351,11 +361,12 @@ class ProfileReference:
             'kind': KIND, 'reason_code': REASON_CODE, 'title': title, 'chip': CHIP, 'items': items,
             'other': {'share': round(rest/total, 4), 'count': rest,
                       'share_pct': sum(percent.values())-sum(i['share_pct'] for i in items)} if rest else None,
-            'sample': sample, 'as_of': cutoff.isoformat(),
+            'sample': sample, 'as_of': cutoff.isoformat(), 'stale': age_days > self._fresh['stale_after_days'],
             'note': f'올해 {cutoff.month}월 {cutoff.day}일까지 이 투수가 같은 상황에서 실제로 던진 공 {total}개의 비율입니다. '
                     '추천이나 다음 공 예측이 아닙니다.',
             'provenance': {'profile_sha256_prefix': entry['sha256'][:12], 'role': ROLE, 'cutoff': cutoff.isoformat(),
-                           'not_before': entry['not_before'].isoformat(),
+                           'not_before': entry['not_before'].isoformat(), 'age_days': age_days,
+                           'freshness': dict(self._fresh),
                            'counted': 'pitches with a pitch type and complete speed/spin/movement readings',
                            'thresholds': dict(support['thresholds']) | {
                                'cell_min_pitches': minimum, 'cell_min_pitches_status': self._rule['status']}}}, None
@@ -373,4 +384,5 @@ class ProfileReference:
             outcomes, last = dict(self._reasons), self._last
         return {'kind': KIND, 'checked': checked, 'pinned_source_error': error, 'sources': sources,
                 'sources_ignored_over_limit': list(self._dropped), 'profile_loads': loads, 'outcomes': outcomes,
-                'last_outcome': last, 'sample_rule': dict(self._rule), 'broad_fallback': self._broad}
+                'last_outcome': last, 'sample_rule': dict(self._rule), 'broad_fallback': self._broad,
+                'freshness': dict(self._fresh)}

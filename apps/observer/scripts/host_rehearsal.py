@@ -24,7 +24,7 @@ SOURCE_ALLOWLIST = ('apps/observer/backend/observer_app/publisher.py',
     'apps/observer/backend/observer_app/upload_worker.py', 'apps/observer/publish_config.json',
     'apps/observer/scripts/host_rehearsal.py')
 PUBLISHER_BASE = '1f0260fa0d2da40b229507d5ca15f45d7c13593d'
-GATEWAY = '87168d7bc42f11f76886e475f919caff7674b60a'
+GATEWAY = '48ec406589982547e298ff2ee4bc2d64ed0216c0'
 MAX_CALLS, WALL_SECONDS, OP_SECONDS, MAX_BODY = 18, 110, 5, 2048  # supervisor: 120s including reap
 
 

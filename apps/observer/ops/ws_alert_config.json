@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "note": "World Series publish anomaly watcher (apps/observer/ops/ws_alert.py). Every threshold here is still PROVISIONAL (n = 1 game, 849817 first live rehearsal 2026-10-18, F-rehearsal RESULT.json + RESULT-REVIEW-001; runbook section 3.1 holds the per-rule reasoning). Only file_stuck_s was changed by it (300 -> 450, runbook 3.1); the others were kept. Paths are never inside the repository; null = taken from env or CLI (see the runbook section 7).",
+  "paths": {
+    "out_dir": null,
+    "out_dir_note": "Publisher output folder (the one holding v1/). null = --out or env PITCHEEZY_PUBLISH_OUT_DIR.",
+    "state_path": null,
+    "state_path_note": "Publisher state file. null = env PITCHEEZY_PUBLISH_STATE, else '<out_dir>.state.json' (the publisher's own default). Must match the publisher's actual state_path: rehearsal folders use publisher.state.json.",
+    "ops_status": "~/Projects/pitcheezy-pm-jobs/ws-ops/status.json",
+    "ops_status_note": "Operations supervisor status (pitcheezy-ws-ops-status-v1, docs/pm/service/ws-ops-status-contract.md). Env PITCHEEZY_WS_OPS_ROOT (<root>/status.json), PITCHEEZY_WS_OPS_STATUS or --ops-status overrides; a missing file is simply not read.",
+    "profile_log": "~/Projects/pitcheezy-pm-jobs/profile-refresh-daily/logs/RESULTS.log",
+    "alert_dir": "~/.pitcheezy/ws-alert",
+    "alert_dir_note": "Watcher state (alert_state.json) and the append-only alerts.jsonl. Env PITCHEEZY_ALERT_DIR or --alert-dir overrides.",
+    "disk_paths": ["~"],
+    "disk_paths_note": "Free space is checked on each of these and on the output folder's parent."
+  },
+  "contract_version": "v1",
+  "loop_interval_s": 15,
+  "game_window": {
+    "before_start_s": 1800,
+    "max_game_s": 21600,
+    "note": "A game is 'in window' from start-before_start_s until it is final, or at most start+max_game_s. Sources: the publisher's games/<KST date>.json (yesterday..tomorrow), the ops status file, and schedule below."
+  },
+  "schedule": [
+    {"game_pk": 849805, "start": "2026-10-24T00:00:00Z"},
+    {"game_pk": 849802, "start": "2026-10-25T00:00:00Z"},
+    {"game_pk": 849804, "start": "2026-10-27T00:00:00Z"},
+    {"game_pk": 849803, "start": "2026-10-28T00:00:00Z"},
+    {"game_pk": 849799, "start": "2026-10-29T00:00:00Z"},
+    {"game_pk": 849801, "start": "2026-10-31T00:00:00Z"},
+    {"game_pk": 849800, "start": "2026-11-01T00:00:00Z"}
+  ],
+  "schedule_provisional_note": "provisional — update when MLB confirms. These World Series games (gameType W) come from the saved MLB schedule of 2026-10-17/18 whose times are all the 00:00:00Z placeholder (startTimeTBD false but not real first-pitch times). Windows around a wrong time are harmless (quiet outside windows) but a real game outside the window would be missed unless the publisher or ops status lists it, so replace the times when MLB confirms. See runbook section 7.1.",
+  "schedule_note": "Manual fallback when the publisher has not listed the game: [{\"game_pk\": 123, \"start\": \"2026-10-24T00:08:00Z\"}].",
+  "thresholds": {
+    "health_stale_s": 30,
+    "publisher_down_s": 120,
+    "publisher_down_hold_s": 30,
+    "game_check_stale_s": 30,
+    "game_check_missing_hold_s": 60,
+    "feed_down_hold_s": 60,
+    "feed_lag_s": 45,
+    "feed_delayed_hold_s": 20,
+    "file_stuck_s": 450,
+    "file_stuck_upstream_s": 60,
+    "game_unavailable_hold_s": 30,
+    "upload_pending_floor": 5,
+    "upload_pending_cycles": 4,
+    "upload_oldest_s": 60,
+    "state_unreadable_hold_s": 30,
+    "memory_available_gib": 2.0,
+    "memory_hold_s": 60,
+    "disk_free_gib": 12.5,
+    "profile_deadline_kst": "21:20",
+    "ops_stale_running_s": 90,
+    "ops_stale_other_s": 300
+  },
+  "thresholds_note": "Runbook section 3: health stall 30 s (3 cycles), feed_ok false > 60 s, lag > 45 s, blocked at once, disk floor 12.5 GiB (the refresh skips near 12 GiB), profile ok by 21:20 KST. Watcher-only choices: publisher_down 120 s (health stalled; at once), publisher_down_hold_s 30 (no health.json yet or publisher.running false while the launcher is not in backoff/failed/refused/stopped: the window opens the moment the launcher starts the publisher, OPS-02 drill + PM decision 2026-10-19; those four states still fire at once), file_stuck 450 s (was 300: the 849817 rehearsal had a 330 s run of live cycles with no game-file write, so 300 could fire on a healthy game, see runbook 3.1; a live game normally changes within a few minutes; between-inning breaks are about 2-3 minutes), upload_pending = above 5 and not decreasing over 4 publish cycles and upload_stalled = oldest queued intent unchanged > 60 s (background upload keeps 2-3 pending every cycle and sets upload.code whenever pending > 0, so neither is an error by itself; REVIEW-001 B1), ops status stale 90 s running/backoff, 300 s otherwise (launcher heartbeat 10 s running / 60 s waiting), memory 2 GiB (kept: rehearsal available_min was 7.56 GB; RS-01 stops itself earlier, at its own 2048-3072 MB floor) from vm_stat free+inactive+speculative (an approximation, not the memory pressure colour).",
+  "notify": {
+    "cooldown_s": 300,
+    "renotify_s": {"critical": 900, "warn": 1800},
+    "renotify_outside_game_s": 21600,
+    "note": "A condition notifies once when it starts (after its hold), again every renotify_s while it lasts (renotify_outside_game_s when no game is in window), and once when it clears. After clearing, the same key does not notify again for cooldown_s (flapping)."
+  },
+  "game_gated": ["health_stalled", "publisher_down", "game_check_stalled", "feed_down", "feed_delayed", "file_stuck",
+                 "game_unavailable", "upload_pending", "upload_stalled", "memory_low"],
+  "game_gated_note": "Families evaluated only while a game is in window (quiet otherwise). Always on: upload_blocked / upload_conflict / upload_unknown / upload_rejected (they never clear by themselves), state_unreadable, disk_low, profile_refresh, ops_state, ops_problem, ops_status_stale (the supervisor also runs while waiting), watch_config, input_malformed (an input that is valid JSON but not an object; OPS-ALERT-JSON01). All upload rules are skipped while health.upload.dry_run is true."
+}

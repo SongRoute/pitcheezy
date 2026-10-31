@@ -18,6 +18,15 @@ Invariants (names are what the summary reports):
   final_stable              a file marked final changes its bytes only when its content changed
   no_private_strings        no ``path`` key, absolute path, demo/operator marker or forbidden string anywhere
   only_public_names         only the six published file names exist
+  received_pitch_accepted   (when the audit is given the ledger's accepted bodies) every live pitch shown as
+                            ``received`` shows the type, speed and plate location of a body the pitch ledger accepted
+                            for its key: a held pitch (shown with its last accepted body) included, so content no
+                            ledger row ever accepted is never on screen
+  reference_card_integrity  a ``next.reference`` card (A2) is a frequency card only: its kind, chip and reason code,
+                            items of exactly pitch_type / pitch_label / integer share_pct, shares that add up to at
+                            most 100, no rank, target, zone, location, probability or candidates anywhere in it, an
+                            ``as_of`` date strictly before the game's official date, and it rides only on a pending
+                            pitch whose state is ``unsupported`` for a pitcher-level reason with no candidates shown
 """
 from __future__ import annotations
 
@@ -36,7 +45,15 @@ POLICY_ID_LENGTH = 8
 CANDIDATE_FIELDS = ('rank', 'pitch_type', 'pitch_label', 'zone_id', 'zone_label', 'target')
 ABSOLUTE = re.compile(r'^(/|~|[A-Za-z]:\\|file:)|/(Users|Volumes|private|tmp|var|home|opt|etc)/')
 INVARIANTS = ('unconfirmed_pitch_blank', 'recommendation_in_ledger', 'sequence_monotonic', 'final_stable',
-              'no_private_strings', 'only_public_names')
+              'no_private_strings', 'only_public_names', 'received_pitch_accepted', 'reference_card_integrity')
+# A2 card (``service_extras``), restated here: this module checks the builders, it does not ask them.
+REFERENCE_KIND, REFERENCE_CHIP, REFERENCE_REASON = 'profile_reference', '참고 · 기록 통계', 'unsupported/profile_reference'
+REFERENCE_ITEM_KEYS = {'pitch_type', 'pitch_label', 'share_pct'}
+REFERENCE_PITCHER_REASONS = ('unknown_pitcher', 'no_supported_pitch_types')
+REFERENCE_FORBIDDEN = {'rank', 'ranking', 'target', 'zone', 'zone_id', 'zone_label', 'x', 'z', 'px', 'pz', 'location',
+                       'probability', 'prob', 'candidates', 'recommendation', 'score', 'value', 'expected', 'prediction'}
+_DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
+HELD = 'held_last_accepted'  # display_state.HELD, restated for the same reason as UNCONFIRMED_LABEL
 
 
 def kind_of(path, contract='v1'):
@@ -66,27 +83,54 @@ def shown_candidates(candidates):
             | {'detail': {'probability': (c.get('detail') or {}).get('probability')}} for i, c in enumerate(candidates or [])]
 
 
+# What ``reference_free_digest`` leaves out: the publish block (sequence, published_at, final), the A2 card and the
+# switch that announces it. Everything else of a game body is compared as is.
+REFERENCE_FREE_EXCLUDED = ('/publish', '/next/reference', '/features/profile_reference/enabled')
+
+
+def reference_free_digest(body):
+    """sha256 of a game body without ``REFERENCE_FREE_EXCLUDED``: equal for a card-ON and a card-OFF body of the same
+    moment when the card changed nothing else."""
+    import copy
+    import hashlib
+    rest = copy.deepcopy({key: value for key, value in body.items() if key != 'publish'})
+    if isinstance(rest.get('next'), dict):
+        rest['next'].pop('reference', None)
+    if isinstance((rest.get('features') or {}).get('profile_reference'), dict):
+        rest['features']['profile_reference'].pop('enabled', None)
+    return hashlib.sha256(json.dumps(rest, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+
+
 def game_facts(body):
-    """What a cycle's game file says, as counts and codes (no values of the game)."""
+    """What a cycle's game file says, as counts and codes (no values of the game; ``reference_as_of`` is the
+    profile's cutoff date, a configuration fact)."""
     state = body.get('display_state') or {}
     pitches = body.get('pitches') or []
     shown = bool(((body.get('next') or {}).get('rec') or {}).get('candidates'))
+    card = (body.get('next') or {}).get('reference')
+    card = card if isinstance(card, dict) else None
     return {'pitches': len(pitches),
             'unconfirmed': sum((p.get('receipt') or {}).get('status') != 'received' for p in pitches if 'receipt' in p),
             'corrected': sum(bool((p.get('receipt') or {}).get('corrected')) for p in pitches),
+            'held': sum((p.get('receipt') or {}).get('reason') == HELD for p in pitches),
             'paired_past_recommendations': sum(1 for pointer, *_ in recommendations(body) if pointer != '/next/rec'),
             'state': state.get('state'), 'reason': state.get('reason'),
             'recommendation': 'published' if shown else 'none',
             'phase': (body.get('current') or {}).get('phase'), 'game_status': (body.get('game') or {}).get('status'),
-            'feed_ok': (body.get('feed') or {}).get('ok'), 'final': (body.get('publish') or {}).get('final')}
+            'feed_ok': (body.get('feed') or {}).get('ok'), 'final': (body.get('publish') or {}).get('final'),
+            'reference': 'published' if card else 'none', 'reference_as_of': card.get('as_of') if card else None,
+            'reference_stale': card.get('stale') if card else None, 'reference_free_digest': reference_free_digest(body)}
 
 
 class PublishAudit:
-    def __init__(self, *, contract='v1', forbidden=(), ledger_rows=lambda: {}):
+    def __init__(self, *, contract='v1', forbidden=(), ledger_rows=lambda: {}, accepted_views=None):
         """``forbidden``: strings that must appear in no file (the job folder, the home folder, a token...).
         ``ledger_rows()``: ``{decision_id: row}`` of the ``first`` rows the publisher's own ledger holds right now
-        (``LiveSnapshotStore.served_recommendations`` rows)."""
+        (``LiveSnapshotStore.served_recommendations`` rows). ``accepted_views(game_pk)``: ``{(at_bat, pitch): [view,
+        ...]}`` of every body the pitch ledger accepted (``live_store.pitch_view``); None leaves
+        ``received_pitch_accepted`` unchecked."""
         self.contract, self.forbidden, self.ledger_rows = contract, [text for text in forbidden if text], ledger_rows
+        self.accepted_views = accepted_views
         self.violations, self.checked, self.seen = [], 0, {}  # path -> {'sequence', 'sha', 'final', 'digest'}
         self.high_water = {}  # path -> highest sequence ever seen there, kept when the file is deleted
 
@@ -164,8 +208,10 @@ class PublishAudit:
                 wrong = sorted(key for key in UNCONFIRMED_KEPT if actual.get(key) != UNCONFIRMED_LABEL)
                 if wrong:
                     self._fail('unconfirmed_pitch_blank', path, f'/pitches/{index}/actual', 'labels that do not read 확인 중: '+','.join(wrong))
+        self._reference(path, body)
         if not live:
             return
+        self._accepted(path, body)
         found = recommendations(body)
         held = self.ledger_rows() if found else {}
         for pointer, rec, pitch_key in found:
@@ -189,6 +235,63 @@ class PublishAudit:
         if any(pointer == '/next/rec' for pointer, *_ in found) and (
                 state.get('recommendation_shown') is not True or state.get('state') not in ('recommended', 'feed_delayed', 'disconnected')):
             self._fail('recommendation_in_ledger', path, '/display_state', 'candidates although the state shows none')
+
+
+    def _reference(self, path, body):
+        following = body.get('next')
+        if not isinstance(following, dict) or 'reference' not in following:
+            return
+        card, pointer = following['reference'], '/next/reference'
+        fail = lambda detail: self._fail('reference_card_integrity', path, pointer, detail)
+        if not isinstance(card, dict):
+            return fail('not an object')
+        found = sorted(_keys(card) & REFERENCE_FORBIDDEN)
+        if found:
+            fail('keys a frequency card never carries: '+','.join(found))
+        if (card.get('kind'), card.get('chip'), card.get('reason_code')) != (REFERENCE_KIND, REFERENCE_CHIP, REFERENCE_REASON):
+            fail('kind, chip or reason_code is not the reference card\'s')
+        items, other = card.get('items'), card.get('other')
+        percent = lambda value: type(value) is int and 0 <= value <= 100
+        if not isinstance(items, list) or not items or not all(
+                isinstance(item, dict) and set(item) == REFERENCE_ITEM_KEYS and percent(item.get('share_pct')) for item in items):
+            fail('items are not a non-empty list of pitch_type / pitch_label / share_pct')
+        elif sum(item['share_pct'] for item in items)+((other or {}).get('share_pct') or 0) > 100:
+            fail('shares add up to more than 100')
+        if other is not None and not (isinstance(other, dict) and set(other) == {'share_pct'} and percent(other.get('share_pct'))):
+            fail('other is not null or {share_pct}')
+        as_of, day = card.get('as_of'), (body.get('game') or {}).get('official_date')
+        if not (isinstance(as_of, str) and _DAY.fullmatch(as_of) and isinstance(day, str) and _DAY.fullmatch(day) and as_of < day):
+            fail('as_of is not a date strictly before the game\'s official date')
+        if type(card.get('stale')) is not bool:
+            fail('stale is not a boolean')
+        state, rec = body.get('display_state') or {}, following.get('rec') or {}
+        if (state.get('state') != 'unsupported' or state.get('reason') not in REFERENCE_PITCHER_REASONS
+                or (body.get('current') or {}).get('phase') != 'pre_pitch' or rec.get('candidates')
+                or state.get('recommendation_shown') is not False):
+            fail('a card outside a pending pitch that is unsupported for a pitcher-level reason')
+
+    def _accepted(self, path, body):
+        if self.accepted_views is None:
+            return
+        try:
+            views = self.accepted_views((body.get('game') or {}).get('game_pk'))
+        except Exception:  # noqa: BLE001
+            views = None
+        for index, pitch in enumerate(body.get('pitches') or []):
+            if (pitch.get('receipt') or {}).get('status') != 'received':
+                continue
+            actual = pitch.get('actual') or {}
+            shown = (actual.get('pitch_type'), actual.get('speed_mph'), actual.get('x'), actual.get('z'))
+            known = (views or {}).get((pitch.get('at_bat_number'), pitch.get('pitch_number'))) or ()
+            if not any(shown == (v.get('type'), v.get('speed'), v.get('px'), v.get('pz')) for v in known if v):
+                self._fail('received_pitch_accepted', path, f'/pitches/{index}/actual',
+                           'shown as received, but no accepted ledger body of its key has this type/speed/location')
+
+
+def _keys(value):
+    if isinstance(value, dict):
+        return set(value).union(*map(_keys, value.values()))
+    return set().union(*map(_keys, value)) if isinstance(value, list) else set()
 
 
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND

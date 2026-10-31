@@ -1,7 +1,7 @@
 {
  "$id": "pitcheezy-publish-v1-dates",
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "description": "Inferred from 1 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "description": "Inferred from 1 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block and the optional next.reference card (publish_schema.REFERENCE) are hand-written. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
  "properties": {
   "dates": {
    "items": {

@@ -2,7 +2,7 @@
  "date": "2026-09-30",
  "features": {
   "profile_reference": {
-   "enabled": false
+   "enabled": true
   },
   "provisional": true,
   "step5_expectation": {

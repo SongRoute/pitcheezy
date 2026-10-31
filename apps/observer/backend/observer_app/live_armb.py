@@ -48,8 +48,45 @@ def _pitch_data(play):
             breaks, where = data.get('breaks') or {}, data.get('coordinates') or {}
             out.append([event.get('index'), (details.get('type') or {}).get('code'), (details.get('call') or {}).get('code'),
                         data.get('startSpeed'), data.get('extension'), breaks.get('spinRate'), breaks.get('spinDirection'),
-                        breaks.get('breakHorizontal'), breaks.get('breakVerticalInduced'), where.get('pX'), where.get('pZ')])
+                        breaks.get('breakHorizontal'), breaks.get('breakVerticalInduced'), where.get('pX'), where.get('pZ'),
+                        data.get('strikeZoneTop'), data.get('strikeZoneBottom')])
     return out
+
+
+def _get(holder, *path):
+    for key in path:
+        holder = holder.get(key) if isinstance(holder, dict) else None
+    return holder
+
+
+def _context_inputs(feed):
+    """What ``demo_precompute.live_rows``/``statcast_rows`` derive the next pitch's CONTEXT row from, beyond the
+    fields ``state_key`` lists directly (REVIEW-001 C1): score, bases and outs are replayed from the runner
+    movements and events of EVERY play, the count from every event's count, the pitcher from substitutions, and
+    ``stand``/``p_throws`` from the matchup (or ``gameData.players`` for the due-up batter and a replaced pitcher).
+    Pitch physics of earlier at-bats are not here (they are not in the decision's at-bat history); the recent
+    plays' pitch bodies are, through ``_pitch_data``."""
+    data, plays = feed['gameData'], feed['liveData']['plays'].get('allPlays') or []
+    line = feed['liveData'].get('linescore') or {}
+    current = feed['liveData']['plays'].get('currentPlay')
+    every = [*plays, *([current] if isinstance(current, dict) and current and (not plays or plays[-1] != current) else [])]
+    ids = {_get(p, 'matchup', 'pitcher', 'id') for p in every} | {_get(p, 'matchup', 'batter', 'id') for p in every}
+    ids |= {_get(line, 'offense', 'batter', 'id'), _get(line, 'offense', 'onDeck', 'id'), _get(line, 'defense', 'pitcher', 'id')}
+    ids |= {_get(e, 'player', 'id') for p in every for e in p.get('playEvents') or [] if isinstance(e, dict)}
+    players = data.get('players') or {}
+    hands = sorted([str(i), _get(players, f'ID{i}', 'pitchHand', 'code'), _get(players, f'ID{i}', 'batSide', 'code')]
+                   for i in ids if i is not None)
+    return [_get(data, 'game', 'type'), _get(data, 'datetime', 'officialDate'),
+            [_get(line, 'teams', side, 'runs') for side in ('home', 'away')], line.get('isTopInning'), hands,
+            [[_get(p, 'about', 'atBatIndex'), _get(p, 'about', 'inning'), _get(p, 'about', 'isTopInning'),
+              _get(p, 'about', 'isComplete'), _get(p, 'matchup', 'pitcher', 'id'), _get(p, 'matchup', 'pitchHand', 'code'),
+              _get(p, 'matchup', 'batter', 'id'), _get(p, 'matchup', 'batSide', 'code'), _get(p, 'result', 'eventType'),
+              [[_get(r, 'details', 'playIndex'), _get(r, 'details', 'runner', 'id'), _get(r, 'movement', 'start'),
+                _get(r, 'movement', 'end'), _get(r, 'movement', 'isOut')] for r in p.get('runners') or []],
+              [[_get(e, 'index'), _get(e, 'isPitch'), _get(e, 'type'), _get(e, 'details', 'eventType'),
+                _get(e, 'details', 'call', 'code'), _get(e, 'count', 'balls'), _get(e, 'count', 'strikes'),
+                _get(e, 'count', 'outs'), _get(e, 'player', 'id'), _get(e, 'pitchNumber')]
+               for e in p.get('playEvents') or [] if isinstance(e, dict)]] for p in every if isinstance(p, dict)]]
 
 
 def state_key(feed):
@@ -58,7 +95,9 @@ def state_key(feed):
     That includes what the feed says about the pitches already thrown, because it revises them without
     adding an event (seen on 849844): a pitch is first published without spin and extension, a challenged
     call flips ball/strike and the count, and a pitch type can be reclassified. A changed revision is a
-    new state, so the recommendation is computed again from the data as it now stands."""
+    new state, so the recommendation is computed again from the data as it now stands. It also carries what the
+    policy's context row is replayed from (``_context_inputs``: score, runner movements, per-event counts,
+    stand/p_throws), so the result cache and ``LiveSnapshotStore.same_stamp_scope`` miss on any of them."""
     data, live = feed['gameData'], feed['liveData']
     plays = live['plays'].get('allPlays') or []
     line = live.get('linescore') or {}
@@ -74,7 +113,8 @@ def state_key(feed):
                        offense.get('batter', {}).get('id'), offense.get('onDeck', {}).get('id'),
                        (line.get('defense') or {}).get('pitcher', {}).get('id'),
                        count.get('balls'), count.get('strikes'),
-                       [_pitch_data(play) for play in [*plays[-3:], last][-3:]]])
+                       [_pitch_data(play) for play in [*plays[-3:], last][-3:]],
+                       _context_inputs(feed)])
 
 
 def _default_factory():

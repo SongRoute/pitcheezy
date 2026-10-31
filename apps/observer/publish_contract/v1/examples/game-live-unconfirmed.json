@@ -36,17 +36,7 @@
   "pitch_key": "900200:5:2"
  },
  "display_state": {
-  "correction": {
-   "kind": "withdrawn",
-   "message": "조금 전에 보여 드린 추천은 지금 표시하지 않아요.",
-   "previous": {
-    "pitch_label": "포심",
-    "pitch_type": "FF",
-    "zone_id": "high_in",
-    "zone_label": "몸쪽 높게"
-   },
-   "previous_decided": "2026-10-05T10:22:00Z"
-  },
+  "correction": null,
   "detail": "5:1/ambiguous_remap",
   "feed": {
    "delayed": false,
@@ -56,10 +46,10 @@
    "lag_measured": true,
    "lag_s": 0.0,
    "lag_threshold_s": 45,
-   "last_ok_at": "2026-10-05T10:22:30Z",
+   "last_ok_at": "2026-10-05T10:22:00Z",
    "ok": true,
    "provider_order": "ordered",
-   "received_at": "2026-10-05T10:22:30Z",
+   "received_at": "2026-10-05T10:22:00Z",
    "thresholds_provisional": true
   },
   "label": "확인 중",
@@ -78,7 +68,7 @@
  },
  "features": {
   "profile_reference": {
-   "enabled": false
+   "enabled": true
   },
   "provisional": true,
   "step5_expectation": {
@@ -92,7 +82,7 @@
   }
  },
  "feed": {
-  "as_of": "2026-10-05T10:22:30Z",
+  "as_of": "2026-10-05T10:22:00Z",
   "ok": true,
   "stale_s": 0.0
  },
@@ -1657,20 +1647,26 @@
   },
   {
    "actual": {
-    "call_label": "확인 중",
+    "call_label": "루킹 스트라이크",
     "catcher_setup": null,
-    "description": null,
+    "description": "Called Strike",
     "event": null,
     "event_label": null,
-    "pitch_label": null,
-    "pitch_type": null,
+    "pitch_label": "포심",
+    "pitch_type": "FF",
     "play_text": null,
-    "result_label": "확인 중",
-    "speed_mph": null,
-    "tracking": null,
-    "x": null,
-    "z": null,
-    "zone_label": null
+    "result_label": "루킹 스트라이크",
+    "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
+    "x": 1.2,
+    "z": 2.0,
+    "zone_label": "존 바깥"
    },
    "at_bat_number": 5,
    "batter": {
@@ -1679,7 +1675,20 @@
     "name": "B32",
     "side": "R"
    },
-   "context_before": null,
+   "context_before": {
+    "basis": "event_prefix_current_feed",
+    "batter": {
+     "at_bats": 0,
+     "hits": 0,
+     "on_base": 0
+    },
+    "next_batters": [],
+    "pitcher": {
+     "earned_runs": null,
+     "pitches": 2,
+     "strikeouts": 0
+    }
+   },
    "half": "Bot",
    "index": 8,
    "inning": 1,
@@ -1769,7 +1778,7 @@
    "rec": {
     "candidates": [],
     "pairing": {
-     "rule": "pitch_unconfirmed",
+     "rule": "no_recorded_recommendation",
      "status": "none"
     },
     "policy": null,
@@ -1779,9 +1788,9 @@
     "status": "missing"
    },
    "receipt": {
-    "corrected": false,
-    "reason": "ambiguous_remap",
-    "status": "unconfirmed"
+    "corrected": true,
+    "reason": "held_last_accepted",
+    "status": "received"
    },
    "situation_before": {
     "away_score": 0,
@@ -1948,14 +1957,14 @@
  "publish": {
   "contract": "v1",
   "final": false,
-  "published_at": "2026-10-05T10:22:30Z",
-  "sequence": 10
+  "published_at": "2026-10-05T10:22:00Z",
+  "sequence": 8
  },
  "receipts": {
-  "corrected": 0,
+  "corrected": 1,
   "paired": 0,
-  "unconfirmed": 2,
-  "version": "1ff058ead3f3"
+  "unconfirmed": 1,
+  "version": "fcc986c8b97c"
  },
  "schema": "pitcheezy-service-game-v2",
  "source": {

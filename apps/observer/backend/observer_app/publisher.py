@@ -22,6 +22,9 @@ written before the body is returned): nothing here selects or changes a field. A
 ``sequence`` is one counter per publisher, raised once per cycle; a file carries the sequence of the cycle that
 last wrote it. ``final`` exists on game files: once a game is written with ``final: true`` it is not rewritten
 unless its content changes (a correction), which gets the then-current, higher sequence.
+With ``skip_unchanged_live`` (publish_config.json, default true) a game still in progress is likewise rewritten
+only when what a viewer reads in it changed (``live_digest``); health's ``game_checks`` say every cycle that it was
+checked (``checked_at``, ``sequence_checked``) and which sequence its file carries (``file_sequence``).
 
 Calling the game builder is what drives the upstream poll (``LiveFeed.snapshot`` fetches when its interval has
 passed), so the publisher is the "someone is watching". Demo sessions, the operator API and replay clocks are
@@ -65,6 +68,13 @@ STATE_FEED_CONTENT = ('provider_order', 'lag_threshold_s', 'thresholds_provision
 # scan reads no more than this much of the end of a file (a bound of the format, not a tunable).
 PUBLISH_TAIL_BYTES = 1024
 PUBLISH_TAIL = re.compile(rb'"publish"\s*:\s*(\{[^{}]*\})\s*\}\s*$')
+# PROVISIONAL. Seconds into a cycle after which the settled game lists of dates outside the live window are not
+# rebuilt in that cycle (each list asks the schedule for two US dates). Live dates are never deferred by it.
+# Measured 2026-10-19 10:30 KST from the Mac mini: 5 schedule requests to statsapi, 0.55-0.60 s each (p50 0.57 s,
+# max 0.60 s), so the live window's 6 requests take ~3.4 s and a settled list ~1.2 s: 8 s leaves a wide margin.
+# ``schedule_budget_s`` in the publish config overrides; null = no guard at all (every request as the feed makes
+# it, no outage probing: the behaviour before 2026-10-19). See ``Publisher.guard_schedule``.
+SCHEDULE_BUDGET_S = 8.0
 
 
 def layout(contract):
@@ -95,10 +105,49 @@ def load_config(path=None, env=None, **overrides):
         raise ValueError('fixed_delay_s must be between 0 and 3600 seconds')
     if recheck is not None and not (isinstance(recheck, (int, float)) and recheck >= 0):
         raise ValueError('settled_recheck_s must be null or a number of seconds')
+    if type(config.setdefault('skip_unchanged_live', True)) is not bool:
+        raise ValueError('skip_unchanged_live must be true or false')
+    budget = config.setdefault('schedule_budget_s', SCHEDULE_BUDGET_S)
+    if budget is not None and not (type(budget) in (int, float) and 0 < budget <= 600):  # also refuses NaN and bool
+        raise ValueError('schedule_budget_s must be null or between 0 (exclusive) and 600 seconds')
     for key in ('live_days_back', 'live_days_ahead'):
         if type(config[key]) is not int or not 0 <= config[key] <= 7:
             raise ValueError(f'{key} must be an integer between 0 and 7')
+    reference = config.get('profile_reference')
+    if reference is not None:
+        sources = reference.get('profile_sources') if isinstance(reference, dict) else None
+        if not isinstance(reference, dict) or type(reference.get('enabled')) is not bool or not (
+                sources is None or (isinstance(sources, list) and all(isinstance(item, str) and item for item in sources))):
+            raise ValueError('profile_reference must be {"enabled": true|false, "profile_sources": null or a list of paths}')
     return config
+
+
+def feature_base(config):
+    """The publisher's own layer of owner switches (``features.features(base=...)``), or None when
+    ``publish_config.json`` has no ``profile_reference`` block (then the server's switches apply as before).
+    ``profile_sources`` null leaves the sources to ``live_config.json`` and ``PITCHEEZY_OBSERVER_PROFILE_SOURCES``
+    (the operator's path to the daily ``LATEST.json``; never a path in the repository). The environment is applied
+    after this layer, so ``PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0`` still turns the card off."""
+    reference = config.get('profile_reference')
+    if reference is None:
+        return None
+    block = {'enabled': reference['enabled']}
+    if reference.get('profile_sources') is not None:
+        block['profile_sources'] = list(reference['profile_sources'])
+    return {'profile_reference': block}
+
+
+def reference_status(app):
+    """Operator summary of the A2 card at start-up (for the log, never published): switch, number of sources and,
+    when on, each source's usability and profile cutoff (``ProfileReference.warm``)."""
+    flags = app.state.features()['profile_reference']
+    out = {'enabled': bool(flags['enabled']), 'sources': len(flags.get('profile_sources') or ())}
+    module = app.state.service_extras.reference(flags) if flags['enabled'] else None
+    if module is not None:
+        health = module.warm()
+        out['usable'] = [{'usable': s['usable'], 'cutoff': s['cutoff'], 'reason': s['reason']} for s in health['sources']]
+        out['freshness'] = health.get('freshness')
+    return out
 
 
 class Sink:
@@ -700,11 +749,31 @@ def game_digest(body):
     (``ok``, ``delayed``, ``lag_s``, ``lag_max_s``, ``lag_measured``, ``last_ok_at``, ``failing_since``,
     ``failing_for_s``, ``received_at``). Pitches, plate appearances, receipts, the display state itself, the
     recommendation and its ledger record all count."""
+    return _digest(_game_stable(body))
+
+
+def _game_stable(body):
     stable = {key: value for key, value in body.items() if key != 'feed'}
     state = stable.get('display_state')
     if isinstance(state, dict) and isinstance(state.get('feed'), dict):
         stable['display_state'] = state | {'feed': {key: state['feed'].get(key) for key in STATE_FEED_CONTENT}}
-    return _digest(stable)
+    return stable
+
+
+def live_digest(body):
+    """What makes an in-progress game file new (``skip_unchanged_live``): ``game_digest``'s content plus the
+    connection facts a viewer reads from the game file itself while the game is on: top-level ``feed.ok``,
+    ``display_state.feed`` ``ok`` and ``delayed``, and ``lag_s`` while ``delayed`` is true (the screen then says
+    "N초 넘게 늦음"). Still left out, because they move with the clock alone: ``feed.as_of``/``stale_s`` and the
+    other ``display_state.feed`` timing keys. Freshness itself is health's ``game_checks`` (``checked_at`` moves
+    every cycle the game is built, ``file_sequence`` only when the file is written)."""
+    feed = body.get('feed') if isinstance(body.get('feed'), dict) else {}
+    state = body.get('display_state') if isinstance(body.get('display_state'), dict) else {}
+    state_feed = state.get('feed') if isinstance(state.get('feed'), dict) else {}
+    delayed = state_feed.get('delayed')
+    connection = {'feed_ok': feed.get('ok'), 'state_feed_ok': state_feed.get('ok'), 'delayed': delayed,
+                  'lag_s': state_feed.get('lag_s') if delayed else None}
+    return _digest({'content': _game_stable(body), 'connection': connection})
 
 
 def is_final(body):
@@ -714,6 +783,18 @@ def is_final(body):
     return bool(body['game'].get('status') == 'final' and (body.get('current') or {}).get('phase') == 'final'
                 and (state is None or state.get('state') == 'final')
                 and (receipts is None or receipts.get('unconfirmed') == 0))
+
+
+def outage_error(error):
+    """True when a failed schedule request looks like the upstream being unreachable rather than this one request
+    being refused or unreadable: a ``LiveFeedError`` (the feed gives up after its retries) that is not an HTTP 4xx
+    other than 429. A 4xx, a ``KeyError`` from an odd answer and the like concern the date asked only."""
+    import urllib.error
+    from .live_feed import LiveFeedError
+    if not isinstance(error, LiveFeedError):
+        return False
+    cause = error.__cause__
+    return not (isinstance(cause, urllib.error.HTTPError) and cause.code < 500 and cause.code != 429)
 
 
 class NotPublic(RuntimeError):
@@ -780,6 +861,9 @@ class Publisher:
         self.bodies, self.sink, self.config, self.setups, self.wall = bodies, sink, config, setups, wall
         self._state_lock = threading.RLock()
         self._closing = False
+        self.monotonic = time.monotonic
+        self._schedule_deadline, self._schedule_asked, self._schedule_down, self._probe_turn = None, 0, False, 0
+        self._schedule_answered, self._failing_days = False, set()
         self.commit, self.dates, self.safe = commit, None if dates is None else sorted(set(dates)), safe
         for date in self.dates or []:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
@@ -913,19 +997,22 @@ class Publisher:
             _queue_upload(self.state, path, action, hashlib.sha256(data if action == 'put' else b'').hexdigest())
             self._save_state()
 
-    def _put(self, path, body, *, always, final=None, digest=None):
+    def _put(self, path, body, *, always, final=None, digest=None, on_disk=False):
         with self._state_lock:
             if self._closing:
                 raise Unsafe('publisher_closed')
-            return self._put_locked(path, body, always=always, final=final, digest=digest)
+            return self._put_locked(path, body, always=always, final=final, digest=digest, on_disk=on_disk)
 
-    def _put_locked(self, path, body, *, always, final=None, digest=None):
+    def _put_locked(self, path, body, *, always, final=None, digest=None, on_disk=False):
         """Write ``body`` + the ``publish`` key at ``path``. ``always`` False: only if the content (``digest``,
-        default the whole body) or its final mark differs from what is published there."""
+        default the whole body) or its final mark differs from what is published there. ``on_disk``: the skip
+        also needs the local file to still be the one the state says was last written (its publish block carries
+        the recorded sequence); a missing or other file is written again."""
         digest = _digest(body) if digest is None else digest
         known = self.state['files'].get(path)
         self.state['checked'][path] = self._now
-        if not always and known and known['digest'] == digest and known.get('final') == final:
+        if (not always and known and known['digest'] == digest and known.get('final') == final
+                and (not on_disk or self._on_disk(path, known['sequence']))):
             return False
         if 'publish' in body:
             raise NotPublic(f'{path}: the body already has a publish key')
@@ -938,6 +1025,17 @@ class Publisher:
         self.state['files'][path] = {'digest': digest, 'sequence': self._sequence, 'final': final}
         self._written.append(path)
         return True
+
+    def _on_disk(self, path, sequence):
+        """True when the published file at ``path`` ends with this contract's publish block of ``sequence``
+        (only its tail is read). Anything that cannot be read as such says False: the caller writes it again."""
+        try:
+            tail = self.sink.read_tail(path, PUBLISH_TAIL_BYTES)
+            match = PUBLISH_TAIL.search(tail) if tail else None
+            block = json.loads(match[1]) if match else {}
+        except Exception:  # noqa: BLE001 - an unreadable file is rewritten, never trusted
+            return False
+        return block.get('contract') == self.config['contract_version'] and block.get('sequence') == sequence
 
     def _drop(self, path, *, force=False):
         with self._state_lock:
@@ -997,7 +1095,10 @@ class Publisher:
         with self._state_lock:
             if self._closing:
                 raise Unsafe('publisher_closed')
-            return self._cycle()
+            try:
+                return self._cycle()
+            finally:
+                self._schedule_deadline = None  # outside a cycle the guarded schedule runs unchanged
 
     def _cycle(self):
         """Build and write everything that is due. Returns the health body of this cycle."""
@@ -1005,6 +1106,10 @@ class Publisher:
         if reason:
             raise Unsafe(reason)  # before a sequence is taken or a file is touched
         self._now, self._written, self._unavailable, self._feed_failing, self._game_attempts = self.wall(), [], [], [], {}
+        self._schedule_gap = set()
+        budget = self.config.get('schedule_budget_s', SCHEDULE_BUDGET_S)
+        self._schedule_deadline = None if budget is None else self.monotonic()+budget
+        self._schedule_asked, self._schedule_answered = 0, False
         if isinstance(self.sink, MirrorSink):
             self.sink.attempted.clear()
         self._sequence = self.state['sequence'] = self.state['sequence']+1
@@ -1049,6 +1154,10 @@ class Publisher:
             unavailable_dates.clear()
             self._lists(dates_body, live_dates, unavailable_dates)
             self.state['embargoed'] = sorted(embargoed | late)
+        for game_pk in sorted(self._schedule_gap - embargoed - late):
+            # a game whose file is already final needs no schedule: its card would only be noise
+            if (self.state['files'].get(self.layout['game'].format(game_pk=game_pk)) or {}).get('final') is not True:
+                self._fail(game_pk, None, 'schedule_unavailable')
         for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
             self._fail(int(game_pk), None, code)
         if isinstance(self.sink, MirrorSink) and not self.sink.remote.dry_run:
@@ -1058,10 +1167,11 @@ class Publisher:
                     self._fail(int(match[1]), None, 'upload_failed')
         # Only a real game-body check advances freshness; settled games may skip many cycles.
         self._now = max(now, self.wall())
-        # Setup and remote-upload faults are reported in unavailable_games, but neither says the
-        # game feed/body check failed. In particular, a good final game may lose only its setup file.
+        # Setup, remote-upload and schedule faults are reported in unavailable_games, but none says the
+        # game feed/body check failed. In particular, a good final game may lose only its setup file, and a game
+        # carried over a schedule outage whose own feed answered is fine (its check says so).
         failed_games = {item['game_pk'] for item in self._unavailable
-                        if item['code'] not in ('setup_failed', 'upload_failed')}
+                        if item['code'] not in ('setup_failed', 'upload_failed', 'schedule_unavailable')}
         game_checks = {}
         for game_pk in sorted(listed | known | embargoed | late):
             entry = self.state['files'].get(self.layout['game'].format(game_pk=game_pk))
@@ -1094,9 +1204,41 @@ class Publisher:
         A list never shows a game a demo holds: it is built again if a demo began meanwhile, and a list that
         cannot be built or written while any demo is on is deleted rather than left with its old scores."""
         now, fast, listed = self._now, set(), set()
-        for date in sorted(set(dates_body['dates']) | set(live_dates)):
+        # Games of each live date as the last list built with a working schedule (``live_ok`` not false) showed
+        # them. While the schedule cannot be fetched a list loses its in-progress cards (they come from the schedule
+        # row alone): those games are still checked every cycle, so a feed that is down too is reported for them
+        # (game_checks feed_ok false, feed_failing_games, the file's display state) instead of their last check
+        # standing still; ``schedule_unavailable`` names them in unavailable_games. Nothing is added that the last
+        # good list did not show, and finished games come from the stored records whatever the schedule does.
+        known_live = self.state.get('schedule_live')
+        if not isinstance(known_live, dict):
+            known_live = self.state['schedule_live'] = {}
+        for date in [date for date, pks in known_live.items() if date not in live_dates or not isinstance(pks, list)
+                     or not all(type(pk) is int for pk in pks)]:
+            del known_live[date]
+        # Live dates first (those with games to carry first of all): when the time budget runs out it is the
+        # settled lists of other dates that wait for a later cycle.
+        order = sorted(set(dates_body['dates']) | set(live_dates),
+                       key=lambda date: (date not in live_dates, not known_live.get(date), date))
+        if self._schedule_deadline is not None and self._schedule_down:
+            # the schedule is down: this cycle's one probe goes to the next live date in turn, so a date whose
+            # request keeps failing cannot hold every other date's list back
+            lives = [date for date in order if date in live_dates]
+            turn = self._probe_turn % len(lives) if lives else 0
+            self._probe_turn += 1
+            order = lives[turn:]+lives[:turn]+[date for date in order if date not in live_dates]
+        for date in order:
             path, live = self.layout['games'].format(date=date), date in live_dates
             if not live and not self._due(path, now):
+                continue
+            if not live and self._schedule_closed(budget=True):
+                # deferred (cycle budget spent, or the schedule is down): a settled list stays as it is and is due
+                # again next cycle. While a demo is on, a list that shows a held game (or cannot be read) is
+                # deleted, as for a failed build; other lists stay.
+                held = self._embargoed()
+                if held and self._shows_held(path, held):
+                    failed.append(date)
+                    self._drop(path, force=True)
                 continue
             self.state['checked'][path] = now
             body = None
@@ -1111,24 +1253,123 @@ class Publisher:
                 if not any(int(card['game_pk']) in held and not card.get('embargoed') for card in body['games']):
                     break
                 body = None  # a demo began while the list was being built: once more
+            written = False
             if body is not None:
                 try:
-                    self._put(path, body, always=live)
+                    written = self._put(path, body, always=live) or True
                 except OSError:
                     LOGGER.warning('game list of %s not written', date, exc_info=True)
-                    body = None
-            if body is None:
+            if not written:
                 failed.append(date)
                 if self._embargoed():
                     self._drop(path, force=True)  # no list is better than one that still shows an embargoed score
-                continue  # otherwise the last published list stays
-            for card in body['games']:
+                # otherwise the last published list stays
+            if body is None and not live:
+                continue
+            shown = set()
+            for card in (body or {}).get('games', []):
                 if card.get('embargoed'):
                     continue
+                shown.add(int(card['game_pk']))
                 listed.add(int(card['game_pk']))
                 if live:
                     fast.add(int(card['game_pk']))
+            if not live:
+                continue
+            # A live date whose list is not a good one (no schedule, not built, not asked, or not written) keeps
+            # checking the games its last good list showed: their feed state is reported every cycle instead of
+            # their last check standing still. Only a list built from a working schedule renews what is remembered.
+            if body is None or body.get('live_ok') is False or not written:
+                carried = set(known_live.get(date, []))-shown-self._embargoed()
+                listed |= carried
+                fast |= carried
+                if body is not None and body.get('live_ok') is False:
+                    self._schedule_gap |= carried
+            else:
+                known_live[date] = sorted(shown)
         return fast, listed
+
+    def _schedule_closed(self, *, budget=False):
+        """True when this cycle asks the schedule no more: the schedule is down and this cycle's one probe has been
+        made, or (``budget``, asked only for settled lists of dates outside the live window) the cycle's budget is
+        spent."""
+        if self._schedule_deadline is None:
+            return False
+        return (self._schedule_down and self._schedule_asked > 0) or (budget and self.monotonic() >= self._schedule_deadline)
+
+    def _shows_held(self, path, held):
+        """Whether the published list at ``path`` shows a card of a game a demo holds. A file that is there but
+        cannot be parsed counts as yes (deleted). ``sink.read`` answering None counts as no (kept): for the local
+        folder sink (and ``MirrorSink``, which reads the local copy) that means no file; a sink that cannot read
+        back at all also answers None, and then the list is kept. The production sinks all read back."""
+        try:
+            data = self.sink.read(path)
+            if data is None:  # nothing published there
+                return False
+            body = json.loads(data)
+        except Exception:  # noqa: BLE001 - what cannot be read is not trusted
+            return True
+        try:
+            return any(int(card['game_pk']) in held and not card.get('embargoed') for card in body['games'])
+        except Exception:  # noqa: BLE001
+            return True
+
+    def guard_schedule(self, feed):
+        """Keep a down schedule from holding cycles. ``feed`` is the app's live feed: its ``schedule`` is wrapped
+        (on the instance; a later publisher over the same feed rewraps the original). The schedule is DOWN after a
+        request fails as an outage does (``outage_error``: no answer, timeout, 5xx or 429 after the feed's
+        retries) before any other request of the cycle was answered, for a day not already known to fail; an
+        answer ends it. A day whose last request failed so is asked with a single attempt until it answers, and its
+        repeated failures alone never make the schedule down (nor keep it from recovering). While it is down, inside a cycle the first request is a probe with
+        a single attempt (at most one ``timeout_s``; ``_lists`` gives it to each live date in turn) and every
+        further request of that cycle is refused at once (``LiveFeedError``, which the list builder turns into
+        ``live_ok: false``). A failure that is not an outage (a 4xx, an answer that cannot be read) concerns only
+        the date asked: it fails that list alone and never makes the schedule down. The first failing request of
+        an outage still runs with the feed's retries: a request in flight is never cut. Outside a cycle, or with
+        ``schedule_budget_s`` null, the feed's own ``schedule`` runs unchanged. The publisher is the only caller
+        of its private app (no port), so no other thread uses the feed meanwhile."""
+        from .live_feed import LiveFeedError
+        original = feed.__dict__.get('_unguarded_schedule') or feed.schedule
+        feed._unguarded_schedule = original
+        missing = object()
+
+        def schedule(day):
+            if self._schedule_deadline is None:
+                return original(day)
+            if self._schedule_closed():
+                raise LiveFeedError('schedule not asked this cycle (schedule down, probe made)')
+            self._schedule_asked += 1
+            down = self._schedule_down or day in self._failing_days  # a day that just failed: one attempt only
+            if down:
+                saved = feed.__dict__.get('_get', missing)
+                fetch = type(feed)._get
+                feed._get = lambda url, attempts=None, received=None: fetch(feed, url, 1, received)
+            try:
+                rows = original(day)
+            except BaseException as error:
+                if outage_error(error):
+                    if day not in self._failing_days:
+                        # a new failure before anything answered in this cycle: the schedule is down. A day already
+                        # known to fail leaves the state as it is (a lone bad day asked first in a cycle would
+                        # otherwise turn every other cycle down and make the other lists flap)
+                        self._schedule_down = self._schedule_down or not self._schedule_answered
+                        if len(self._failing_days) >= 32:  # bounded: only the live window's days matter
+                            self._failing_days.clear()
+                        self._failing_days.add(day)
+                else:
+                    self._failing_days.discard(day)
+                raise
+            finally:
+                if down:
+                    if saved is missing:
+                        del feed._get
+                    else:
+                        feed._get = saved
+            self._schedule_down, self._schedule_answered = False, True
+            self._failing_days.discard(day)
+            return rows
+        feed.schedule = schedule
+        return feed
 
     def _game(self, game_pk, *, fast, archived):
         """One game: decide whether it is due, build it, write it, then its setup file. Nothing that goes wrong
@@ -1190,8 +1431,12 @@ class Publisher:
         final = is_final(body)
         if game_pk in self._embargoed():  # a demo began after the builder's own check
             return self._withdraw(game_pk)
+        # An in-progress game is rewritten only when what a viewer reads in it changed (``live_digest``), unless
+        # ``skip_unchanged_live`` is off (then every cycle, as before). Health's game_checks still advance.
+        skip = not final and self.config.get('skip_unchanged_live', True)
         try:
-            self._put(path, body, always=not final, final=final, digest=game_digest(body))
+            self._put(path, body, always=not final and not skip, final=final,
+                      digest=live_digest(body) if skip else game_digest(body), on_disk=skip)
         except OSError:
             LOGGER.warning('game %s not written; the published file is kept', game_pk, exc_info=True)
             return self._fail(game_pk, None, 'write_failed')
@@ -1275,6 +1520,7 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
     if not config.get('out_dir') and sink is None:
         raise ValueError('an output directory is required (--out, PITCHEEZY_PUBLISH_OUT_DIR or publish_config.json out_dir)')
     app_options.setdefault('service', object())  # the legacy replay service and its database are not opened
+    app_options.setdefault('feature_base', feature_base(config))
     app = create_app(start_worker=False, service_delay_s=config['fixed_delay_s'], **app_options)
     safe = None if app_options.get('live_feed') is False else (lambda: unsafe_reason(app))  # archive only: no live path
     reason = safe() if safe else None
@@ -1286,9 +1532,12 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
         if config.get('upload', {}).get('enabled') or config.get('dry_run_upload'):
             sink = MirrorSink(sink, HttpSink(config['upload'], dry_run=config.get('dry_run_upload', False)),
                               background=config['upload'].get('background', True))
-    return app, Publisher(app.state.service_bodies, sink, config=config,
+    published = Publisher(app.state.service_bodies, sink, config=config,
                           setups=app.state.setups, state_path=state_path, dates=dates, safe=safe,
                           commit=code_commit() if commit is None else commit, **({} if wall is None else {'wall': wall}))
+    if app_options.get('live_feed') is not False:
+        published.guard_schedule(app.state.live_parts())
+    return app, published
 
 
 def main(argv=None):
@@ -1342,6 +1591,14 @@ def _start(args):
             raise SystemExit(f"fixed_delay_s {config['fixed_delay_s']} exceeds the live feed's max_delay_s {feed.max_delay_s}")
         if os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0':
             app.state.live_policy.start()  # warm the frozen policy in the background, as the server does at startup
+        status = reference_status(app)
+        if status['enabled'] and not status.get('usable'):
+            LOGGER.warning('reference card (A2) is on but no profile source is configured: no card will be published '
+                           '(set PITCHEEZY_OBSERVER_PROFILE_SOURCES to the daily LATEST.json)')
+        elif status['enabled'] and not any(s['usable'] for s in status['usable']):
+            LOGGER.warning('reference card (A2) is on but no profile source is usable now: %s', status)
+        else:
+            LOGGER.info('reference card (A2): %s', status)
     except BaseException:
         publisher.close()
         raise

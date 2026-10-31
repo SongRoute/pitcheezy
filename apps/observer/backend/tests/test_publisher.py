@@ -55,7 +55,8 @@ def candidates(body):
 
 
 # ---------- the published body is the route's body ----------
-def test_health_checks_track_unchanged_final_and_advancing_live_file(world):
+def test_health_checks_track_unchanged_final_and_advancing_live_file(make):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     first = world.cycle()
     for game in (LIVE_GAME, ARCHIVE_GAME):
         check = first['game_checks'][str(game)]
@@ -149,7 +150,8 @@ def test_no_candidate_is_published_in_any_state_that_shows_none(make, monkeypatc
 
 
 def test_one_fixed_delay_holds_back_every_pitch_newer_than_it(make):
-    world = make(fixed_delay_s=30)
+    # every-cycle rewrite mode: the file is compared with the route's answer at the same moment, timing fields included
+    world = make(fixed_delay_s=30, skip_unchanged_live=False)
     health = world.cycle(settle=False)  # the only snapshot's event is 17 s old: nothing may be shown yet
     assert not world.path(LIVE_FILE).exists() and health['unavailable_games'] == [{'game_pk': LIVE_GAME, 'status': 503, 'code': 'refused'}]
     world.cycle(after=20.0)
@@ -239,7 +241,8 @@ def test_a_recommendation_the_ledger_could_not_record_is_not_published(world, mo
 
 
 # ---------- atomic replacement ----------
-def test_a_file_is_replaced_whole_and_a_failed_write_leaves_the_old_one(world, monkeypatch):
+def test_a_file_is_replaced_whole_and_a_failed_write_leaves_the_old_one(make, monkeypatch):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     world.cycle()
     before, real, seen = world.path(LIVE_FILE).read_bytes(), os.replace, []
 
@@ -302,7 +305,8 @@ def test_the_local_sink_refuses_paths_outside_its_folder(tmp_path):
 
 
 # ---------- sequence ----------
-def test_the_sequence_only_goes_up_across_cycles_restarts_and_a_lost_state_file(world):
+def test_the_sequence_only_goes_up_across_cycles_restarts_and_a_lost_state_file(make):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     seen = []
     for _ in range(3):
         world.cycle(settle=False)
@@ -867,7 +871,8 @@ def test_when_a_list_cannot_be_rebuilt_during_a_demo_its_old_scores_do_not_stay(
 
 
 # D: the sequence after lost bookkeeping
-def test_the_sequence_recovers_from_every_published_file_not_only_health(world, monkeypatch):
+def test_the_sequence_recovers_from_every_published_file_not_only_health(make, monkeypatch):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     world.cycle(settle=False)
     real = os.replace
 
@@ -1031,7 +1036,8 @@ def test_a_final_archive_that_arrives_locally_replaces_the_live_file_without_any
 
 # H: one game's failure stays its own
 @pytest.mark.parametrize('error', [OSError('unreadable'), TypeError('malformed'), RuntimeError('anything')])
-def test_a_setup_file_that_cannot_be_read_does_not_stop_the_cycle(world, error):
+def test_a_setup_file_that_cannot_be_read_does_not_stop_the_cycle(make, error):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     world.cycle()
     assert world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
 
@@ -1046,7 +1052,8 @@ def test_a_setup_file_that_cannot_be_read_does_not_stop_the_cycle(world, error):
     assert str(error) not in world.path('v1/health.json').read_text()
 
 
-def test_a_game_file_that_cannot_be_written_does_not_stop_the_cycle(world, monkeypatch):
+def test_a_game_file_that_cannot_be_written_does_not_stop_the_cycle(make, monkeypatch):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     world.cycle()
     kept, real = world.path(LIVE_FILE).read_bytes(), os.replace
 
@@ -1189,7 +1196,8 @@ def test_a_malformed_setup_file_on_the_very_first_cycle_does_not_stop_it(make):
     assert world.client.get(f'/api/watch/{ARCHIVE_GAME}/setup').status_code == 503
 
 
-def test_a_delete_that_fails_does_not_stop_the_cycle_and_is_reported(world):
+def test_a_delete_that_fails_does_not_stop_the_cycle_and_is_reported(make):
+    world = make(skip_unchanged_live=False)  # every-cycle rewrite mode: this test needs the live game written each cycle
     world.cycle()
     start_demo(world)
     real = world.publisher.sink.delete
@@ -1370,9 +1378,15 @@ def test_unsupported_example_is_an_unsupported_state_without_reference_card():
 
 
 @pytest.mark.parametrize('failure', ['build', 'write'])
-def test_failed_live_list_does_not_refresh_a_skipped_game_check(world, monkeypatch, failure):
+def test_failed_live_list_keeps_checking_the_games_it_last_showed(world, monkeypatch, failure):
+    """Intent changed 2026-10-19 (CL-03c, review R-pubfix non-blocking #1). Before, a live date whose list could not
+    be built or written stopped checking its in-progress game: its check stood still and only its age said so. The
+    point of that test was that checked_at never moves without a real check of the game; it still never does, but
+    the game is now really checked every cycle (the last good list's games are carried, as for a schedule outage),
+    so a feed fault is reported as such instead of being hidden behind an old check. The date stays in
+    unavailable_dates and the last published list stays."""
     first = world.cycle(settle=False)
-    verified = first['game_checks'][str(LIVE_GAME)]['checked_at']
+    listed = world.read(f'v1/games/{LIVE_DATE}.json')
     before = polls(world)
     if failure == 'build':
         original = world.publisher.bodies.games
@@ -1395,17 +1409,18 @@ def test_failed_live_list_does_not_refresh_a_skipped_game_check(world, monkeypat
     for _ in range(4):
         health = world.cycle(after=12, settle=False)
         assert LIVE_DATE in health['unavailable_dates']
-        assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == verified
-    assert polls(world) == before
-    assert health['game_checks'][str(LIVE_GAME)]['file_sequence'] == first['game_checks'][str(LIVE_GAME)]['file_sequence']
-    lag = datetime.fromisoformat(health['published_at'].replace('Z', '+00:00')).timestamp() - datetime.fromisoformat(verified.replace('Z', '+00:00')).timestamp()
-    assert lag == 48  # the consumer's default 30 s freshness threshold is now crossed
-    monkeypatch.undo()
-    recovered = world.cycle(after=12, settle=False)
-    assert LIVE_DATE not in recovered['unavailable_dates']
+        check = health['game_checks'][str(LIVE_GAME)]
+        assert check['checked_at'] == health['published_at'] and check['feed_ok'] is True  # a real, good check
+        assert world.read(f'v1/games/{LIVE_DATE}.json') == listed  # the last published list stays
     assert polls(world) > before
+    assert health['game_checks'][str(LIVE_GAME)]['file_sequence'] == world.game()['publish']['sequence'] >= first['game_checks'][str(LIVE_GAME)]['file_sequence']
+    # a feed that fails meanwhile is reported, not hidden behind an old check
+    failing = world.cycle(OSError('upstream down'), after=12, settle=False)
+    assert failing['game_checks'][str(LIVE_GAME)]['feed_ok'] is False and LIVE_GAME in failing['feed_failing_games']
+    monkeypatch.undo()
+    recovered = world.cycle(snap(), after=12, settle=False)
+    assert LIVE_DATE not in recovered['unavailable_dates']
     assert recovered['game_checks'][str(LIVE_GAME)]['checked_at'] == recovered['published_at']
-
 
 
 def test_v1_health_without_optional_game_checks_remains_valid(world):
