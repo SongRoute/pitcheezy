@@ -1,0 +1,127 @@
+{
+ "_note": "proposed reg['model_sources'] blocks for RS-01 adapters (adapter_n1 / adapter_step5); profile_scope ACTUAL for real runs, tests override to SYNTHETIC_OWNED_FIXTURE",
+ "SEQ001_N1_3SEED_CAL2": {
+  "process": "A",
+  "python": "/Users/song/Projects/pitcheezy/.venv/bin/python",
+  "adapter": "ws_prospective.adapter_n1:N1Cal2Adapter",
+  "seq_shadow_src_root": "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src",
+  "config": {
+   "path": "/Users/song/Projects/pitcheezy/configs/seq_shadow.json",
+   "sha256": "3e600ee22c9f81df0841c40cb81140c54c7eeb10b577cb8b0b9e05028c91e5c0"
+  },
+  "step5_shadow": {
+   "dir": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed",
+   "sha256": {
+    "shadow_sources.py": "570c4f7afdf044cdcbb163fe71622a46c7e2c5489afb0f8dd7b8d0e993adf8ac",
+    "shadow_guard.py": "a143469335f56d893f5a66e55b7cfe4c37dfe65b9dece11750d55877df377721",
+    "shadow_runner.py": "baa007e5f5a5389b2e2a2cdc3093098cadc23efa8fd91c28e9ae24f57ed96c6d",
+    "shadow_config.json": "f904999c1f68cb067ec82511f482794a2b58fd1e31ef9a4e916e8bb989757df0"
+   }
+  },
+  "profile_scope": "ACTUAL_S2_ONE_PASS",
+  "candidate_pitch_types": [
+   "FF",
+   "SI",
+   "FC",
+   "SL",
+   "ST",
+   "SV",
+   "CU",
+   "KC",
+   "CS",
+   "CH",
+   "FS",
+   "FO",
+   "SC",
+   "KN",
+   "EP",
+   "FA"
+  ],
+  "pin_roots": [
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-repair-001",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed",
+   "/Users/song/Projects/pitcheezy/experiments/ws_seq/train_seq.py"
+  ],
+  "source_pins": {
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/features.py": "2e9e71228e2946ac88231219927ce7f40cb9c261cb9c72733db1facf6d458d03",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/ledger.py": "50acf8e826a32faf4189ec7fa85d0be8f056c7a90340c1812b8cb2c969d1f88d",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/pipeline.py": "2e39e799499f72675b1fb1c6789cdc004225836dfbd18eebca5b3d06fa67826b",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/reader.py": "31679a9f37734ff424c2184fd5801ee073a1886570a992023b857ded66647af3",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-repair-001/live_adapter.py": "264205f86fb9c4fe129530c9793af235ba662b30b102f18d7824513a17583f22",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-repair-001/profile_reader.py": "554b3ac78ae038612a931a6ac78aaadc891c64fff72b60aa40b84cd9bfdb1ae7",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_config.json": "f904999c1f68cb067ec82511f482794a2b58fd1e31ef9a4e916e8bb989757df0",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_guard.py": "a143469335f56d893f5a66e55b7cfe4c37dfe65b9dece11750d55877df377721",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_runner.py": "baa007e5f5a5389b2e2a2cdc3093098cadc23efa8fd91c28e9ae24f57ed96c6d",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_sources.py": "570c4f7afdf044cdcbb163fe71622a46c7e2c5489afb0f8dd7b8d0e993adf8ac",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/__init__.py": "f8634c6d6f3ba0a0c13fdb9ad9a1c5c9dce337e6e86f07238f6cf8c51696f44b",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/seq_shadow/__init__.py": "e553a739d5b9c00af52be5a3d3f09760169b923ceed9043d8de821c63b2fa96b",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/seq_shadow/adapter.py": "e0d429d55b77c7720c898f737ab8391df3688d9599b28a34d3f340ee5cee18b3",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/seq_shadow/calibration.py": "031a8458ea7fb6d809b3716dea928208e87010dcea121349409a95ef8a0b004b",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/seq_shadow/model.py": "088b51a3e442523788d4f6cdbefdf907dbb6e51cb23f67aec5effb3d39ff2482",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/seq_shadow/tokens.py": "f804d4ecb8f8dbffc10d6736fb8a49d6223dc7dc6094b20ad8c620f2d6725631",
+   "/Users/song/Projects/pitcheezy/experiments/ws_seq/train_seq.py": "1328c4148f5fa9e89728207a06dc839df72c26a7f6ead89a90ae4ecec8c24ac0"
+  }
+ },
+ "STEP5_2024_EARLY_3HEAD": {
+  "process": "B",
+  "python": "/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/lightgbm-env/venv/bin/python",
+  "adapter": "ws_prospective.adapter_step5:Step5Adapter",
+  "seq_shadow_src_root": "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src",
+  "step5_shadow": {
+   "dir": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed",
+   "sha256": {
+    "shadow_sources.py": "570c4f7afdf044cdcbb163fe71622a46c7e2c5489afb0f8dd7b8d0e993adf8ac",
+    "shadow_guard.py": "a143469335f56d893f5a66e55b7cfe4c37dfe65b9dece11750d55877df377721",
+    "shadow_runner.py": "baa007e5f5a5389b2e2a2cdc3093098cadc23efa8fd91c28e9ae24f57ed96c6d",
+    "shadow_config.json": "f904999c1f68cb067ec82511f482794a2b58fd1e31ef9a4e916e8bb989757df0"
+   }
+  },
+  "model_gate": {
+   "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-shadow-001/MODEL-GATE.json",
+   "sha256": "7ac292e2d57af2a5699ba5d37b8c8e39db7b535d5a40271b7badfda9e49139a0"
+  },
+  "profile_scope": "ACTUAL_S2_ONE_PASS",
+  "candidate_pitch_types": [
+   "FF",
+   "SI",
+   "FC",
+   "SL",
+   "ST",
+   "SV",
+   "CU",
+   "KC",
+   "CS",
+   "CH",
+   "FS",
+   "FO",
+   "SC",
+   "KN",
+   "EP",
+   "FA"
+  ],
+  "pin_roots": [
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-repair-001",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed"
+  ],
+  "source_pins": {
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/features.py": "2e9e71228e2946ac88231219927ce7f40cb9c261cb9c72733db1facf6d458d03",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/ledger.py": "50acf8e826a32faf4189ec7fa85d0be8f056c7a90340c1812b8cb2c969d1f88d",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/pipeline.py": "2e39e799499f72675b1fb1c6789cdc004225836dfbd18eebca5b3d06fa67826b",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2024-runner-lifecycle-f1-author-001/step5/reader.py": "31679a9f37734ff424c2184fd5801ee073a1886570a992023b857ded66647af3",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-repair-001/live_adapter.py": "264205f86fb9c4fe129530c9793af235ba662b30b102f18d7824513a17583f22",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-repair-001/profile_reader.py": "554b3ac78ae038612a931a6ac78aaadc891c64fff72b60aa40b84cd9bfdb1ae7",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_config.json": "f904999c1f68cb067ec82511f482794a2b58fd1e31ef9a4e916e8bb989757df0",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_guard.py": "a143469335f56d893f5a66e55b7cfe4c37dfe65b9dece11750d55877df377721",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_runner.py": "baa007e5f5a5389b2e2a2cdc3093098cadc23efa8fd91c28e9ae24f57ed96c6d",
+   "/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-features-001/live/shadow-849809.proposed/shadow_sources.py": "570c4f7afdf044cdcbb163fe71622a46c7e2c5489afb0f8dd7b8d0e993adf8ac",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/__init__.py": "f8634c6d6f3ba0a0c13fdb9ad9a1c5c9dce337e6e86f07238f6cf8c51696f44b",
+   "/Users/song/Projects/pitcheezy-worktrees/codex-ws-postseason-six-1017/src/pitcheezy/seq_shadow/__init__.py": "e553a739d5b9c00af52be5a3d3f09760169b923ceed9043d8de821c63b2fa96b"
+  }
+ }
+}
