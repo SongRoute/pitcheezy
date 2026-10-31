@@ -5,7 +5,20 @@
 //   npm run build:public && node tests/ui-preview.mjs                 # loopback, random port, committed fixture, fresh clock
 //   node tests/ui-preview.mjs --phone                                  # Tailscale address of this Mac, port 8780 (open on the phone)
 //   node tests/ui-preview.mjs --fixture <dir> --clock fixture          # <dir> holds v1/ (or is v1/ itself)
+//   node tests/ui-preview.mjs --ws                                     # World Series replay (fixtures/publish-ws: G1 849805 + G3 849804 + G4 849803), fixture clock
+//   node tests/ui-preview.mjs --ws-moment first-rec                   # one replayed MID-GAME moment of G4 (fixtures/publish-ws-moments/849803/<label>), alone, clock now
 //   node tests/ui-preview.mjs --dev                                    # hot reload: also starts `vite --mode public` reading this server
+//
+// --fixture can be given more than once: the folders are layered (a game or games file comes from the first folder that has it) and
+// the three index files are joined when answered (tests/publish-join.mjs: dates.json `dates`, manifest.json `live_dates`, health.json
+// `game_checks` and its lists; every other field from the folder whose file was published last). One folder is served exactly as
+// before. tests/publish-merge.mjs writes the same join into one new folder for a static host.
+// --ws             the three World Series publish folders copied byte for byte from the live runs of 10/24, 10/27 and 10/28 KST (see
+//                  fixtures/publish-ws/README.md); --clock defaults to fixture with it. All games are final: no `next`, no live state.
+// --ws-moment      a moment folder of fixtures/publish-ws-moments/849803 (README there: REPLAYED bodies from the live run's store, the
+//                  recommendation being the one the live ledger recorded; not live-published bytes). Served ALONE: with --ws or --fixture
+//                  it is refused, because the moment's empty date files would hide the other games and the joined health.json would carry
+//                  the final file's sequence, so the screen would not apply the moment's lower one. --clock defaults to now with it.
 //
 // --clock now      (default) real Date header; the publish stamps of each answer (publish.published_at/sequence, health/manifest
 //                  published_at/sequence, health game_checks checked_at/sequence_*) are moved to "now" and the sequence steps once per
@@ -22,16 +35,21 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { INDEX as INDEX_FILES, joinIndex } from './publish-join.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const web = path.join(here, '..');
-const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>] [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
+const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>]... [--ws] [--ws-moment <label>] [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
+const WS = ['2026-10-24', '2026-10-27', '2026-10-28'].map((d) => path.join(here, 'fixtures', 'publish-ws', d));   // G1 849805, G3 849804, G4 849803
+const MOMENTS = path.join(here, 'fixtures', 'publish-ws-moments', '849803');   // replayed mid-game bodies of G4 (README there): not live-published bytes
 
-const args = { fixture: path.join(here, 'fixtures', 'publish'), dist: process.env.PZ_WEB_DIST_PUBLIC ?? path.join(web, 'dist-public'),
-  clock: 'now', host: null, port: null, phone: false, dev: false, devPort: null, exitAfter: null };
+const args = { fixtures: [], ws: false, moments: [], dist: process.env.PZ_WEB_DIST_PUBLIC ?? path.join(web, 'dist-public'),
+  clock: null, host: null, port: null, phone: false, dev: false, devPort: null, exitAfter: null };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i], next = () => { const v = process.argv[++i]; if (v === undefined) die(`${a} needs a value`); return v; };
-  if (a === '--fixture') args.fixture = path.resolve(next());
+  if (a === '--fixture') args.fixtures.push(path.resolve(next()));
+  else if (a === '--ws') args.ws = true;
+  else if (a === '--ws-moment') { if (args.moments.length) die('--ws-moment takes one label (two moments of the same game would hide each other)'); args.moments.push(next()); }
   else if (a === '--dist') args.dist = path.resolve(next());
   else if (a === '--clock') args.clock = next();
   else if (a === '--host') args.host = next();
@@ -44,6 +62,14 @@ for (let i = 2; i < process.argv.length; i++) {
   else die(`unknown option ${a}\n${USAGE}`);
 }
 function die(msg) { console.error(msg); process.exit(2); }
+if (args.moments.length && (args.ws || args.fixtures.length)) die('--ws-moment is served alone: with --ws or --fixture the layered date files and health sequence disagree (see the moments README)');
+for (const label of args.moments) {
+  if (!/^[a-z0-9-]+$/.test(label) || !existsSync(path.join(MOMENTS, label, 'v1', 'manifest.json'))) die(`no such moment: ${label} (see ${path.join(MOMENTS, 'README.md')})`);
+  args.fixtures.push(path.join(MOMENTS, label));
+}
+if (args.ws) args.fixtures.push(...WS);
+if (!args.fixtures.length) args.fixtures.push(path.join(here, 'fixtures', 'publish'));
+args.clock ??= args.moments.length ? 'now' : args.ws ? 'fixture' : 'now';   // a moment is a live body: with the fixture clock it would read 갱신 지연 after 30 s
 if (!['now', 'fixture', 'raw'].includes(args.clock)) die('--clock must be now, fixture or raw');
 
 // ---- where ----
@@ -62,16 +88,20 @@ if (!Number.isInteger(args.port) || args.port < 0 || RESERVED(args.port)) die(`p
 if (args.devPort !== null && (!Number.isInteger(args.devPort) || RESERVED(args.devPort))) die(`dev port ${args.devPort} refused`);
 
 // ---- what ----
-const v1 = existsSync(path.join(args.fixture, 'v1', 'manifest.json')) ? path.join(args.fixture, 'v1')
-  : existsSync(path.join(args.fixture, 'manifest.json')) ? args.fixture : die(`no v1/manifest.json under ${args.fixture}`);
+const v1s = args.fixtures.map((dir) => existsSync(path.join(dir, 'v1', 'manifest.json')) ? path.join(dir, 'v1')
+  : existsSync(path.join(dir, 'manifest.json')) ? dir : die(`no v1/manifest.json under ${dir}`));
 if (!args.dev && !existsSync(path.join(args.dist, 'index.html'))) die(`no ${path.join(args.dist, 'index.html')} — run: npm run build:public  (or use --dev)`);
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
-const manifest = readJson(path.join(v1, 'manifest.json')) ?? {}, health = readJson(path.join(v1, 'health.json')) ?? {};
-const fixtureAt = Math.max(...[manifest.published_at, health.published_at, manifest.publish?.published_at, health.publish?.published_at]
-  .map((s) => Date.parse(s ?? '')).filter(Number.isFinite), 0);
+const manifest = readJson(path.join(v1s[0], 'manifest.json')) ?? {};
+const fixtureAt = Math.max(...v1s.flatMap((d) => ['manifest.json', 'health.json'].map((f) => readJson(path.join(d, f)) ?? {}))
+  .flatMap((j) => [j.published_at, j.publish?.published_at]).map((s) => Date.parse(s ?? '')).filter(Number.isFinite), 0);
 const intervalS = Number(manifest.publish_interval_s) > 0 ? Number(manifest.publish_interval_s) : 10;
-const games = existsSync(path.join(v1, 'game')) ? readdirSync(path.join(v1, 'game')).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)) : [];
-const dates = existsSync(path.join(v1, 'games')) ? readdirSync(path.join(v1, 'games')).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)) : [];
+const names = (sub) => [...new Set(v1s.flatMap((d) => existsSync(path.join(d, sub)) ? readdirSync(path.join(d, sub)).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)) : []))];
+const games = names('game'), dates = names('games');
+
+// several folders: the index files are joined per answer (never on disk) by tests/publish-join.mjs, the rule publish-merge.mjs writes
+const INDEX = INDEX_FILES.map((f) => `/${f}`);
+const joined = (name) => joinIndex(name.slice(1), v1s.map((d) => readJson(path.join(d, name))));   // fresh parses: nothing on disk changes
 
 // ---- clock ----
 const started = Date.now();
@@ -111,11 +141,12 @@ const server = http.createServer((req, res) => {
   rel = rel.replace(/^\/pub(?=\/)/, '');
   const m = rel.match(/^(?:.*)?\/v1(\/.*)$/);
   if (m) {
-    const disk = inside(v1, m[1]);
-    if (!disk || !existsSync(disk) || !statSync(disk).isFile()) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
-    let data = readFileSync(disk);
-    if (args.clock === 'now' && disk.endsWith('.json')) { const j = readJson(disk); if (j) data = Buffer.from(JSON.stringify(freshen(j))); }
-    res.writeHead(200, { 'content-type': TYPES[path.extname(disk)] ?? 'application/octet-stream' }); return res.end(req.method === 'HEAD' ? undefined : data);
+    const body = v1s.length > 1 && INDEX.includes(m[1]) ? joined(m[1]) : null;
+    const disk = body ? null : v1s.map((d) => inside(d, m[1])).find((p) => p && existsSync(p) && statSync(p).isFile());
+    if (!body && !disk) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+    let data = body ? Buffer.from(JSON.stringify(body)) : readFileSync(disk);
+    if (args.clock === 'now' && (body || disk.endsWith('.json'))) { const j = body ?? readJson(disk); if (j) data = Buffer.from(JSON.stringify(freshen(j))); }
+    res.writeHead(200, { 'content-type': body ? TYPES['.json'] : TYPES[path.extname(disk)] ?? 'application/octet-stream' }); return res.end(req.method === 'HEAD' ? undefined : data);
   }
   if (args.dev) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('files only (--dev): open the vite address'); }
   const file = inside(args.dist, rel);
@@ -136,7 +167,7 @@ if (args.dev) {
   child.on('exit', (code) => { console.log(`vite ended (${code})`); finish(); });
   page = `http://${args.host}:${devPort}/`;
 }
-console.log(`\nfixture  ${v1}`);
+console.log(`\nfixture  ${v1s.join('\n         ')}${v1s.length > 1 ? '\n         (layered; dates/manifest/health joined per answer)' : ''}`);
 console.log(`clock    ${args.clock}${args.clock === 'fixture' ? ` (Date header ${new Date(fixtureAt + 5000).toISOString()})` : ''}; publish interval ${intervalS}s`);
 console.log(`files    ${origin}/v1/   (${games.length} game files, dates: ${dates.join(', ') || '-'})`);
 console.log(`\nopen     ${page}`);

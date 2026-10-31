@@ -2,8 +2,7 @@
 // marker, its arrow, every rank square+number, the mitt label and any in-drawing label must lie fully inside the drawing (main),
 // and the texts must not overlap one another. Since f407bcb the main drawing carries NO label for the actual pitch (its name is
 // in the summary under the zone), so the check is now: no label inside the drawing, the pitch named in the summary.
-// Mini cards (frameless since f407bcb): the marker and its outward arrow may reach above the card but must stay inside the
-// strip's own box (the strip scrolls sideways and clips vertically there) and inside the card's width — i.e. never cut.
+// UI 10/26: the strip and its mini cards are gone; the same never-cut rule now applies to the pitch sheet's small zone.
 //   PZ_WEB_DIST=<dist> node tests/zone-label-clip-check.mjs [outDir]
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
@@ -40,18 +39,22 @@ for (const [vw, vh] of [[375, 553], [320, 568], [375, 667], [390, 844]]) for (co
     const clipped = parts.filter(q => !inBox(q.r, sv)).map(q => q.k);
     const texts = parts.filter(q => q.k.includes('text') || q.k.includes('caption'));
     const overlaps = []; for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) if (hit(texts[i].r, texts[j].r)) overlaps.push([texts[i].k, texts[j].k]);
-    const card = document.querySelector('.sv-card'); const strip = document.querySelector('.sv-strip'); const cr = R(card), st = R(strip);
-    const vis = { x: Math.max(cr.x, st.x), y: st.y, w: Math.min(cr.x + cr.w, st.x + st.w) - Math.max(cr.x, st.x), h: st.h };
-    const miniParts = [...card.querySelectorAll('svg.sv-zone.mini .sv-actual circle, svg.sv-zone.mini .sv-actual path')].map(e => R(e));
-    const miniClipped = miniParts.filter(r => !inBox(r, vis)).length;
-    const labelShown = !!main.querySelector('.sv-actual text'); const caption = !!main.querySelector('.sv-zone-caption');
-    return { clipped, overlaps, miniClipped, miniN: miniParts.length, labelShown, caption, named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(), out: main.querySelector('.sv-actual')?.classList.contains('out') };
+    // the G1 number inside the mark is part of the mark; what must not be in the drawing is a NAME label for the pitch
+    const labelShown = !!main.querySelector('.sv-actual .sv-actual-label'); const caption = !!main.querySelector('.sv-zone-caption');
+    return { clipped, overlaps, labelShown, caption, named: (document.querySelector('.sv-actual-line .sv-actual-name')?.textContent ?? '').trim(), out: main.querySelector('.sv-actual')?.classList.contains('out') };
   });
+  // UI 10/26: the pitch strip (and its mini zones) is gone; the pitch's own sheet draws it in a small zone instead. There the mark, its
+  // ring, any edge arrow and every square must be painted inside the drawing (the window widens to the pitch, never clips it).
+  await p.locator('.sv-rec-sec .sv-state-more').click(); await p.locator('.sv-detail-zone svg.sv-zone').waitFor(); await p.waitForTimeout(450);
+  const d = await p.evaluate(() => { const svg = document.querySelector('.sv-detail-zone svg.sv-zone'), s = svg.getBoundingClientRect();
+    const parts = [...svg.querySelectorAll('.sv-actual circle, .sv-actual path, .sv-actual text, .sv-rec rect, .sv-rec text')].map(e => { const r = e.getBoundingClientRect(); return { k: e.closest('g').getAttribute('class') + ' ' + e.tagName, l: r.left, t: r.top, r: r.right, b: r.bottom }; });
+    return { n: parts.length, cut: parts.filter(q => q.l < s.left - .5 || q.t < s.top - .5 || q.r > s.right + .5 || q.b > s.bottom + .5).map(q => q.k) }; });
+  m.miniN = d.n; m.miniClipped = d.cut.length; m.sheetCut = d.cut;
   const tag = `${vw}x${vh} ${bn} (${x},${z}) mitt ${mitt}`;
   ok(!m.clipped.length, `${tag}: main marks/labels inside drawing`, m.clipped);
   ok(!m.overlaps.length, `${tag}: no text overlaps`, m.overlaps);
   ok(!m.labelShown && m.named.length > 0, `${tag}: no label inside the drawing, pitch named in the summary`, m);
-  ok(m.miniN >= 1 && !m.miniClipped, `${tag}: mini marker+arrow not cut by the strip`, m);
+  ok(m.miniN >= 1 && !m.miniClipped, `${tag}: pitch sheet zone: mark, ring, arrow and squares all inside the drawing`, m);
   if (out) await p.screenshot({ path: path.join(out, `${bn}_${vw}x${vh}_${x}_${z}.png`) });
   await c.close();
 }

@@ -5,7 +5,7 @@ import type { GameList } from './api';
 import type { GameCard } from './model';
 import { dateHeading, inningText, kstTime, shiftDate, short, todayKst } from './model';
 import { teamColor } from './teams';
-import { InfoSheet } from './Sheets';
+import { InfoSheet, SPOILER_LINE, publishDelayLine } from './Sheets';
 import { VIEWER_KEY, reloadViewer } from './viewer';
 import { PUBLISH_CONFIG, clockWindowMs, isCalendarDate, isPublishStale, publicGameHref, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp } from './publish';
@@ -100,6 +100,7 @@ export default function WatchList() {
 
   // ---- public bundle: published files, read again at the configured intervals ----
   const [manifestMs, setManifestMs] = useState<number | null>(null);
+  const [fixedDelayS, setFixedDelayS] = useState<number | null>(null);
   const listPollMs = manifestMs ?? PUBLISH_CONFIG.listPollMs;
   const listPeriod = useRef(listPollMs);
   listPeriod.current = listPollMs;  // the next timer uses the new period without clearing this date's cards
@@ -113,7 +114,7 @@ export default function WatchList() {
       try {
         const p = await fetchPublishedDates(signal);
         if (signal.aborted) return false;
-        const today = todayKst(); setDates(p.dates); setManifestMs(p.pollMs); period = p.pollMs ?? PUBLISH_CONFIG.listPollMs;
+        const today = todayKst(); setDates(p.dates); setManifestMs(p.pollMs); setFixedDelayS(p.fixedDelayS); period = p.pollMs ?? PUBLISH_CONFIG.listPollMs;
         // first answer only: today when the publisher follows it, else the newest published date that is not in the future
         setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today));
         return true;
@@ -136,7 +137,7 @@ export default function WatchList() {
       } catch (e) {
         if (signal.aborted) return false;
         good = false;
-        if (!shown) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
+        if (!shown || (e instanceof FetchError && e.notice)) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen; a service notice does (restored by the next good read)
       }
       return good;
     }, () => listPeriod.current, () => listPeriod.current, () => setHealthFresh(false));
@@ -168,6 +169,7 @@ export default function WatchList() {
       <button className="sv-icon-btn" onClick={() => go(next)} disabled={!next} aria-label={next ? `다음 날짜 ${dateHeading(next)}` : '다음 날짜 없음'}>›</button>
     </nav>
     <main className="sv-list">
+      {!error && games?.some(g => g.status === 'live') && <p className="sv-spoiler-line" role="note"><b>스포일러 주의</b> {__PZ_STATIC__ && publishDelayLine(fixedDelayS)}{SPOILER_LINE}</p>}
       {error ? <div className="sv-alert" role="alert"><p>{error}</p><button className="sv-btn" onClick={() => { const d = date; setDate(null); setTimeout(() => setDate(d), 0); }}>다시 시도</button></div>
         : games === null ? <p className="sv-muted" role="status">경기 목록을 불러오는 중…</p>
         : games.length === 0 ? <p className="sv-muted">이 날짜에는 경기가 없어요.</p>

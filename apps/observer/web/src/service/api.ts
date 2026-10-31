@@ -9,7 +9,10 @@ import { normalizeExpectation, normalizeReference } from './extras';
 import { PUBLISH_CONFIG, manifestPollMs, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
 import type { PublishStamp, PublishHealth, PublishedFile } from './publish';
 
-export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
+/** `notice`: the host answered with a service notice (503 `service_notice`, e.g. maintenance / data_hold). A screen that already shows
+ *  a game hides everything it last received while a notice stands, and draws normally again on the next good answer. */
+export class FetchError extends Error { constructor(message: string, public status: number, public notice = false) { super(message); } }
+const isServiceNotice = (status: number, body: unknown) => status === 503 && hostErrorMessage(status, body) !== null;
 export const TIMEOUT_MS = 15000;
 
 /** Host access/notice codes use local copy: never display an arbitrary host message. */
@@ -46,7 +49,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
     throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
   } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new FetchError(hostErrorMessage(response.status, body) ?? (typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.'), response.status);
+  if (!response.ok) throw new FetchError(hostErrorMessage(response.status, body) ?? (typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.'), response.status, isServiceNotice(response.status, body));
   if (body === null) throw new FetchError('서버 응답을 읽지 못했어요.', response.status);
   return body as T;
 }
@@ -86,7 +89,7 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
       const body = response.status === 401 || response.status === 503 ? await response.json().catch(() => null) : null;
       if (body === null) void response.body?.cancel().catch(() => undefined);
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-      throw new FetchError(hostErrorMessage(response.status, body) ?? '자료를 불러오지 못했어요.', response.status);
+      throw new FetchError(hostErrorMessage(response.status, body) ?? '자료를 불러오지 못했어요.', response.status, isServiceNotice(response.status, body));
     }
     const raw = await response.json().catch(() => null);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
@@ -152,18 +155,19 @@ export async function fetchPublishedGames(date: string, signal?: AbortSignal): P
 /** `v1/dates.json` lists archived-game dates only (as the server route does), so the dates the publisher is following now
  *  (`live_dates` of `v1/manifest.json`: today and its neighbours) are added. Either file may be missing; both missing = an error. */
 export async function fetchPublishedManifest(signal?: AbortSignal) {
-  return (await readPublished<Raw, { liveDates: string[]; pollMs: number | null }>({ kind: 'manifest' }, signal, b => ({
+  return (await readPublished<Raw, { liveDates: string[]; pollMs: number | null; fixedDelayS: number | null }>({ kind: 'manifest' }, signal, b => ({
     liveDates: (Array.isArray(b.live_dates) ? b.live_dates : []).filter(isCalendarDate), pollMs: manifestPollMs(b.publish_interval_s),
+    fixedDelayS: typeof b.fixed_delay_s === 'number' && Number.isFinite(b.fixed_delay_s) && b.fixed_delay_s >= 0 ? b.fixed_delay_s : null,
   }))).value;
 }
-export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[]; pollMs: number | null }> {
+export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[]; pollMs: number | null; fixedDelayS: number | null }> {
   const [archived, manifest] = await Promise.allSettled([
     readPublished<Raw, string[]>({ kind: 'dates' }, signal, b => (Array.isArray(b.dates) ? b.dates : []).filter(isCalendarDate)),
     fetchPublishedManifest(signal)]);
   if (archived.status === 'rejected' && manifest.status === 'rejected') throw archived.reason;
   const liveDates = manifest.status === 'fulfilled' ? manifest.value.liveDates : [];
   const dates = [...new Set([...(archived.status === 'fulfilled' ? archived.value.value : []), ...liveDates])].sort().reverse();
-  return { dates, liveDates, pollMs: manifest.status === 'fulfilled' ? manifest.value.pollMs : null };
+  return { dates, liveDates, pollMs: manifest.status === 'fulfilled' ? manifest.value.pollMs : null, fixedDelayS: manifest.status === 'fulfilled' ? manifest.value.fixedDelayS : null };
 }
 /** Is this game on the list of any date the publisher is following now? true / false, or null when that could not be read.
  *  A game with no file that no followed list names (a demo runs on it, a wrong number, long over) is not waited for. */
@@ -245,7 +249,7 @@ function actual(raw: Raw | null | undefined): Actual | null {
  *  row the server already blanked to '확인 중', which stays unconfirmed so it is never drawn as an observed pitch. */
 function receipt(raw: Raw): Receipt | undefined {
   const r = raw.receipt;
-  if (r && typeof r === 'object') return { status: r.status === 'received' ? 'received' : 'unconfirmed', corrected: r.corrected === true };
+  if (r && typeof r === 'object') return { status: r.status === 'received' ? 'received' : 'unconfirmed', corrected: r.corrected === true, reason: typeof r.reason === 'string' && r.reason ? r.reason : null };
   return raw.actual && isBlank(raw.actual) && raw.actual.result_label === BLANK_LABEL ? { status: 'unconfirmed', corrected: false } : undefined;
 }
 function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
@@ -399,7 +403,11 @@ export function normalizeDetail(raw: Raw): Detail {
   let next = raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null;
   // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
   if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
-  return { win_expectancy: raw.win_expectancy?.status === 'available' && raw.win_expectancy.perspective === 'home' && num(raw.win_expectancy.home_probability) !== null && raw.win_expectancy.home_probability >= 0 && raw.win_expectancy.home_probability <= 1 ? { status: 'available', home_probability: raw.win_expectancy.home_probability } : null, session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
+  // win expectancy: a usable home-perspective value → available; the slot present but unusable/unavailable → unavailable (the screen says
+  // 미측정); no slot in the answer (published replays) → null, and the screen shows no entry at all
+  const we = raw.win_expectancy;
+  const weAvailable = we?.status === 'available' && we.perspective === 'home' && num(we.home_probability) !== null && we.home_probability >= 0 && we.home_probability <= 1;
+  return { win_expectancy: weAvailable ? { status: 'available', home_probability: we.home_probability } : we && typeof we === 'object' && !Array.isArray(we) ? { status: 'unavailable', home_probability: null } : null, session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
     next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),
