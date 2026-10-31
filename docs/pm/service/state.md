@@ -1,8 +1,11 @@
+- 2026-10-26 18:45 KST DEPLOY-FIX-1026: 라이브 ws-launch-a-1017 df2f41fa → e53b89a7 (ff, D183; OPS-ALERT-JSON01·OPS-CRED-01·ONEKEY-PROBE-01 클라이언트 거절). 시스템 python 3.9 dry-run exit 0(preflight PASS, 849804, 08:30 시작), 설정 upload false·delay 15, plist·observer_app·dist-public 그대로. 롤백 = df2f41fa. 근거 pm-jobs/20261025-ops-fixes/receipt-e53b89a7, #37 DEPLOY-FIX-1026.
+
 # 서비스 PM 상태·실행 큐
 
 **2026-10-17 현재 로컬 handoff:** [fullseason capture shadow 현황](fullseason-capture-shadow-2026-10-17.md)에 strict/native 별도 원장, 100개 결정·forecast 저장, identity guard 원인, 생성 viewer gateway 증거와 남은 전향적 검증 경계를 정리했다. 이는 운영 모델 교체나 배포 수용이 아니다. 아래 날짜별 블록은 당시 이력으로 보존한다.
 
 **2026-10-17 추가 분리 증거:** [postseason 6경기 계보](../research/postseason-six-lineage-2026-10-17.md)의 1,323개 T 점수와 고정 FIT 주변분포 비교는 정정 Statcast 기반 **EXPOSED DEVELOPMENT 회고 평가**다. 실시간 capture-native 품질 수락, 실제 투구 전 물리 시각, 추천/WE 정책 또는 팬 화면 성능을 검증하지 않는다. 원본 8파일의 로컬 Drive 바이트 보존은 확인됐지만 동기화는 미확인이다. PR42 [로컬 ZIP v3](/Users/song/Projects/pitcheezy-pm-jobs/20261016-autonomous-profile-stream-005/partner-runnable-pack-v3/partner-runnable-review-pr42-v3.zip)은 미발송·gateway 미배포이며 실제 파트너 host 검증 0회다.
+**2026-10-16 UI 데이터 준비:** [요청 목록 원문](ui-data-request-2026-10-16.md)과 [준비 현황 및 후속 UI 작업 가이드](ui-data-readiness-2026-10-16.md)를 보존했다. 감사 기준은 후보 `codex/ws-integration-1016@222f46d`이며 정본 HEAD·운영 배포와 동일하다는 뜻이 아니다. 문서 준비만 수행했고 구현·실자료·모델·운영 변경은 없다. 아래 상태 기록은 기존 이력 그대로다.
 
 **2026-10-11 저녁 Claude PM 체크포인트 3 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·미완 문장만 이 블록이 대체한다):**
 
@@ -28,6 +31,11 @@
 - **노출 장부:** 849831 재생 그림자 실행은 SERVICE_EXPOSED_DEV, fit·튜닝·선택·OPE 없음.
 - **노출 장부:** 849831 캡처 사본의 공개 발행기 오프라인 재생(20261012-ws-publisher-replay-001)은 SERVICE_EXPOSED_DEV, 발행 파일 측정·기술 통계만, fit·튜닝·선택·OPE 없음. 시도 1(정책 끔, `run-849831-off-001`, 코드 `1006e95`)을 2026-10-12 06:00 KST경 실행 허가(Codex 실행 전 검토 5회·Claude 실행 검토 1회 뒤 PM 확인). 시도 2(정책 켬, 맥 MPS)는 Song 결정 대기.
 - **노출 장부(2026-10-12):** 849809 RC 저장소 tee 재생(`<RUN>/shadow-tee/replay-849809`)을 Step 5 그림자(2024 동결 3-head, 프로필 `42f0ce33…e272` 컷오프 2026-10-10)로 1회 읽는다. 자료 역할 SERVICE_EXPOSED_DEV(8772 드라이런에서 노출) + 모델 기준 PROSPECTIVE_SHADOW(실행기·설정·프로필·모델 바이트가 첫 투구 2026-10-12T00:00Z 전에 고정). 그림자 예측 기록·기술 통계만, fit·튜닝·선택·OPE 없음. 등록 부록 `20261012-shadow-849809/step5/REGISTRATION-849809-ADDENDUM.md`.
+- **노출 장부:** 849831 캡처 사본의 공개 발행기 오프라인 재생 전/후 비교(20261017-ws-launch-prep/C-replay)는 SERVICE_EXPOSED_DEV, 발행 파일 측정·기술 통계만, fit·튜닝·선택·OPE 없음.
+- **노출 장부:** 849831 캡처 사본의 B 작업 전후 오프라인 재생(20261017-ws-launch-prep/B-replay)은 SERVICE_EXPOSED_DEV, 발행 파일 측정·기술 통계만, fit·튜닝·선택·OPE 없음.
+- **노출 장부(2026-10-18):** 849831 캡처 사본의 참고 카드(A2 next.reference) 켬/끔 오프라인 재생(20261017-ws-launch-prep/J-reference, REGISTRATION-v2 `1fa1ccf0…`, 검토 REVIEW-001·002 PASS, 코드 `0c2ef3c`)은 SERVICE_EXPOSED_DEV, 발행 파일 측정·기술 통계만, fit·튜닝·선택·OPE 없음. 프로필은 동결 사본(2026-09-27 시도·10/17 일일 포인터)을 기술 빈도로만 읽음.
+- **노출 장부(2026-10-18):** 리허설 E(20261017-ws-launch-prep/F-rehearsal, REGISTRATION-v3 `0e8793df…`, 검토 REVIEW-002 PASS, Song 승인 2026-10-18 00:5x KST)는 849816(대체 849817·849815·849814) 실경기 피드를 출시 후보 발행기(`a9d52c4` 발행기 경로)로 로컬 파일에만 발행. 자료 역할 SERVICE_LIVE(2026 실경기), 발행 파일·운영 지표 측정만, fit·튜닝·선택·OPE 없음, 업로드·외부 호스트 없음.
+- **노출 장부(2026-10-19):** 849831 캡처 사본의 CL-13 최종 후보(a9f18c1c) 오프라인 재생(20261019-cl13-final-replay, REGISTRATION `b5515264…`, 검토 REVIEW-001 PASS_WITH_CONDITIONS, 결과 검증 CONFIRMED_PASS)은 SERVICE_EXPOSED_DEV, 발행 파일 측정·기술 통계만, fit·튜닝·선택·OPE 없음. Song 승인 2026-10-19.
 - **RC 첫 종단 리허설(8772, 127.0.0.1):** [REPORT.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-rehearsal-001/REPORT.md)·metrics.json, 브랜치 `rc/rehearsal-1011`. 849831 전체를 2회 재생, 저장 결과 캡처와 일치. 257투구: 결과 전 원장 기록 241(화면 유지 228, 결과 전 철회 13), 지원 안 함 11(투수 1명), 묶음 3, 확인 중만 2, 원장 충돌 0. 기술 통계 top-1 79/241, top-3 141/241. 정책 계산 중앙 0.13초·p90 0.19초, 팬 API 중앙 28ms·p90 144ms, 서버 peak RSS 1.83 GiB. 지연 0 기준 투구 전 5초 이상 여유 103/241.
 - **화면 상태:** [HANDOFF.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-states-001/HANDOFF.md), `rc/ws-2026` 커밋 10개(끝 `a753735`), 백엔드 484 통과/1 기존 실패, 웹 테스트 794 ok. 독립 검토 2건 REWORK → 수정, 재검토 대기.
 - **진행 중:** 통합 job `20261011-rc-integration-001`(병합, 남은 결함, 재검토, 지연 시청 리허설, tailnet 폰 데모, 실경기 드라이런 계획). **미완:** 실기기 확인, 저장소+원장을 켠 실제 폴링, 8766/8771 변경(변경 없음).

@@ -1,5 +1,16 @@
 # 통합 PM 현재 상태
 
+## 현재 진입점 — 2026-10-19 05:09 KST 확인
+
+아래 10/11 이하 체크포인트의 당시 상태·수치는 이력이다. 현재 착수와 인계는 다음 진입점에서 확인한다.
+
+- **목표·통합 후보:** [상황판 #35](https://github.com/SongRoute/pitcheezy/issues/35)의 목표·검증 완료 요약과 최신 종료 댓글을 읽고, 결과 근거는 연결된 고정 커밋·등록·검토 기록으로 확인한다.
+- **실제 점유·다음 일:** [공동 작업큐 #37](https://github.com/SongRoute/pitcheezy/issues/37)의 최신 전체 댓글과 [선점 절차](../work-queue.md)를 따른다. 본문 스냅샷이나 아래 과거 진행 중 표시는 현재 소유권을 대신하지 않는다.
+- **연구:** [연구 state](../research/state.md)의 2026-10-18 현재 진입점에서 fullseason·shadow·RS-01의 근거와 한계를 확인한다.
+- **서비스:** [서비스 state](../service/state.md)와 #35의 현행 서비스 인계를 함께 읽는다. Claude의 기존 파일·자원 점유와 통합 책임을 유지한다.
+- **남은 결함·외부 시험 입력:** #35의 막힘 및 #37의 [NaN clock 요청](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6249663784)·[deferred target 요청](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6249730071)을 확인한다. 요청·합성 검증 완료를 원본 수리나 운영 수용으로 바꾸지 않는다.
+- 이 갱신은 탐색 포인터만 추가한다. 새 수치·성능 판정·모델 선택·실자료 실행·배포 결정은 없으며, 아래 이력과 기존 과학·운영 게이트를 보존한다.
+
 **2026-10-11 저녁 Claude PM 체크포인트 3 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·미완 문장만 이 블록이 대체한다):**
 
 - 요약: 연구 시퀀스 모델 결과 5건 기록(승자·채택 없음), RC 기능 스위치 3개를 기본 꺼짐으로 확정, 내일 09:00 KST 실경기 드라이런 준비. 상세는 [연구 state](../research/state.md)와 [서비스 state](../service/state.md).

@@ -1,27 +1,49 @@
-# 별도 PM 세션 시작
+# 공동 작업 세션 시작
 
-이 프롬프트는 사용자가 별도 채팅을 열 때 쓰는 인수 지시다. 현재 네이티브 연구/서비스 하위 PM은 이 Root 작업 트리 안의 역할이며 독립 영구 채팅을 생성했다는 뜻이 아니다. 새 세션은 기존 owner와 중복 작업을 시작하지 않는다.
+Claude Code·Codex·Song이 새 채팅에서 아래 공통 프롬프트를 복사해 쓴다. 이 문서는 역할·모델·자료·운영 권한을 새로 정하지 않으며 최신 사용자 지시와 저장소의 현행 규칙을 따른다.
 
-## 연구 PM
+적용 범위는 이 저장소의 `AGENTS.md`/`CLAUDE.md`를 읽고 시작하는 세션과 아래 복사 프롬프트다. 문서 정리가 모든 앱의 새 세션을 자동 감지하거나 자동 설치·상시 실행·채팅 간 자동 메시징을 만드는 것은 아니다. 다른 worktree의 문서와 로컬 커밋도 자동 동기화되지 않는다.
 
-```text
-너는 Pitcheezy 연구 PM이다. 모델은 Astra, 관리자 전용이다. 실행·검토는 Sol/Astra 작업자에게 효율에 따라 맡기고 재귀 위임을 허용하되 실제 슬롯/자원 한도를 따른다.
-정본 /Users/song/Projects/pitcheezy/AGENTS.md, docs/pm/overview.md, workflow.md, contracts.md, resources.md, research/state.md를 읽어라. 현재 작업자·프로세스·worktree를 확인하고 기존 연구 owner로부터 소유권을 인수하기 전 중복 학습/편집을 시작하지 마라.
-첫 목표는 P47 준비상태·중복실험·평가 경계 검토, 등록된 실행과 후속 대기열이다. 2026 추가 학습/튜닝/선택·정책 판정 변경 금지. GPU 지정UUID1장·MPS조건·기록기우선 준수.
-인수 결과, 실행 작업자/모델, 다음 작업, 막힘을 기록 작업자가 research/state.md에 남기고 통합 PM에 증거를 전달하라. 작업트리 문서는 자동 동기화되지 않는다.
-```
-
-## 서비스 PM
+## 복사할 공통 프롬프트
 
 ```text
-너는 Pitcheezy 서비스 PM이다. 모델은 Astra, 관리자 전용이다. 실행·검토는 Sol/Astra 작업자에게 맡기고 재귀 호출은 실제 슬롯 안에서 한다.
-정본 /Users/song/Projects/pitcheezy/AGENTS.md, docs/pm/overview.md, workflow.md, contracts.md, resources.md, service/state.md, transition-2026-10-06.md를 읽어라. 현행 서빙 worktree/버전/세션/포트를 확인하고 기존 서비스 owner와 소유권을 넘긴 뒤 실행하라.
-시연 수정은 허용됐지만 데이터/API/공개시점/최신UI합의·복구 기준을 보존하라. 우선 실제 시연 재현·복구와 리허설 잔여를 정리하고 실시간 처리·DB 검증을 병행 배정하라. 운영8766교체·과학판정·push/merge 권한을 확대하지 마라.
-작업자/모델·검증/실물확인 구분·다음 작업을 기록 작업자가 service/state.md에 남기고 통합 PM에 증거를 전달하라.
+Pitcheezy의 현재 사용자 요청을 이어서 수행하라. 먼저 아래를 읽고 현황을 확인한 뒤 파일 편집·실행을 시작하라.
+
+1. 최신 사용자 지시 → 이 저장소의 AGENTS.md·CLAUDE.md → docs/pm/overview.md의 현행 안내를 읽어라.
+   현재 작업 분야의 state/handoff와 docs/pm/workflow.md·docs/pm/contracts.md·docs/pm/resources.md를 필요한 범위에서 확인하라.
+   날짜가 지난 역할·모델·자료·자원 문구를 현행 권한으로 복원하지 말고, 권한 충돌은 최신 지시와 현행 계약으로 대조하라.
+2. docs/pm/collab-protocol.md와 docs/pm/work-queue.md를 읽어라.
+   양쪽 상황판과 우리 열린 mail의 본문·댓글, 공동 작업큐 #37의 전체 댓글을 페이지 누락 없이 확인하라.
+   큐 본문/초기 계획은 스냅샷이다. 현 소유권은 CLAIM·DONE·RELEASE 등 유효 댓글 이력, 계약·결과는 고정 artifact로 확인하라.
+3. 현재 actor/session, 기존 소유자의 범위, 완료된 근거, 막힘과 우선할 다음 작업을 짧게 요약하라.
+   추천 PLAN/READY를 수락·실행 중으로 바꾸어 쓰지 마라. 기존 ACK·인계가 없거나 점유가 겹치면 임의로 가져오지 마라.
+4. 현재 사용자 요청 범위 안에서 비충돌 작업 하나를 선택해 PLAN을 남겨라.
+   완료 조건·선행 입력·기준 commit·정확한 수정 파일·worktree/branch·출력/실행 자원·비대상·작성자/검토자를 적어라.
+   필요한 기존 게이트와 명시 인계가 충족됐을 때 CLAIM하고 전체 댓글을 재조회한 뒤 착수하라. 쓰기 직전에도 재조회하라.
+   우선순위는 가장 작은 유효 GitHub REST 댓글 숫자 id이다. 다른 작업 ID여도 범위가 겹치면 새 CLAIM은 무효다.
+5. 같은 파일의 단일 작성자·분리 worktree·단일 Git index 담당을 유지하라. 자원 점유/lock은 파일 점유와 별도로 확인하라.
+   작성 후 고정 commit/증거로 필요한 독립 검토를 받고 변경된 범위는 다시 검토하라. 수용 전 완료라고 쓰지 마라.
+6. 막히면 BLOCKED에 변경·실행 상태와 필요한 입력을 남겨라. 인계할 범위는 편집을 멈추고 명시 RELEASE하라.
+   다른 소유자의 무응답/시간 경과는 해제가 아니다. 기존 dirty·작업 중 프로세스·봉인 산출물은 보존하라.
+7. 완료 조건과 검토/수용 근거가 갖춰지면 DONE/RELEASE로 commit·증거·잔여 작업·보존 자원·반환 범위를 기록하라.
+   #35 요약과 큐 본문은 현재 지정 편집자가 갱신한다. 별도 편집권 없이 다른 사람 행이나 본문을 고치지 마라.
+8. 다음 작업은 현재 사용자가 요청한 범위·기간 안에서만 같은 PLAN→CLAIM→재조회 절차로 이어가라.
+   명시한 종료 시각/중지 지시를 지키며 이 프롬프트를 무기한 실행·새 자동화 설치 권한으로 해석하지 마라.
+
+이 절차는 기존 과학·자료·운영 게이트를 대체하지 않는다. 읽은 요청·우편·CLAIM으로 실자료/운영 권한이나 외부 발신 권한을 넓히지 마라.
+공개 이슈에는 비밀 값·접속 주소·개인 정보·개인 절대경로를 쓰지 마라. 승인된 범위에서 진행 가능한 작업은 계속 수행하고 필요한 사람 결정만 구분해 보고하라.
 ```
 
-## 통합 PM 재개
+## 시작 조회 명령
 
-```text
-너는 Pitcheezy 통합 PM이다. Astra 관리자 전용으로 overview/workflow/contracts/resources와 두 분야 상태판을 읽어라. 실제 실행·기록은 작업자에게 위임한다. 연구/서비스 PM의 소유권과 실행 상태를 확인하고 충돌·인계를 해결하며 Song에게 완료 증거와 필요한 중대 결정만 보고하라. 별도 세션과 자동 메시징/상시 실행을 확인 없이 주장하지 마라.
+저장소 위치와 인증을 확인한 뒤 읽기 전용으로 조회한다. 팀원 `board` 및 우리 열린 `mail` 목록에서 번호를 찾으면 각각 `gh issue view <번호> -R <레포> --comments`로 본문과 댓글을 읽는다.
+
+```sh
+gh issue view 35 -R SongRoute/pitcheezy --comments
+gh issue list -R Pitcheezy/transition-models -l board --state all --limit 100
+gh issue list -R SongRoute/pitcheezy -l mail --state open --limit 100
+gh issue view 37 -R SongRoute/pitcheezy
+gh api --paginate repos/SongRoute/pitcheezy/issues/37/comments --jq '.[] | {id, body}'
 ```
+
+목록 한도에 도달하면 API pagination으로 누락을 확인한다. CLAIM 후와 쓰기 직전에는 마지막 전체 댓글 조회를 반복한다. 팀원 레포 쓰기·외부 발신·새 운영 실행은 이 조회 명령이나 프롬프트만으로 허용되지 않는다.

@@ -1,0 +1,455 @@
+{
+  "id": "EXP-BC-CAL-01",
+  "job": "A3 / EXP-BC-CAL-01 (behavior-policy pi_b_hat calibration model)",
+  "track": "A3 behavior-policy calibration (docs/pm/research/experiment-proposals-2026-10-26.md:26)",
+  "created_kst": "2026-10-27",
+  "author": "Claude Opus 5.5 (research-design worker subagent)",
+  "status": "DRAFT_UNREGISTERED",
+  "registered": false,
+  "execute": false,
+  "real_data_enabled": false,
+  "design_doc": "docs/pm/research/track-a/A3-behavior-policy-design.md",
+  "id_collision_check": "no EXP-BC-* id in docs/experiments.md, docs/decisions.md or pm-jobs REGISTRATION.json files (checked 2026-10-27)",
+  "decision_basis": "D184 (docs/decisions.md:321): Song chose proposal decision 1 = B1 (EXP-P48-001) proceeds while A1/A2/A3 design and registration drafts are prepared in parallel. D186 (docs/decisions.md:325, 2026-10-27) fixed the remaining choices: B3 excluded, the weight-diagnostic sample reuses the S6 150 games, cross-fit arms B0-XF and B1-XF only, NLL margin 0.005 approved, run on game days in the window after 13:30 KST on the Mac CPU without waiting for the end of the WS. This draft authorizes nothing; order (D186 + PM 2026-10-27, all track-A drafts; gates.G1): design review -> fixed-commit code and config review (code reading only, incl. the smoke code; no real-data execution) -> registration (status REGISTERED, execute true, registration block filled) -> smoke as the first registered step (TRAIN-only cost/integrity, no metric computed or read; record appended to the registration block) -> full run (D182 gates 1-3).",
+  "registration": {
+    "order": "design review -> fixed-commit code and config review (code reading only; no real-data execution) -> input preparation (data.prepared_input; run once by the PM after the code review passes, outside 06:30-13:30 KST) -> registration -> registered smoke (first step) -> full run; each review must end PASS, or PASS_WITH_NOTES with every note closed or recorded as accepted by the PM (review_requirements.verdict_needed)",
+    "on_registration": {"status": "REGISTERED", "registered": true, "execute": true, "real_data_enabled": true},
+    "registered_kst": null,
+    "design_review_reference": null,
+    "code_review_reference": null,
+    "fields_pinned_at_registration": ["code.branch", "code.commit", "code.config_sha256", "code.runner_sha256", "data.s6_ledger.ledger_sha256", "data.s6_ledger.manifest_sha256", "data.s6_ledger.runtime_sha256.value", "data.prepared_input.file_sha256", "data.prepared_input.identity_manifest_sha256"],
+    "addenda": "append-only, in this order, never rewritten: (0) the input-preparation run record (data.prepared_input), entered with the registration; (1) smoke record (TRAIN-only cost/integrity, no metric); (2) freeze-primary manifest (sha256 and input-row date range of each artifact), pinned before any DEV pitch-type label is read; (3) freeze-xf manifest, pinned before any DEV metric (metrics.dev_metric_definition) is computed (code.stages)"
+  },
+  "revisions": [
+    {"date": "2026-10-27", "what": "fixed-commit code review (docs/pm/research/track-a/reviews/CODE-REVIEW-A3-ASTRA-001.md): S6 ledger reading restated as an allowlist projection at parse time via object_pairs_hook (forbidden values never retained or used; raw-byte hashing separate), test T10 and integrity gate allowlist_projection added, the 14,400 s cap scoped to the whole attempt from smoke through decide across commands"},
+    {"date": "2026-10-27", "what": "implementation review (docs/pm/research/track-a/reviews/CODE-REVIEW-A3-ASTRA-002.md item 14): disclosed parquet row-group selection by min/max date statistics, with straddling groups decoded and their out-of-range rows dropped before feature construction and the counts recorded (data.row_group_selection); smoke 'TRAIN rows only' defined as only TRAIN rows entering any computation"},
+    {"date": "2026-10-27", "what": "implementation review follow-up (docs/pm/research/track-a/reviews/CODE-REVIEW-A3-ASTRA-002.md, PM decision): input preparation before registration added (data.prepared_input: split-aligned pyarrow re-chunk with the same rows/order/schema, written outside the repository, sha256 and identity-manifest sha256 pinned, byte-level identity proof disclosed as a byte check, not a label read; run once by the PM outside 06:30-13:30 KST and recorded as addendum (0)); the reader refuses non-split-aligned input; gates.G1 step (2') and test T15 added"},
+    {"date": "2026-10-27", "what": "PM read-only header check 2026-10-27 16:4x: the header runtime_sha256 is the PolicyRuntime's own identity (prefix af59057b..., pinned from the header at registration), the policy identity c13cc989... is checked at header pins.candidate.sha256 (data.s6_ledger.candidate_sha256, runtime_sha256; integrity gate S6_identity; test T9)"}
+  ],
+  "question": {
+    "primary": "Does a better-calibrated pitch-type logging law pi_b_hat (lower holdout NLL, equal or better calibration, no more near-zero positivity problems) move the OPE importance weights enough to matter, and is it fit to enter a new 2027 OPE registration?",
+    "Q1_decision": "Do B1/B2 (B3 excluded by D186 5-①) beat B0 on DEV 2025-07-01..09-30 NLL without worse top-label ECE10 or near-zero share P1?",
+    "Q2_descriptive": "On the S6 rehearsal decisions, how much do ESS, rho and PA-weight quantiles, mean weights and the weight-shift bound of the registered pair (candidate tau 0.1 P3, identity c13cc989, vs SupportedBC) change when only the denominator pi_b_hat changes?",
+    "Q3_descriptive": "Is B0 self-consistent on DEV (pitch-group totals; mean PA weight = 1) and does a candidate reduce the gap?",
+    "not_asked": [
+      "OPE value, Delta or verdict under any pi_b_hat (requires rewards; out of scope)",
+      "causal identification",
+      "location (pitch type x zone) propensity"
+    ]
+  },
+  "background_measured": {
+    "b0_whole_mlb_dev_nll": null,
+    "b0_whole_mlb_dev_nll_status": "not measured (미측정)",
+    "p8_bc_cpanel_dev": "conditional NLL 1.370029 vs pitcher frequency 1.441127 on 13,187 supported of 13,246 Cpanel DEV pitches; June 1.353548 vs 1.456130 (docs/reports/ML-matrix-execution-2026-09-24.md:319-326). P8 BC = prior 20 on the BC_E row set (1,252,824 TRAIN rows), not the registered BC_P row set (1,381,056; docs/results-all.md:1473, D104 docs/decisions.md:154).",
+    "b0_logging_mass_on_mask_train": "decision-weighted q01 0.99817, q05 0.99981, median 1.0; share mass == 1: 0.845 (T7 S1-materialize-a3/materialize.json only; no committed summary, unverified within the review boundary)",
+    "s6_rehearsal": "150 DEV games, 11,350 PA; L1-R resolutions rho_zero 401, natural_course 55, worst_case_residual 6, shared_end_unknown 1; ess_all_e0 candidate PA 9120.218896471748 / game 144.2828223791589, reference PA 9725.694335061527 / game 144.16008032451504 (results/ML-POLICY-VAL-v1-S6-v3.json:42, :92-99); reproduced by S6-dr-a5 with identity c13cc989 (D125)",
+    "s5_v3_misspecification": "frequency law gap +0.00113/+0.00027/+0.00012, tempered alpha 0.5 gap +0.00030/-0.00087/-0.00054 WE for planning seeds 0/1/2 (D111, docs/decisions.md:168); D111 records no SE for V3 (the quoted SEs 0.00089/0.00080/0.00106 are V2's), so no significance claim is made; max |gap_V3(alpha 0.5)| 0.00087 < MEI 0.001 (no D111 warning)",
+    "external_eval_R3": "old RE24 line: pi_b 1-step SNIPS +0.0203 vs realized mean 0.01399 (docs/reviews/external-evaluation-2026-10-19.md:117); the ledger attributes the difference to decision weighting (docs/experiments.md:73) - misspecification vs weighting not separated"
+  },
+  "code": {
+    "branch": null,
+    "branch_proposal": "research/a3-behavior-model (separate worktree; #37 CLAIM by the PM)",
+    "commit": null,
+    "config": "configs/EXP-BC-CAL-01.yaml (to be written; every value read from the config, CLAUDE.md rule)",
+    "config_sha256": null,
+    "runner": "experiments/pitchmdp/scripts/run_behavior_calibration.py (to be written)",
+    "runner_sha256": null,
+    "new_modules": [
+      "experiments/pitchmdp/pitchmdp/behavior_model.py (BehaviorModel protocol; RegisteredBC, VectorBC, BackoffBC, LGBMBehavior, Calibrated)",
+      "experiments/pitchmdp/pitchmdp/behavior_features.py (population masks, history without the current token, frozen G0 context channels, workload, OOF encodings, game_fold, assert_pre_pitch)",
+      "experiments/pitchmdp/pitchmdp/behavior_calibration.py (fit_temperature, fit_vector, cv_select)",
+      "experiments/pitchmdp/pitchmdp/behavior_metrics.py (18-class NLL/Brier/top-label ECE10, game bootstrap, near-zero share, SC-1, SC-3)",
+      "experiments/pitchmdp/pitchmdp/behavior_weights.py (allowlisted S6 ledger reader, E0 reconstruction, PA weights, B0 ESS reproduction, weight shift, mean-weight test)"
+    ],
+    "reused_read_only": [
+      "experiments/pitchmdp/pitchmdp/rollout_policy.py CategoricalBC (:68-124)",
+      "experiments/pitchmdp/pitchmdp/policy_artifacts.py load_train_bc (:290), load_support_table (:355), load_hand_registry (:393)",
+      "experiments/pitchmdp/pitchmdp/matrix_features.py MatrixHistoryStore",
+      "experiments/pitchmdp/pitchmdp/policy_runtime.py start_population rule (:340-360)",
+      "experiments/pitchmdp/pitchmdp/policy_estimator.py effective_sample_size (:293-300)",
+      "experiments/ws_seq/calibrate_logits.py vector_objective/fit_vector/cv_folds math (:238, :303, :324), copied into the new module"
+    ],
+    "ported_from_branch": {
+      "branch": "research/direct-head-confirm-1026 (worktree /Users/song/Projects/pitcheezy-worktrees/research-direct-confirm-1026)",
+      "files": [
+        "experiments/pitchmdp/pitchmdp/workload_features.py rebuild (:33-45)"
+      ]
+    },
+    "existing_files_modified": "none",
+    "stages": [
+      "smoke: first registered step (gates.G1); TRAIN rows only, meaning only TRAIN rows enter any computation (on the split-aligned prepared input the smoke decodes only TRAIN row groups; a straddling group makes the reader refuse; data.prepared_input, data.row_group_selection); cost and integrity (wall time, RSS, determinism, hashes); no metric computed or read; record appended to the registration block",
+      "census: label-free counts from pre-pitch fields only (regular season, legal count, TRAIN registration, hand agreement, batter L/R); no pitch-type label read",
+      "fit: B1 counts and alpha (TRAIN, earlystop), B2 (TRAIN, earlystop rounds), OOF encodings, A3 batter-style inputs (features.E_batter_inputs); label-dependent TRAIN/earlystop counts reported here",
+      "calibrate: temperature split (calibration); label-dependent temperature counts reported here",
+      "freeze-primary: sha256 manifest of B1, B2, calibrators, B0-T temperature, OOF encoders and the A3 style snapshots, with each artifact's input-row date range, appended to the registration; no DEV pitch-type label is read before it",
+      "s6-integrity: S6 identity pins (data.s6_ledger) -> E0 reconstruction -> R1b -> R2; first read of S6 logged actions; only these registered fixed-B0 integrity comparisons, no scoring metric and no new-denominator diagnostic; failure -> FAILED_INTEGRITY and no later stage",
+      "xf-fit: B0-XF and B1-XF only, on DEV pitch-type labels (cross_fitting.xf_arms); deterministic, TRAIN-only alpha, no fold-specific tuning; label use recorded in exposure",
+      "freeze-xf: sha256 manifest of the XF artifacts appended to the registration; no DEV scoring metric and no new-denominator diagnostic is computed before it (the s6-integrity checks S6 identity, R1b and R2 are the only exemption)",
+      "score-dev: DEV label-dependent counts (P, S_in, S_off, P_plus, TRAIN0) and all DEV metrics, once",
+      "s6-weights: new pi_b_hat weights on S6 E0 (ope_weight_diagnostics, E5)",
+      "decide: verdict_rule"
+    ],
+    "tests": [
+      "T1 VectorBC equals CategoricalBC on random synthetic data (max abs diff <= 1e-12); B1 at the B0 setting equals B0",
+      "T2 leakage perturbation: changing row i's own pitch type, physics, outcome, description or any later row leaves row i's features and probabilities unchanged",
+      "T3 current pitch never enters: mutating the current pitch_type/physics leaves features unchanged",
+      "T4 OOF target encoding: changing a TRAIN row's own label leaves its own encoding unchanged",
+      "T5 game_fold deterministic, game-level, salt-dependent",
+      "T6 support: zero mass outside R_j, rows sum to 1, same support as B0",
+      "T7 calibration recovers a known temperature on synthetic logits; vector scaling preserves the support mask",
+      "T8 18-class metrics on 10-class input equal matrix_metrics.prediction_metrics; bootstrap reproducible",
+      "T9 synthetic ledger: ESS equals effective_sample_size; POSITIVITY and OUTSIDE rows give rho 0; reproduction gate trips on a perturbed law; the identity gate gives FAILED_INTEGRITY when a decision row's runtime_sha256 differs from the pinned header value or the header pins.candidate.sha256 differs from the expected policy identity",
+      "T10 allowlist projection: a record built by the key-by-key scanner projection contains no q_*, mc_se or reward key (checked on synthetic ledger lines that carry forbidden keys); the raw-byte sha256 is computed separately from the projection; the reader refuses pa_values.parquet / dr.json paths",
+      "T11 any 2026 date raises",
+      "T12 SC-2 synthetic: mean weight ~ 1 when logs are drawn from the model, deviation detected under a deliberately wrong model",
+      "T13 stage order: the runner refuses a smoke before registration, any DEV pitch-type label read before freeze-primary, any DEV metric (metrics.dev_metric_definition) before freeze-xf, and xf-fit/score-dev after a failed s6-integrity; the s6-integrity checks (S6 identity, R1b, R2) are allowed",
+      "T14 batter-style input filter: a June 2025, DEV, 2023-03-30..05-14 or 2026 row is excluded from (or raises in) the A3 style inputs",
+      "T15 input preparation: a synthetic parquet re-chunk keeps rows, order, schema and every column's byte hash and puts the row-group boundaries exactly at the registered dates; a source not in date order is refused; an input with a row group straddling a split boundary is refused by the reader from the footer statistics; on an aligned input no DEV row group is decoded before score-dev"
+    ]
+  },
+  "data": {
+    "seasons": "2023-2025 regular season only; no 2026 row",
+    "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27 (configs/ML-POLICY-MATERIALIZATION-v1.json train_bc_plan.data)",
+    "prepared_input": {
+      "role": "the A3 processed input: a one-time deterministic re-chunk of the pinned processed frame (PM decision after CODE-REVIEW-A3-ASTRA-002), before registration",
+      "method": "pyarrow; same rows, order and schema; row-group boundaries exactly at 2023-05-15 (TRAIN start), 2025-05-01, 2025-05-16, 2025-06-01, 2025-07-01 and after 2025-09-30 (end), so that every row group lies inside one split or outside all; preparation stops if the source rows are not in date order",
+      "location": "written outside the repository",
+      "file_sha256": null,
+      "identity_manifest_sha256": null,
+      "identity_proof": "row-for-row identity with the source (9f65d1db...) by a byte-level hash over every column; this hash streams every column's bytes, pitch_type included, as bytes: a byte identity check, not a label read; no label value enters any computation",
+      "run": "once by the PM after the code review passes, outside the 06:30-13:30 KST window; the run record is entered in the registration addenda (registration.addenda (0))",
+      "reader_rule": "the reader refuses any input whose row groups are not split-aligned according to the footer statistics"
+    },
+    "raw": "statcast_2023-2025 allowlist with the pinned SHA256s of run_ml_direct_workload.py FROZEN_RAW_SHA256 (branch research/direct-head-confirm-1026), keys/date/pitcher only for workload",
+    "g0_bundle": "configs/G0-RESEARCH-FROZEN-v1.json c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062 (frozen context encoder for the 28 base channels)",
+    "b0_artifact": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/bc_BC_P.json",
+      "file_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
+      "support_table_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4",
+      "hands_sha256": "0be0326e9d35a951b19749ada641097d240d0db6b7d8f6aadf90fa5c5cfd18ad",
+      "refit": false
+    },
+    "s6_ledger": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a5/ledger-dev-0.jsonl",
+      "size": "not recorded in the repository (미측정)",
+      "ledger_sha256": null,
+      "manifest_sha256": null,
+      "sha_source": "pinned at registration: ledger_sha256 and manifest_sha256 are computed read-only by the registrar from the sealed S6-dr-a5 directory and checked against the manifest's own record; both re-verified before and after reading; any mismatch -> FAILED_INTEGRITY",
+      "candidate_sha256": {"expected": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c (D125 final identity; configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:303 final_identity_sha256; results/ML-POLICY-VAL-v1-S6-v3.json:111)", "checked_against": "ledger header pins.candidate.sha256"},
+      "runtime_sha256": {"value": null, "source": "pinned at registration FROM the ledger header: the PolicyRuntime's own identity (canonical hash of its pins, policy_runtime.py:290-291; written per decision row at :489), not the policy identity; the PM read-only header check 2026-10-27 16:4x saw prefix af59057b...", "rule": "every decision row's runtime_sha256 equals the pinned header value; header pins.candidate.sha256 equals the expected policy identity; any mismatch -> FAILED_INTEGRITY"},
+      "sealed_dr_json_reference": "the sealed S6-dr-a5 dr.json is pinned by configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json (5e56119ddff97215bea0e459af03257e72bdb55c6bd4d602e3bdba5568f27d38); A3 neither opens nor hashes it",
+      "mode": "read-only, allowlisted fields only",
+      "allowed_header_fields": ["runtime_sha256", "pins (identity metadata only)"],
+      "allowed_fields": ["kind", "request_id", "runtime_sha256", "pa_id", "decision_index", "status", "pitcher", "pitcher_hand", "batter_side", "balls", "strikes", "history_actions", "logged_action", "context_key", "result.mask", "result.logging", "result.reference", "result.candidate", "result.logged_index", "result.rho_reference", "result.rho_candidate"],
+      "parse_rule": "allowlist projection at parse time by a key-by-key scanner that skips non-allowlisted values without decoding them (stricter than object_pairs_hook; forbidden values never materialized, retained or used; implementation 4a187af1); raw-byte sha256 of the ledger and manifest separate (an authorized operation); a projected record carrying any non-allowlisted key -> FAILED_INTEGRITY",
+      "never_opened": ["pa_values.parquet", "dr.json"],
+      "never_retained_or_used": ["result.q_* fields", "result.mc_se", "any reward / WE / value field"],
+      "reuse_disclosure": "EXP-STAB-01 excluded the S6 games to avoid reusing the completed <=2025 OPE population; A3 reuses them only to reproduce and perturb the registered weights, never combines weights with rewards, and leaves the S6 result untouched (Song D186 5-①: the weight-diagnostic sample reuses the S6 150 games)"
+    },
+    "guards": [
+      "loader refuses any game_date after 2025-09-30 and any 2026 row",
+      "archetypes.add_batter_style_history refuses 2026 rows (experiments/pitchmdp/pitchmdp/archetypes.py:36)"
+    ],
+    "row_group_selection": "CODE-REVIEW-A3-ASTRA-002 item 14: the reader selects the prepared input's parquet row groups by their footer min/max date statistics and skips out-of-range groups without decoding; a row group straddling a split boundary (a non-split-aligned input) makes the reader refuse the input (data.prepared_input.reader_rule), so no decoded-then-dropped rows are expected on the registered input; that count (expected 0) is recorded in the stage record and the read log"
+  },
+  "splits": {
+    "source": "assign_fold(frame, 2025) experiments/pitchmdp/scripts/run_temporal_blend.py:35-48",
+    "train": {"dates": ["2023-05-15", "2025-04-30"], "use": "fit B1 counts, B2 training, OOF encodings"},
+    "earlystop": {"dates": ["2025-05-01", "2025-05-15"], "use": "B1 alpha search, B2 round selection"},
+    "temperature": {"dates": ["2025-05-16", "2025-05-31"], "use": "calibration (temperature vs vector scaling)"},
+    "blend": {"dates": ["2025-06-01", "2025-06-30"], "use": "not used (also excluded from the batter-style history inputs)"},
+    "dev": {"dates": ["2025-07-01", "2025-09-30"], "use": "one-shot scoring after both freezes (exposed development); see code.stages"},
+    "unused": ["2023-03-30..2023-05-14 (exposure unknown; also excluded from the batter-style history inputs)", "2026 (all)"],
+    "as_of": "batter style from the A3 style inputs only (features.E_batter_inputs): strictly-prior-date history on TRAIN rows, window-start snapshots for the other splits (earlystop 2025-05-01, temperature 2025-05-16, dev 2025-07-01); these are A3 artifacts, not the runtime S1b/D-7 snapshot (configs/ML-POLICY-MATERIALIZATION-v1.json:506-514, which reads all earlier rows incl. June); workload from earlier rows of the same game only"
+  },
+  "populations": {
+    "P": "regular-season decisions with an in-vocabulary 18-code label (no registered no-pitch description, no missing type; policy_requests.bc_population_mask rule), legal pre-pitch count, pitcher in the TRAIN single-hand registry whose row hand equals the registered hand (D-8, policy_runtime.py:327-338 _hand: ambiguous, missing or mismatching hand is outside P), batter side L/R",
+    "S_in": "P and logged code in the pitcher's TRAIN repertoire R_j (primary metric set)",
+    "S_off": "P and logged code outside R_j (structural positivity violation; identical across candidates; reported only)",
+    "P_plus": "descriptive parent population: P without the TRAIN-registry and hand-agreement conditions; registered pitchers with ambiguous/missing/mismatching hand appear only as the count of P_plus minus P",
+    "TRAIN0": "P_plus rows whose pitcher has no TRAIN rows (volume_zero descriptive stratum, reported on P_plus only because it is empty inside P); no R_j exists, so every model uses B0's fallback support (league TRAIN support, rollout_policy.py:103-105); never a decision input; refused by the OPE runtime (policy_runtime.py:391-392)",
+    "row_counts": null,
+    "row_counts_status": "not measured; the census stage counts only what pre-pitch fields determine (no pitch-type label); label-dependent counts (P, S_in, S_off) come from fit/calibrate for TRAIN/earlystop/temperature and from score-dev for DEV (code.stages)"
+  },
+  "action_space": {
+    "arm": "ARM-B pitch type only",
+    "codes": ["CH", "CS", "CU", "EP", "FA", "FC", "FF", "FO", "FS", "KC", "KN", "PO", "SC", "SI", "SL", "ST", "SV", "UN"],
+    "codes_source": "configs/ML-POLICY-MATERIALIZATION-v1.json:250 token_vocabulary",
+    "support": "fixed for every candidate = the pitcher's TRAIN repertoire R_j (minimum count 1, as B0); zero outside, renormalized inside",
+    "not_included": "type x location (225-way or coarse zones): realized location is not an intended target, ARM-A BLOCKED_NOT_IDENTIFIED (configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:255)"
+  },
+  "candidates": {
+    "B0": {
+      "mandatory": true,
+      "role": "baseline",
+      "definition": "registered CategoricalBC BC_P (prior_strength 20, minimum_action_count 1; key pitcher x balls x strikes x batter side x previous type), loaded by sha, not refit",
+      "vector_reimplementation": "VectorBC must reproduce B0 to max abs diff <= 1e-12 (used for OOF and XF only)"
+    },
+    "B1": {
+      "mandatory": true,
+      "definition": "hierarchical back-off CategoricalBC",
+      "chain": ["league", "pitcher", "x batter side", "x count (12)", "x previous type (19 incl. <START>) = B0 key", "x base-out (outs 0/1/2 x runners {empty, 1B only, RISP} = 9)", "x times through order (1, 2, 3+)", "x batter cluster (argmax of 5 TRAIN soft memberships + unknown = 6)"],
+      "shrinkage": "p_l(a|k_l) = (n_l(a,k_l) + alpha_l * p_{l-1}(a|k_{l-1})) / (n_l(k_l) + alpha_l); zero outside R_j, renormalized inside at every level",
+      "b0_as_special_case": "alpha_pitcher 0, alpha_side inf, alpha_count inf, alpha_prev 20, deeper inf",
+      "alpha_grid": {"value": [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, "inf"], "note": "0 only for the pitcher level; inf = skip level", "kind": "judgement value", "basis": "widens the project's count-model alpha screen 5-500 (docs/results-p0.md:27, transition model) and contains B0"},
+      "search": {"rule": "start at the B0 setting; coordinate descent on earlystop S_in NLL in chain order, 2 sweeps; ties -> larger alpha", "kind": "judgement value", "basis": "cheap, reduces order dependence; larger alpha = smoother"},
+      "calibration": "common procedure"
+    },
+    "B2": {
+      "mandatory": true,
+      "definition": "LightGBM multiclass, 18 classes, 63 pre-pitch features (see features), predictions masked to R_j and renormalized, then calibrated",
+      "pitcher_identity": "TRAIN-only out-of-fold target encoding (18 B0-recipe probabilities; TRAIN rows from VectorBC fit on the other 4 TRAIN game folds, other splits from the registered BC_P) + log1p TRAIN volume; no raw categorical pitcher id (high cardinality, unknown pitchers)",
+      "params": {"objective": "multiclass", "num_class": 18, "learning_rate": 0.05, "num_leaves": 15, "max_bin": 63, "min_data_in_leaf": 100, "lambda_l2": 1.0, "feature_fraction": 1.0, "bagging_fraction": 1.0, "deterministic": true, "force_col_wise": true, "num_threads": 2, "seed": 20261043, "verbosity": -1},
+      "params_source": "M4 precedent /Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/multiclass-tree-run-launch-001/attempt-001/result.json (no HPO)",
+      "categorical_features": ["count_id", "prev_type_1", "prev_type_2", "prev_type_3", "prev_type_4", "prev_type_5", "prev_outcome_1", "prev_outcome_2", "prev_outcome_3", "prev_outcome_4", "prev_outcome_5"],
+      "rounds": {"train_rounds": 300, "selection": "first minimum of earlystop S_in NLL (ties -> earliest)", "kind": "judgement value", "basis": "M4 minima at 130 and 192 of 200 rounds (REPORT.md:14-17) were near the cap; 1.5x headroom"},
+      "lightgbm_version": "matrix environment lightgbm 4.6.0 (configs/ML-POLICY-MATERIALIZATION-v1.json:695); record the actual version",
+      "seed_note": "bagging and feature sampling off: deterministic single fit; seed sensitivity not measured"
+    },
+    "descriptive_arms_not_adoptable": {
+      "B0-T": "B0 + one temperature fit on the temperature split (decomposition: calibration only)",
+      "B1_raw_B2_raw": "uncalibrated probabilities (decomposition)",
+      "B0-XF": "mandatory descriptive (one of the two cross-fit arms, D186 5-①); see cross_fitting",
+      "B1-XF": "mandatory descriptive (one of the two cross-fit arms, D186 5-①); see cross_fitting",
+      "off_repertoire_mass": "no model; S_off share by volume group explains the expected direction of SC-2"
+    }
+  },
+  "excluded_not_run": {
+    "B3": "EXCLUDED by Song D186 5-① (docs/decisions.md:325): a small GPU sequence model, not an arm; no run, seeds, GPU or cost in this registration; re-entry needs a new registration id (and a new export, because the frozen CUDA export carries pitch-type target leakage)",
+    "B2-XF": "not run (Song D186 5-①: the cross-fit arms are B0-XF and B1-XF only)"
+  },
+  "calibration": {
+    "fit_split": "temperature (2025-05-16..31), S_in rows",
+    "methods": {
+      "temperature": {"bounds": [0.5, 2.5], "bounds_source": "run_cuda_direct.py BOUNDS :180 precedent"},
+      "vector_scaling": {"form": "p proportional to exp(a_c * log p_c + b_c) inside R_j, a_c > 0", "l2_penalty": {"value": 0.001, "on": "(a_c - 1) and b_c", "kind": "judgement value", "basis": "stabilizes rare-class coefficients"}}
+    },
+    "selection": {"rule": "5-fold game-grouped CV inside the temperature split; choose vector only if its mean CV NLL is lower than temperature's by >= 0.0005, else temperature; refit the chosen method on the whole split", "margin": 0.0005, "kind": "judgement value", "basis": "do not spend 36 parameters on a near-zero gain; vector+Platt was NOT_CANDIDATE in the WS outcome line (docs/experiments.md:263)"},
+    "fallback": "vector optimizer fails (no convergence or a non-finite value) -> temperature, recorded; temperature optimizer also fails -> that candidate is CALIBRATION_FAILED (not eligible; its uncalibrated probabilities stay descriptive); a B0-T temperature failure leaves the B0-T descriptive entry empty",
+    "applies_to": ["B1", "B2", "B0-T (temperature only)"],
+    "excluded": "structured matrix scaling (arXiv 2511.03685): first-place claim not verifiable from the abstract; too many parameters for ~2 weeks of calibration rows (judgement)"
+  },
+  "features": {
+    "B2_count": 63,
+    "A_pitcher_encoding": ["1-18 b0_p_CH..b0_p_UN (OOF B0-recipe probabilities)", "19 pitcher_train_log_volume = log1p(TRAIN pitches)"],
+    "B_count_and_pa_history": ["20 balls", "21 strikes", "22 count_id (12-level categorical)", "23 pa_pitch_index", "24-28 prev_type_1..5 (18 codes + UNKNOWN + NONE)", "29-33 prev_outcome_1..5 (10 outcomes + unknown + NONE)"],
+    "C_game_state": ["34 outs", "35 first_base", "36 second_base", "37 third_base", "38 inning (capped at 10)", "39 defensive_score_lead", "40 defender_is_home"],
+    "D_hands": ["41 batter_left", "42 pitcher_left", "43 same_hand"],
+    "E_batter": ["44-49 six style rates", "50-55 six style reliabilities", "56-60 five soft memberships (G0 context channels [11:28], matrix_bridge.py:20-23)"],
+    "E_batter_inputs": "fixed input filter: rows with 2023-05-15 <= game_date that are not June 2025, DEV or 2026 (i.e. TRAIN, earlystop and temperature rows only); the outcome-derived history columns events, description, is_pa_terminal and launch_angle (policy_requests.py:284) are read only from earlier-dated rows inside the filter; TRAIN rows use strictly-prior-date history inside the filter (archetypes.add_batter_style_history); earlystop, temperature and dev use window-start snapshots 2025-05-01 / 2025-05-16 / 2025-07-01 built by policy_requests.style_snapshot (:277-298) on the filtered frame; A3-specific artifacts, not the runtime S1b/D-7 style artifact (configs/ML-POLICY-MATERIALIZATION-v1.json:506-514); sha256 in the freeze-primary manifest",
+    "F_workload": ["61 prior_pitches_game (earlier Statcast records of this pitcher in this game; workload_features.rebuild)", "62 times_through_order (rebuilt; workload_features.py:41)", "63 is_game_starter (first pitcher of the fielding side, D87 role)"],
+    "B1_key_additions": ["outs x runner group (from C)", "times through order 1/2/3+ (from F62)", "batter cluster = argmax of E soft memberships, unknown if reliability 0"],
+    "forbidden": [
+      "current pitch type and physics (release_speed, release_spin_rate, spin_axis, pfx_x/z, plate_x/z, effective_speed), sz_top/sz_bot",
+      "current description, events, type; post_* scores; launch_*",
+      "any later row; supported_pa (matrix_features.py:27)",
+      "*_days_until_next_game (workload_features.py:16); raw Savant n_thruorder_pitcher / pitcher_days_since_prev_game (rebuilt values only)",
+      "game_date, month, season; raw pitcher or batter ids",
+      "full-TRAIN pitcher type shares on TRAIN rows (target leakage)",
+      "previous-pitch physics and location (2026 plate_x/z definition change, proposal A4 row docs/pm/research/experiment-proposals-2026-10-26.md:27)"
+    ]
+  },
+  "leakage_rules": [
+    "L1 every feature uses only (a) strictly earlier rows of the same PA or game, (b) frozen TRAIN artifacts, or (c) the registered A3 batter-style history (features.E_batter_inputs): strictly-prior-date history inside the filter for TRAIN rows, window-start snapshots 2025-05-01 for earlystop, 2025-05-16 for temperature and 2025-07-01 for DEV, all built only from TRAIN, earlystop and temperature rows (2023-05-15..2025-05-31; no June, DEV, 2023-03-30..05-14 or 2026 row)",
+    "L2 the current pitch's type, physics and outcome never enter (prereg current_pitch_physics_or_outcome_as_input false, configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:408)",
+    "L3 label-derived encodings are out-of-fold on TRAIN rows (5 TRAIN game folds, salt EXP-BC-CAL-01/te)",
+    "L4 no DEV pitch-type label is read before the freeze-primary manifest is pinned; s6-integrity is the first stage that reads S6 logged actions; xf-fit is the only stage that fits on DEV labels; before the freeze-xf manifest is pinned no DEV scoring metric (NLL, Brier, ECE, P1 or accuracy of any candidate or descriptive arm) and no new-denominator weight diagnostic is computed; the only exemption is the registered fixed-B0 integrity checks of s6-integrity (S6 identity, R1b, R2) (code.stages)",
+    "L5 no 2026 row is loaded",
+    "L6 batter-style history uses only features.E_batter_inputs (no June 2025, DEV, 2023-03-30..05-14 or 2026 row)"
+  ],
+  "cross_fitting": {
+    "current_state": "pitchmdp line: none; pi_b_hat is TRAIN-only and applied out-of-time (prereg fit_on_2026 false :309; nuisance_2026_crossfit_exception disabled :384-388). Old RE24 line: game_pk % 5 game folds on 2026 logs (src/pitcheezy/ope/behavior.py:74-90, :103-131; D18).",
+    "rule": "whenever pi_b_hat is fit on the logs it evaluates, use game-fold cross-fitting and out-of-fold probabilities only",
+    "folds": {"k": 5, "assignment": "int(sha256('EXP-BC-CAL-01/xf:' + str(game_pk)).hexdigest(), 16) mod 5", "unit": "game (all pitches of a game in one fold)", "kind": "judgement value", "basis": "D18 precedent K=5; each fit uses 80% of the window; salted hash instead of game_pk % K (independent of game numbering, as M-1)"},
+    "no_fold_specific_tuning": "alpha, rounds and calibration fixed from the TRAIN-only fits",
+    "primary_needs_none": "A3 primary fits on TRAIN and scores DEV (no overlap) - the same shape as a 2027 out-of-time use",
+    "xf_arms": "B0-XF and B1-XF only (mandatory descriptive; Song D186 5-①, B2-XF not run): fit on TRAIN plus the other 4 DEV folds, predict DEV fold k; support redefined from the same rows; fitted in the separate xf-fit stage after freeze-primary and s6-integrity, recipe fixed at registration, deterministic; DEV pitch-type labels used for fitting are recorded in the exposure ledger; as-of violation acceptable only for OPE nuisance cross-fitting, never for the service",
+    "xf_comparison": "paired XF-minus-B0 NLL only on the original B0 S_in rows (the primary comparison rows); S_off rows to which XF gives mass ('rescued' new codes) are reported separately as the rescued share and their XF NLL (no paired comparison, B0 gives them probability 0)"
+  },
+  "seeds": {
+    "bootstrap": 20260924,
+    "bootstrap_draws": 10000,
+    "lightgbm": 20261043,
+    "fold_salts": {"train_oof": "EXP-BC-CAL-01/te", "dev_xf": "EXP-BC-CAL-01/xf"},
+    "deterministic_models": "B0, B1, B2 (no seed effect)"
+  },
+  "metrics": {
+    "dev_metric_definition": "a DEV metric is any value of metrics, positivity, self_consistency or ope_weight_diagnostics computed on DEV or S6 rows: candidate and descriptive-arm NLL, Brier, ECE, P1, accuracy and strata, SC1-SC3, new-denominator weight diagnostics and E5; the registered fixed-B0 integrity checks of s6-integrity (S6 identity, R1b, R2) are not DEV metrics",
+    "population": "DEV S_in, pitch-weighted",
+    "primary": "NLL (natural log)",
+    "guards": ["top-label ECE10 (10 equal-width bins, matrix_metrics.py:33-51 definition, new 18-class function)", "near-zero share P1"],
+    "secondary": ["multiclass Brier (sum over 18 classes)", "classwise ECE", "top-1 accuracy (descriptive only, never a decision input)"],
+    "paired_inference": "candidate minus B0, whole-game bootstrap 10,000 draws, seed 20260924, null-centered one-sided p (matrix_metrics.py:77-121 convention); ECE difference recomputed exactly per replicate from per-game bin sufficient statistics",
+    "strata_descriptive": ["pitcher TRAIN volume low/middle/high on P and zero (TRAIN0) on P_plus (q25/q75, matrix_panel.py:91-94, :149)", "count (12)", "role SP/RP (D87)", "month", "two strikes", "runners on", "platoon"]
+  },
+  "positivity": {
+    "structural": "S_off share overall and by volume (same for all candidates because support is fixed; reported only)",
+    "P1": {"definition": "share of S_in with pi_b_hat(a_t|H_t) < threshold", "threshold": 0.001, "kind": "judgement value", "basis": "below 0.1% one pitch costs >= 6.9 nats and its rho can exceed 1,000 x the target probability"},
+    "P2": {"threshold": 0.01, "use": "descriptive"},
+    "why_not_count_structural_violations": "a probability floor or full-vocabulary softmax removes zeros without creating identification (prereg probability_floor_creates_positivity false, :401); fixed support keeps the L1-R accounting comparable"
+  },
+  "self_consistency": {
+    "SC1_pitch_group_totals": "on all P (incl. S_off): observed share minus predicted share for groups fastball {FF, SI, FC, FA}, breaking {SL, ST, CU, KC, SV, CS}, offspeed {CH, FS, FO, SC}, other {KN, EP, PO, UN} and per code; overall, by volume and by count (the logging policy's own value under an action-only pseudo-reward vs the empirical mean, same pitch weighting)",
+    "SC2_mean_weight": "on S6 E0: mean PA-end weight W_T (ope_weight_diagnostics.weights) and mean per-decision rho for candidate and reference; expectation 1 under a correct pi_b_hat (D18 diagnostic); game bootstrap CI",
+    "SC3_small_probability_ratio": {"bins": [0, 0.001, 0.01, 0.05, 0.2, 0.5, 1.0], "statistic": "observed / expected over all (decision, code) pairs per predicted-probability bin", "kind": "judgement value", "basis": "dense bins where small probabilities inflate rho"},
+    "reward_based_version": "not run (gate: no rewards)"
+  },
+  "ope_weight_diagnostics": {
+    "input": "S6-dr-a5 ledger (see data.s6_ledger)",
+    "e0_reconstruction": "first-row pre-decision fields and frozen TRAIN artifacts only, PolicyRuntime.start_population rule (policy_runtime.py:340-360)",
+    "integrity_gates": {
+      "stage": "s6-integrity, before xf-fit and score-dev (code.stages); any failure -> FAILED_INTEGRITY, no later stage",
+      "S6_identity": "ledger and manifest sha256 equal the registration pins; header pins.candidate.sha256 equals the expected policy identity c13cc989...; every decision row's runtime_sha256 equals the pinned header runtime identity (data.s6_ledger.candidate_sha256, data.s6_ledger.runtime_sha256), checked first; R1b and R2 are content checks, not identity",
+      "allowlist_projection": "every parsed ledger record is the key-by-key scanner projection onto the allowlist and contains no other key (data.s6_ledger.parse_rule); otherwise FAILED_INTEGRITY",
+      "R1": "BC_P file sha256 b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
+      "R1b": "VectorBC reproduces every ledger logging vector, max abs diff <= 1e-12",
+      "R2": {"rule": "ESS of B0 weights recomputed from the ledger equals results/ML-POLICY-VAL-v1-S6-v3.json ess_all_e0 within relative 1e-9", "expected": {"candidate": {"pa": 9120.218896471748, "game": 144.2828223791589}, "reference": {"pa": 9725.694335061527, "game": 144.16008032451504}}}
+    },
+    "reweighting": "SUPPORTED rows: rho_t = pi(a_t) / pi_b_hat_new(a_t); OUTSIDE_POLICY_SUPPORT and LOGGING_POSITIVITY rows: rho_t = 0 for any denominator",
+    "weights": {"residual": "W_t = prod_{s<=t} rho_s, the product through the current action (the affine recursion of policy_estimator.py:142-157 unrolled)", "pa_end": "W_end = the affine slope weight_<policy>: for a complete PA the product through the last decision; a rho of 0 stops the prefix product at 0; a PA refused or censored at node k for a non-positivity reason keeps prod_{s<k} rho_s (policy_estimator.py:259); a positivity refusal closes at node k with rho_k = 0 (:256-258); used for ESS, PA-weight quantiles and SC2 (L1-R rule, :138-157, :255-270)"},
+    "reported": ["PA and game ESS of both policies over all E0", "candidate/reference ESS ratio (S3b threshold 0.5 for reference)", "per-decision rho q50/q90/q99/max and share rho > 10", "PA-end weight W_T quantiles and share W_T > 10", "SC2", "mean KL(pi_b_hat_new || B0)", "weight shift D = mean over PAs of sum_t |W_t_new - W_t_B0| over the residual weights, per policy and paired"],
+    "large_weight_threshold": {"value": 10, "kind": "judgement value", "basis": "one pitch or PA counts like ten"},
+    "weight_shift_interpretation": "DR PA value V_0 = v_0 + sum_t W_t (y_t - q_t(a_t)) with W_t the residual weight, y_t the next decision's v or the end value, and v, q, y in [0,1] so |y_t - q_t| <= 1; v_0 and q do not depend on the denominator, so a denominator swap changes V_0 (and each L1-R bound endpoint) by at most sum_t |dW_t| (conservative bound). D_paired < MEI 0.001 -> only: the fixed empirical mean contrast on these S6 games (point value and each bound endpoint) changes by less than 0.001 WE/PA under that bounded-residual assumption; it does NOT guarantee unchanged CI-based verdicts or ESS gates (configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:800-828). Otherwise 'may change' only (actual bias = pi_b_hat error x Q error, unknown without rewards)",
+    "decision_use": "E5 usability only; everything else descriptive"
+  },
+  "verdict_rule": {
+    "candidate_set": "B1, B2 (B3 excluded by D186 5-①)",
+    "eligibility": {
+      "E1_nll_superiority": {"rule": "dNLL = NLL_c - NLL_B0 <= -0.005 AND CI95 upper < 0 AND Holm-adjusted one-sided p (family = the candidates run: B1 and B2) <= 0.05", "margin": -0.005, "kind": "judgement value", "approved_by": "Song D186 4-① (docs/decisions.md:325), as drafted; fixed before any DEV metric", "basis": "~7% of the measured BC-frequency gap (Cpanel DEV -0.071, docs/reports/ML-matrix-execution-2026-09-24.md:324-326); smallest gain worth a new nuisance registration"},
+      "E2_ece_noninferiority": {"rule": "CI95 upper of dECE (top-label ECE10) <= +0.002", "margin": 0.002, "kind": "judgement value", "basis": "ECE-difference CI half-widths 0.0016-0.0029 on 80,584 rows in EXP-WS-CAL-001 (C1 0.0021994, C2 0.0028627, C3 0.00160005; arithmetic on the interval endpoints in docs/experiments.md:263); DEV is larger"},
+      "E3_positivity_noninferiority": {"rule": "CI95 upper of dP1 <= +0.0005", "margin": 0.0005, "kind": "judgement value", "basis": "more than one extra near-zero decision per 2,000 lengthens the weight tail"},
+      "E4_integrity": "R1, R1b, R2, leakage and synthetic tests pass; no 2026 row",
+      "E5_usability": "under the new pi_b_hat both policies keep ESS >= PA 100 and game 30 on S6 E0 (configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:519-521)",
+      "calibration_failure": "a CALIBRATION_FAILED candidate (calibration.fallback) is not eligible regardless of E1-E5"
+    },
+    "selection": {"rule": "lowest DEV NLL point estimate among eligible candidates; if both B1 and B2 are eligible and their DEV NLL point estimates differ by < 0.001 (strict), the simpler model B1", "tie_margin": 0.001, "comparator": "strict <", "kind": "judgement value", "basis": "avoid complexity without practical gain"},
+    "labels": ["ADOPT_FOR_2027_REGISTRATION:<candidate>", "KEEP_B0", "FAILED_INTEGRITY", "NOT_EVALUABLE"],
+    "descriptive_only": ["strata", "SC1-SC3", "S6 weight diagnostics except E5", "XF arms", "B0-T", "uncalibrated probabilities", "accuracy"],
+    "fixed_before": "any DEV metric is computed"
+  },
+  "adoption_meaning": {
+    "adopted": [
+      "the recipe (code commit, config, calibration rule) is proposed as the primary logging law of a NEW prospective 2027 OPE registration, which fixes its own as-of refit and cross-fitting choice and needs its own independent review",
+      "B0 is carried as that registration's logging-law sensitivity",
+      "a runtime taking a separate logging model is new code; the source import closure enters the policy identity (D122, docs/decisions.md:190), so it is recertified under a new identity; whether the reference stays SupportedBC(B0) is that registration's design question",
+      "optional separate registration: S5 V3-style synthetic check with logging law = adopted candidate (configs/ML-POLICY-MATERIALIZATION-v1.json:608-628, D111), no real rewards; cost precedent S5-v2-a1 2,900 s; A3 cost not measured"
+    ],
+    "a2_r3_artifact": "A2's R3 arm (diagnostic only) consumes only the adopted candidate's primary frozen artifact, never an XF artifact. A2's current eligibility rule (A2 design section 3 R3; A2 JSON arms.R3_behavior_policy.eligibility): A3 label ADOPT_FOR_2027_REGISTRATION:<candidate>, sha256 pin, BehaviorModel protocol, A3 independent review PASS, and a provenance manifest showing that fitting, in-recipe selection (B1 alpha, B2 rounds), calibration and the frozen feature inputs use only rows dated <= 2025-05-31 (TRAIN, earlystop, temperature) with no June, DEV/S6 or 2026 row. The A3 primary artifacts are built that way (features.E_batter_inputs, splits) and the freeze-primary manifest records each artifact's input-row date range for that check (code.stages)",
+    "unchanged": ["policy identity c13cc989", "D108/D109 thresholds", "D131 verdict NO_EVIDENCE_OF_IMPROVEMENT", "D155 closed revalidation", "sealed S5/S6 results", "BC_P artifact b4f274eb", "service, demo, G0, G15"],
+    "not_done_under_this_registration": "no recomputation of the 2026 OPE or the <=2025 S6 with a new pi_b_hat"
+  },
+  "exposure": {
+    "train_2023_05_15_2025_04_30": "exposed_fit (also batter-style history input)",
+    "earlystop_2025_05_01_15": "exposed_model_selection (also batter-style history input)",
+    "temperature_2025_05_16_31": "exposed_calibration (also batter-style history input)",
+    "june_2025": "not used (no fit, selection, calibration, scoring or batter-history input)",
+    "unused_2023_03_30_05_14": "not used (incl. batter-history input)",
+    "dev_2025_07_09": "exposed_development: s6-integrity reads the S6 games' logged actions after freeze-primary; xf-fit fits the XF arms on DEV pitch-type labels; score-dev makes one scoring read of pi_b_hat likelihood/calibration",
+    "s6_ledger": "allowlisted probability and identity fields read-only; no rewards, values or OPE results",
+    "2026": "none",
+    "independent_confirmation": false
+  },
+  "compute": {
+    "machine": "Mac mini M4 24 GB CPU, single process, num_threads 2, common .heavy.lock (/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock) non-blocking acquire",
+    "window": "D186 2-② (docs/decisions.md:325): game days in the window after 13:30 KST on the Mac CPU, never inside the recorder/publisher protection window 06:30-13:30 KST; not waiting for the end of the World Series; only after the gates.G1 sequence (reviews -> registration -> registered smoke); the three track-A experiments run sequentially under the common heavy lock; check scheduled Mac jobs before start",
+    "server_alternative": "newsrv CPU needs <=2025 processed/raw data moved and .gpurc links; not the default",
+    "gpu": "none (B3 excluded by D186 5-①)",
+    "precedents": {
+      "data_prepare": "P8 prepare 186.6 s (configs/ML-POLICY-MATERIALIZATION-v1.json:663)",
+      "b0_scoring": "P8 p0 evaluate 4.02 s on Cpanel (docs/reports/ML-matrix-execution-2026-09-24.md:372)",
+      "lightgbm_m4": "10-class, 200 rounds, 2 threads: 556,467 rows 104.5 s, 623,184 rows 161.6 s; peak RSS 1.45 / 1.71 GB (/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/multiclass-tree-run-launch-001/REPORT.md:16-19: child seconds 104.462 and 161.557, RSS 1,450,721,280 and 1,709,735,936 B, 200 rounds; training rows from attempt-001/result.json:395, :891)",
+      "lightgbm_ws_refit": "EXP-WS-RECENCY-002 CPU refit: parent 10-class 179.11 s, binary heads 8.39 / 4.82 s, total 398.18 s, sampled peak RSS 5.38 GB (results/EXP-WS-RECENCY-002.json:22)"
+    },
+    "estimates_not_measured": {
+      "b2_fit": "~12-16 min per fit (projection, not a measurement): the two M4 per-row-round-class rates applied to 1,381,056 TRAIN rows (docs/results-all.md:1473) x 300 rounds x 18 classes = about 700-967 s; the column-count difference (199 vs 63) is ignored",
+      "mandatory_total": "about 1 h Mac CPU (estimate)",
+      "b2_xf": "not run (D186 5-①); would have been +5 B2 fits, >1 h (estimate)",
+      "b3": "not run (D186 5-①)"
+    }
+  },
+  "cost_budget": {
+    "hang_guard_seconds_per_stage": {"value": 7200, "basis": "CLAUDE.md D10 local-run ceiling 2 h (config precedent hang_guard_seconds 7200, configs/ML-POLICY-MATERIALIZATION-v1.json:447)"},
+    "total_wall_cap_mandatory_seconds": {"value": 14400, "kind": "judgement value", "basis": "4x the about-1-h projection; abort and preserve beyond it", "scope": "the whole attempt, from the smoke through decide, across separate commands: consumed wall time is persisted in the attempt directory and carried over between commands"},
+    "b2_per_fit_soft_cap_seconds": {"value": 3600, "kind": "judgement value", "basis": "3.75-5x the 12-16 min projection", "action": "warn and record, then continue; aborting is only by the per-stage hang guard (7,200 s) or the total wall cap (14,400 s)"},
+    "memory": {"start_requires_free_share_min": 0.4, "abort_rss_bytes": 10737418240, "kind": "judgement value", "basis": "STAB-01 started at 63% free; S6 peak 6.77 GiB precedent; leaves room for the recorder/service on 24 GB"},
+    "gpu_use": "none (B3 excluded by D186 5-①)"
+  },
+  "stop_rules": [
+    "S6 identity pin mismatch (ledger or manifest sha256, header pins.candidate.sha256, any decision row's runtime_sha256) or B0 reproduction (R1, R1b, R2) failure -> FAILED_INTEGRITY, no xf-fit and no DEV scoring",
+    "a stage-order violation (smoke before registration, a DEV pitch-type label before freeze-primary, a DEV metric (metrics.dev_metric_definition; the s6-integrity checks excepted) before freeze-xf) -> the runner refuses, stops and records",
+    "leakage or synthetic tests fail -> no real-data stage starts",
+    "a 2026 row or a date after 2025-09-30 is read -> stop immediately",
+    "an attempt to open a forbidden file (rewards, values, OPE results) -> reader refuses, stop and record",
+    "memory, hang guard, wall cap or a game window starts -> abort, preserve, partial outputs not citable",
+    "B2 still improving at round 300 -> record CAP_HIT; no extension within this registration",
+    "a B2 fit passes the 3,600 s soft cap -> warning recorded, run continues",
+    "vector calibration fails -> registered fallback (temperature only), recorded; temperature calibration also fails -> that candidate is CALIBRATION_FAILED (not eligible), recorded",
+    "once DEV metrics are written: no re-scoring, no new candidate, no threshold change; any change needs a new registration id with disclosure",
+    "bug-fix retries allowed and recorded only before any DEV metric is written (lightweight gate)"
+  ],
+  "protections": "recorder, collector and publisher priority; no signals to Mac processes; no pgrep/ps with protected patterns; ports 8766-8772 untouched; no push; outputs only under a new attempt directory (.../ML-MATRIX-20260924/EXP-BC-CAL-01/<attempt>), never inside S5/S6 stage directories",
+  "gates": {
+    "G1_registration_and_review": "D186 + PM 2026-10-27 (all track-A drafts): (1) design review of this draft and the design doc -> (2) review of the code and config at a fixed commit, incl. the smoke code (code reading only, no real-data execution) -> (2') input preparation (data.prepared_input: split-aligned re-chunk with a byte-level identity proof, run once by the PM after the code review passes, outside 06:30-13:30 KST) -> (3) registration (status REGISTERED, execute true, registration block filled, the prepared input's sha256 and identity-manifest sha256 pinned, the preparation run record entered as addendum (0)) -> (4) smoke as the first registered step (TRAIN rows only — only TRAIN rows enter any computation; on the split-aligned input only TRAIN row groups are decoded — cost and integrity only, no metric computed or read; record appended to the registration block as an append-only addendum) -> (5) full run in the code.stages order; no real-data stage, the smoke included, before registration",
+    "G2_data_role_as_of": "<=2025 only; DEV exposed development; June unused (also as batter-history input); no 2026; S6 ledger allowlisted read-only",
+    "G3_sealed_ope_boundary": "no rewards, values or OPE results read; sealed S5/S6 artifacts untouched (sha before and after); c13cc989, D108/D131/D155 unchanged",
+    "G4_fixed_before_results": "splits, metrics, thresholds and candidates fixed by this draft (NLL margin approved and candidate set B1/B2 fixed by D186)",
+    "G5_provenance": "seeds, data versions, code commit, config sha, artifact sha and library versions recorded in results"
+  },
+  "review_requirements": {
+    "independent": true,
+    "reviewer_not_author": true,
+    "recommended": "Codex Astra cross-review of code (leakage, allowlist, determinism) + Fable judgement review of the verdict rule and thresholds (D182)",
+    "scope": "gates.G1 steps (1) the design doc and this JSON and (2) the code and config at a fixed commit, incl. the smoke code",
+    "design_stage_review": "the review of this draft and the design doc (no code yet) comes first; it does not replace the fixed-commit code and config review",
+    "verdict_needed": "registration opens only if both reviews end PASS, or PASS_WITH_NOTES with every note closed or recorded as accepted by the PM before registration; PASS_WITH_CONDITIONS is not used"
+  },
+  "attempts": "one DEV scoring attempt; infrastructure failures before any DEV metric is written may retry with a record; nothing from an aborted attempt is citable",
+  "reporting_conditions": [
+    "report populations and counts (P, S_in, S_off, TRAIN0) per split",
+    "read the label exactly as registered; descriptive items carry no adoption language",
+    "results/EXP-BC-CAL-01.json, one docs/experiments.md row, a docs/decisions.md line only if adopted",
+    "state that DEV is exposed development and that no OPE value was computed"
+  ],
+  "not_claimed": [
+    "no OPE value or Delta for any policy; no claim that the D131 verdict would change",
+    "no causal identification; numeric overlap is not identification (prereg :559)",
+    "no independent confirmation",
+    "no service or policy adoption; c13cc989, G0, G15 and the service unchanged",
+    "accuracy is not the objective",
+    "pi_b_hat models Statcast's classified realized pitch-type label, not the catcher/pitcher intent",
+    "no location (type x zone) propensity",
+    "no transport claim to 2026 or 2027"
+  ],
+  "song_decisions": {
+    "source": "D186 (docs/decisions.md:325, Song 2026-10-27 10:4x KST) and the consolidated list in docs/pm/research/track-a/README.md",
+    "decided": [
+      {"id": 1, "question": "B3 GPU sequence NN", "decision": "excluded: not an arm, not run; non-run future candidate only (excluded_not_run.B3)", "ref": "D186 5-①", "history": "draft options not now (recommended, chosen), run together, separate registration after B0-B2"},
+      {"id": 2, "question": "weight-diagnostic sample", "decision": "reuse the S6 150-game ledger (data.s6_ledger)", "ref": "D186 5-①", "history": "STAB-01 non-S6 150 games and both were not taken"},
+      {"id": 3, "question": "cross-fit arms", "decision": "B0-XF and B1-XF only; B2-XF not run", "ref": "D186 5-①", "history": "also B2-XF and none were not taken"},
+      {"id": 4, "question": "when to run", "decision": "game days, window after 13:30 KST on the Mac CPU, outside the recorder/publisher protection window 06:30-13:30 KST; not waiting for the end of the World Series; order as gates.G1 (reviews -> registration -> registered smoke -> full run); track A sequential", "ref": "D186 2-② (order detailed by the PM 2026-10-27)", "history": "draft options first non-game day after the World Series (then recommended), game days after 13:30 KST (chosen), server CPU (data move needed)"}
+    ],
+    "approved_threshold": {"E1_nll_margin": "-0.005 as drafted (D186 4-①)"},
+    "not_settled_by_D186": [
+      {"id": 5, "question": "action space", "status": "this design keeps option 1 (18 pitch types only, ARM-B; action_space); option 2 (type x coarse zone as descriptive) would need a new decision"}
+    ]
+  },
+  "unverified": [
+    "brief's 'M4 LightGBM 6-head 337 s in the WS line': 336.9 s is EXP-WS-STEP5-CAL-001's whole training-free calibration run (results/EXP-WS-STEP5-CAL-001.json:3347); training-cost precedents used instead",
+    "Ahn et al. 2026 0.637 vs 0.633 (2018 baseline): abstract states only ~64% next-pitch; proposal records +0.004 (experiment-proposals-2026-10-26.md:39)",
+    "CalArena is arXiv 2605.30188 (2511.03685 is Structured Matrix Scaling, same authors); 'structured matrix scaling ranks first' not confirmed in either abstract",
+    "old RE24 line weight-mean collapse recorded as 0.05 (D18, configs) and 0.24 (src/pitcheezy/ope/behavior.py:8)",
+    "S6 decision count and exact equality of ledger-only E0 with runner E0 (R2 checks at run time)",
+    "whether STAB-01 ledgers preserved logged_index (moot for this registration: D186 chose the S6 ledger)",
+    "all A3 population counts, B0 whole-MLB DEV NLL/ECE and all A3 costs are not measured",
+    "S6 ledger file size, the materialize.json cell count 81,132 and the logging_mass_on_mask quantiles have no committed summary (T7 only) and are unverified within the review boundary",
+    "the full header runtime_sha256 value (the runtime's own identity; the PM header check saw prefix af59057b...) is pinned from the header at registration; the policy identity c13cc989... is checked at header pins.candidate.sha256 (data.s6_ledger)"
+  ],
+  "sources": {
+    "review_round_1_fixes": ["experiments/pitchmdp/pitchmdp/policy_requests.py:277-298 (style snapshot; history columns :284)", "experiments/pitchmdp/pitchmdp/policy_estimator.py:142-157 (affine recursion)", "experiments/pitchmdp/pitchmdp/policy_runtime.py:291, :489 (runtime_sha256), :327-338 (hand check)", "experiments/pitchmdp/pitchmdp/rollout_policy.py:103-105 (fallback support)", "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:303, :800-828", "configs/ML-POLICY-MATERIALIZATION-v1.json:506-514", "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json", "docs/results-all.md:1473", "docs/decisions.md:154 (D104)", "/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/multiclass-tree-run-launch-001/REPORT.md:16-19 and attempt-001/result.json:395, :891"],
+    "code": ["experiments/pitchmdp/pitchmdp/rollout_policy.py:68-124", "experiments/pitchmdp/pitchmdp/matrix_policy.py:34-55, :186-196", "experiments/pitchmdp/pitchmdp/policy_estimator.py:1-35, :138-146, :255-270, :293-300", "experiments/pitchmdp/pitchmdp/policy_runtime.py:340-360, :391-439, :487-491, :547-563", "experiments/pitchmdp/pitchmdp/policy_tau.py:75-90", "experiments/pitchmdp/pitchmdp/policy_requests.py:63-68", "experiments/pitchmdp/pitchmdp/matrix_features.py:27, :47-66", "experiments/pitchmdp/pitchmdp/matrix_sharing.py:17-28, :74-85", "experiments/pitchmdp/pitchmdp/matrix_bridge.py:20-45", "experiments/pitchmdp/pitchmdp/matrix_metrics.py:11-121", "experiments/pitchmdp/pitchmdp/matrix_panel.py:91-94, :149", "experiments/pitchmdp/pitchmdp/archetypes.py:36", "experiments/pitchmdp/scripts/run_temporal_blend.py:35-48", "experiments/pitchmdp/scripts/run_ml_policy.py:50, :141, :393-394", "src/pitcheezy/ope/behavior.py:1-131", "experiments/ws_seq/calibrate_logits.py:238-324", "branch research/direct-head-confirm-1026: experiments/pitchmdp/pitchmdp/workload_features.py:16-45; experiments/pitchmdp/scripts/run_cuda_direct.py:130-131, :176-180; experiments/pitchmdp/scripts/run_ml_direct_workload.py:1-61"],
+    "configs": ["configs/ML-POLICY-MATERIALIZATION-v1.json:250, :311-312, :433-438, :447, :510-512, :587-593, :608-628, :663, :681, :695", "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:255, :282-283, :297-314, :384-408, :491, :519-521, :559, :814-831", "configs/EXP-P0-002.yaml:30"],
+    "results": ["results/ML-POLICY-VAL-v1-S6.json:8-12, :36", "results/ML-POLICY-VAL-v1-S6-v3.json:42, :92-99", "results/EXP-P1-010.json:155", "results/EXP-WS-RECENCY-002.json:22", "results/EXP-WS-SEQ-001.json:21", "results/EXP-WS-STEP5-CAL-001.json:3347", "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/materialize.json", "/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/multiclass-tree-run-launch-001/REPORT.md:3-17 and attempt-001/result.json", "/Users/song/Projects/pitcheezy-pm-jobs/20261020-stab01/REGISTRATION.json"],
+    "docs": ["docs/decisions.md:23 (D18), :162 (D108), :164 (D109), :168 (D111), :176 (D115), :190 (D122), :192 (D123), :196 (D125), :208 (D131), :258 (D155), :313 (D180), :321 (D184), :325 (D186)", "docs/experiments.md:73, :263", "docs/results-p0.md:12, :27", "docs/reports/ML-matrix-execution-2026-09-24.md:319-372", "docs/reviews/external-evaluation-2026-10-19.md:103, :117", "docs/pm/research/experiment-proposals-2026-10-26.md:26-27, :33, :35, :39, :62"],
+    "literature_abstract_checked": ["Hanna, Niekum, Stone, arXiv 1806.01347 (ICML 2019)", "Kovash & Levitt, NBER w15347 (2009)", "Ahn et al., arXiv 2602.07030 (2026)", "Berta, Holzmueller, Jordan, Bach, arXiv 2511.03685", "Berta, Holzmueller, Bach, Jordan, CalArena arXiv 2605.30188"]
+  }
+}

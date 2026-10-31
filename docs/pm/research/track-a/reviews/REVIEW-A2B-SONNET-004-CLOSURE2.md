@@ -1,0 +1,81 @@
+VERDICT: PASS_WITH_NOTES
+
+# REVIEW-A2B-SONNET-004-CLOSURE2 — independent design review, round 4 (short closure check): EXP-OPE-RES-02 (track A2b) v2.3
+
+- **Reviewer:** Claude Sonnet 5.5 (`claude-sonnet-5-5`), independent design reviewer, G-REV round 4. Read-only.
+- **Author:** research-design worker (Claude Opus 5.5) under the Claude Fable 5.1 PM session. Codex is unavailable until 2026-11-02 18:57 KST; its re-confirmation stays a separate gate before G-CODE (D192 6 ①).
+- **Date:** 2026-10-28. Earlier rounds: [001](REVIEW-A2B-SONNET-001.md) FAIL, [002](REVIEW-A2B-SONNET-002.md) PASS_WITH_NOTES, [003-CLOSURE](REVIEW-A2B-SONNET-003-CLOSURE.md) PASS_WITH_NOTES.
+- **Files under review** (main checkout `/Users/song/Projects/pitcheezy`, uncommitted; sha256 recomputed, all equal to the expected values):
+  - `docs/pm/research/track-a/A2b-ope-followup-design.md` — `9545462668eeab0ebefc0df6b57fdad161b6bc8e7227b2f165ad9e9eee4e3d0e` (567 lines)
+  - `docs/pm/research/track-a/A2b-ope-followup-registration-draft.json` — `482cf027a6757f24bc827c2301b2a966c91c7eafea11bdca359aaad8fedf5185` (3,193 lines, parses)
+  - `docs/pm/research/track-a/A2b-sizing/README.md` — `46907b2793aa111f7e74a19e5daf44727bfb94688e20919925df3fd35e8ac004`; the other sizing files are byte-identical to round 3 (`68fdbeae…`, `1e3b4b4a…`, `f1cf66c0…`, `924be5a6…`, inputs `cdece800…`)
+- **Also read:** `docs/decisions.md:325, :338, :340` (D186, D191 (b), D192); `results/EXP-OPE-RES-01.json` (values read only under `S2_s5x_summary` — `s2`, `dose_response_s2_by_run` — and `S3_gint`; key names only for the top level, `summary`, `stages` and `UB_unblinded`); A2 worktree, read-only: `pitchmdp/ope_sealed.py:50–51, 68–77`, `pitchmdp/ope_redesign_registry.py:101`.
+- **Done / not done:** sha256, JSON parsing (null-leaf walk, key and line checks), integer XOR and arithmetic on recorded numbers, greps in `docs/pm/research/track-a/` and `…/prospective-2027/`. No project code, experiment, stage, fit or test was run; no T7 path, 2026 file, ledger or rehearsal row was opened; no git state changed (read-only `git status` of the A2 worktree: clean). The nine role seeds were compared across the two files and with the values quoted in the brief (not re-derived through numpy; round 3 derived them). Scratch files only under the session scratchpad, deleted at the end.
+- **Citation shorthand:** `D:n` = design line, `J:n` = draft line.
+
+Counts: **0 BLOCKER, 0 MAJOR, 0 MINOR.** All six round-3 items (1 MINOR, 5 NOTE) are CLOSED, two of them as not applicable under D192. New in round 4: 5 NOTE (R4-NOTE-1..5), none blocking. D192 equals the seven recommendations I endorsed in round 3; nothing in v2.3 changes that reading.
+
+## 1. Hard constraints — all held
+
+- **State:** `DRAFT_UNREGISTERED`, `registered` false, `preregistration_complete` false, `execution.enabled` false (J:5–7, J:14); `registered_kst` and the four review/code-review references null (J:21–24, J:58); every gate `open` except G-CODE-2 `not_applicable:D192_decision_2_option_3` (J:2624).
+- **Pins:** `registration_input_pins` has 46 null leaves; its 5 non-null leaves are two allowed-value lists and three rule/scope strings (J:2699–2712, J:2742, J:2746–2747); `r3_status` is null (J:2704) with the D192 rule beside it (J:2747). `stage_output_seals` has 17 null leaves plus the rule string, including the two new cells `A2b-S2a_gint_s2eq_record_sha256` (J:2786) and `A2b-S3_gint_eval_record_sha256` (J:2790).
+- **Fixed values:** B = 1.26e-5 (J:143), SE ≤ B/2 (J:149), X = 0.3 i.e. ratio ≤ 0.70 (J:153, J:1942; D:10, D:323), identity `c13cc989…` (J:125, J:2659).
+- **Seeds:** the nine role values are identical in D:407 and J:2132–2165; rehearsal bootstrap (option 2) game 3287529750 / pitcher 1876336626 (J:2287–2288; D:409); G-INT-A2 and G-INT-EVAL always 3060201743 / 3624346705 (J:2275–2278; D:400, D:409). The 76 derived world seeds are distinct and disjoint from the role seeds, `role_seed(v2)` 4115122098 and the six recorded A2 world seeds; those six (k = 4, 5, 9, 10, 11, 12: 4115122102, …03, …07, …04, …05, …10) equal `role_seed(v2)` XOR k, which confirms the "A2 seed scheme" of D:402/J:2373.
+- **Sizing numbers:** the sizing output is byte-identical to round 3, and the numbers quoted in D:208–216 and J:1484–1587 equal its `headline` block (θ 0.4908, C1 1.2778 B, V3 0.708 B, t = 1 0.637/1.762, t = 2 0.727/1.432, ω 0.296/1.278/1.152, KL ×0.5/1/2 0.292/1.278/52.46, η = 0 2.396).
+- **No 2026 use:** D:437, J:119–120, J:3086; nothing 2026 was opened here.
+
+## 2. D192 is fixed consistently in the design and the draft
+
+- **1 ②** new DEV 150 + new sealed ledger: D:3, D:15, D:269–281, D:458; J:986, J:1000, J:1064–1068, J:2851; G-REG pins `NEW_DEV_150` (D:434; J:2588).
+- **2 ③** B2 diagnostic only: D:17, D:117–122, D:250–251, D:332, D:466; J:2075, J:2868–2869; `r3_status` → `DIAGNOSTIC_ONLY:DECIDED` at G-REG with the leaf still null (D:399, D:434; J:2747); label 4 kept but unreachable (D:332; J:1966–1969); SW-A3 OFF (D:350; J:2075).
+- **3 ①** N′ 55 (2κ_p) + 10 (2ζ_p), plus 5 descriptive κ_p′: D:142, D:177, D:473; J:1226–1233, J:2170–2183 (k 1..10 / 11..65 / 66..70), J:2884.
+- **4 ①** candidates R1_a×R2_0, R1_b×R2_0, R1_0×R2_1, R1_a×R2_1, R1_b×R2_1, all ×B0 (D:120, D:342; J:1143–1150, J:1993–2000; the order follows the stated rule R2_0 < R2_1, then R1_0 < R1_a < R1_b); descriptive rows 6 + 12 B2 + 1 λ-fixed, so 12 + 12 + 1 = 25 phase-1 rows (D:121; J:1160–1171).
+- **5 ①** 0.70 under both bootstraps (D:323; J:1941–1949). **6 ①** schedule (D:443–451, D:494; J:2797–2830, J:2931). **7 ①** P6 separate, start ≤ 2026-12-01 (D:451, D:501; J:2077–2087).
+- **Unchosen branches** are kept and marked ("선택되지 않음(D192)", "not selected", "history"). I scanned both files for TAB-R3, S5-X-R3, `ADOPTION_ELIGIBLE*`, `STAND_IN`/`SWAP_FAILS`, G-CODE-2, S6 reuse, all-remaining-DEV, `EXPOSED_S6_NEW_ARM` and "11 candidates": none is written as the registered path. The leftovers are cosmetic (R4-NOTE-1, -2).
+
+## 3. Round-3 items — status
+
+| item | status | where |
+|---|---|---|
+| R3-MINOR-1 scope of the S6 reward read | CLOSED | J:137, J:1085, J:2351; D:401, D:439; allowlist J:2107, J:2111, D:416; seals J:2786, J:2790; cost J:947–963, D:281 |
+| R3-NOTE-1 stale pins | CLOSED | README pin J:88, J:1783 = `46907b27…`; track-A README pin dropped with reason J:3075–3077, D:527; 34/34 source pins recompute (§7) |
+| R3-NOTE-2 wording | CLOSED | ratio 0.968 at J:572, J:1810, D:90, D:224; sizing README:112 "None of ω 0, 0.5, 1" |
+| R3-NOTE-3 resolving power of G-INT-S2EQ | CLOSED | exact form is the registered requirement D:402, J:2373, J:2552–2564; limits in B; bit-identity test D:386, D:433, J:2583, J:3145 |
+| R3-NOTE-4 owner of the S0 stand-in code | CLOSED (N/A, D192 2 ③) | D:296, D:383, D:399; J:1814, J:2334, J:3137 |
+| R3-NOTE-5 A2b-S3 hang guard | CLOSED (N/A, D192 1 ②) | D:424; J:2488–2492; 1,060.5 + 353.5 = 1,414 s ≤ 3,600 s |
+
+R3-NOTE-3 limits recomputed from the recorded SEs: κ runs k = 4/9/10 7.84/3.42/14.85 B, ζ runs k = 5/11/12 1.07/0.67/1.28 B; the document's 7.8/3.4/14.9 and 1.07/0.67/1.28 agree to rounding.
+
+## 4. R3-MINOR-1: is "compute only the 12 A2 rows on S6" sound?
+
+- **Soundness: yes.** The 12 rows are exactly those whose S6 values are already unblinded (`UB_unblinded.pairs`, 12 entries, and `selection`, 6 entries, sit in the pinned results file), so the check reads S6 rewards for nothing that is not public, while the 13 B2/λ-fixed rows are first computed on the new, unseen ledger and no `EXPOSED_S6_NEW_ARM` row is created. It still exercises the new evaluator end to end on real S6 data (bootstrap endpoints, λ selection, shift). The "second permitted S6 reward read" is now stated where the rule lives (J:137, J:1085) and "no new exposure" is qualified to the 12-pair part at every occurrence (D:401, D:439; J:137, J:2351, J:2613). Residual: the 12-row S6 mode and the 25-row new-ledger mode are one code path only if tested to be so (R4-NOTE-5).
+- **Blinding: consistent.** Items 13/14 are a new typed `integrity_record` (pass/fail, max |Δ|, tolerance, key lists or run indices; the S2EQ record adds the auxiliary form's pass/fail and detection limits) with "no center, shift, new-seed b̂" (J:2107–2113; D:416). Everything compared is an already public A2 value or a recorded synthetic value, so even a failing max |Δ| says nothing about the new ledger; the runner writes the public file from the allowlist only and G-CODE tests rejection (J:2119; D:386). New-ledger centers stay in `centers.sealed.json`.
+- **Arithmetic: right.** Phase 1 = 3,808 + 1,060.5 + 353.5 = 5,222.0 s = 1.4506 h (J:949, J:1013; D:281). Maximum = 5,222.0 + 76 × 433.9164 (= 32,977.6 s: 6 S2EQ + 65 S-2′ + 5 κ_p′) + 361.9 = 38,561.5 s = 10.7115 h (J:963; D:316); the v2.2 figure 38,915.0 s = 10.81 h reproduces with 5,575.5 s. A2b-S3 = 1,060.5 + 353.5 = 1,414 s ≤ 3,600 s, margin 2,186 s (even ×2.13, the wall/CPU factor seen in A2-S2, gives 3,012 s). The 707 s for 25 rows is the earlier "≈ 2 ×" rounding; linear 25/12 × 353.5 would be 736.5 s (+29.5 s, 1.451 → 1.459 h) — immaterial, and labelled a projection.
+
+## 5. Tolerance form
+
+- **A2 applies an absolute difference.** `_same` (`ope_sealed.py:68–77`) tests `abs(value − expected) <= INTEGRITY_TOL` for floats, lists and dict-of-floats and compares dicts of ints exactly; `INTEGRITY_TOL = 1e-12` (`ope_redesign_registry.py:101`). G-INT-EVAL and G-INT-S2EQ both say "absolute 1e-12" at every occurrence (D:401, D:402, D:439; J:137, J:1085, J:1299, J:2107, J:2111, J:2351, J:2373, J:2552, J:2613); 1e-12 / B = 7.94e-8 B.
+- **Adequate for b̂ ≈ 1e-5, SE ≈ 3e-6.** Floor: the R1-a and R1-b b̂ of one recorded run differ only by round-off, 1.7e-21, 4.7e-21, 7.6e-21 (k = 5, 11, 12), at least 10^8 below the tolerance. Ceiling: a real difference is of the order of the recorded SE (2.0e-6 to 4.4e-5), and even one start's worth, SE/√147 ≈ 2.6e-7 (derived, equal per-start SD assumed; per-start SD is unmeasured), is about 10^5 above it. So 1e-12 sits in the middle of a 13-order gap: it passes reordering noise and fails any stream, seed or algorithm difference. The author's reason for rejecting a relative 1e-12 is a worst-case argument, not an observation: relative 1e-12 (1.4e-18 to 7.3e-18 at these b̂) would still have cleared the recorded noise by about 2×10^2 to 4×10^3. Absolute is the better choice for its margin and the A2 precedent.
+
+## 6. Judgment call: the statistical form of G-INT-S2EQ is record-only
+
+Acceptable, with one wording change. The exact form (absolute 1e-12 on the recorded per-run b̂/SE of k = 4, 5, 9–12) is by far the more sensitive test (7.9e-8 B against 0.67–14.85 B for the statistical form) and, by D:402/D:433, it runs on the same path the new-seed runs will use (truth-only if G-CODE finds the planner call-order independent, A2 order with the log phase otherwise). If both forms ran on the same path, an exact pass makes Δ = 0, so a statistical miss cannot occur; a recorded one then means the comparison code is wrong and must take the deterministic-integrity route (fix, review, rerun), not be filed as "record and report". If they ran on different paths (exact on A2 order, statistical on truth-only), a miss says only that truth-only ≠ A2 order — what G-CODE has already ruled on, and a path the registered runs do not use — so a stop with `결정 필요` would add a manual gate without detection power. Stop-on-miss is therefore not needed; what is needed is that `gint_s2eq.json` names the path of each form and of the new-seed runs, so the two cases can be told apart (R4-NOTE-3 a).
+
+## 7. Key renames and pins
+
+- **Renames:** a search of `docs/pm/research/track-a/` and `docs/pm/research/prospective-2027/` for `song_decisions.pending`, `adoption_candidates_option_3`, `value_option_3`, `run_index_map_recommended_plan` (also `recommended_plan`, `_option_3"`) finds only the rename record itself (J:3033). The RS-03 files contain no A2b key path. No stale reference.
+- **Pins:** all 34 `sources_read_sha256` entries recompute to the pinned bytes (no T7 path in the list), including `docs/decisions.md` (`923dbfcf…`) and the poster final review (`d9df02f6…`); the cited decision lines still read as cited (D186 :325, D187 :327, D190 :335, D191 :337–339, D192 :340). `documents.sizing.sha256` 3/3 and the 13 hashes in `TAB_R3.sizing.evidence` 13/13. **Mismatches: none.**
+
+## 8. New findings (all NOTE; none blocks)
+
+- **R4-NOTE-1 — cosmetic leftovers in the draft.** J:1062 (`rehearsal_population.recommendation.reason`) still says "phase 1 about 1.55 h" (1.45 h since v2.3: J:1013, D:292); J:3109 "public schema with the three new public types" (five new items 10–14, two of them the new `integrity_record` type: D:376, D:416); J:3125 "options 2/3" for `ledger_a2b.py` (decision 1 option 2 only); the stage name `tab_rerun_or_tab_r3` (J:2379) and the seal key `A2b-S1_tab_r3_results_sha256` (J:2783) still carry the TAB-R3 name although only the TAB re-run exists. *Fix:* correct at the next edit or at G-REG; no registered value changes.
+- **R4-NOTE-2 — G-REG checklist.** `rehearsal_population_allowed` and `r3_status_allowed` (J:2699–2712) still list the unselected values although the decided rule pins `NEW_DEV_150` and `DIAGNOSTIC_ONLY:DECIDED`, and no TAB-R3/S5-X-R3 code will exist (D192 2 ③). *Fix:* at G-REG narrow both lists to the single D192 value, or test that the pinned leaf equals it; add this review to `sources_read_sha256` (`added_in_v2_3` lists only round 3) and re-pin the live files `docs/decisions.md` and the poster review, as J:2588 already says.
+- **R4-NOTE-3 — G-INT-S2EQ failure semantics (G-CODE/G-REG).** (a) Record in `gint_s2eq.json` the path each form ran on and the path the new-seed runs use (truth-only vs A2 order with the log phase); on the same path a statistical miss next to an exact pass is a defect in the comparison (§6). (b) State the scope of an unresolved G-INT-S2EQ failure: D:426/J:2563 read it as a common-stage `FAILED_INTEGRITY`, which would also void a candidate that needs no S-2′ (R1_0×R2_1); the R3-only rule voids only B2 rows, and the same scoping to tuples with an R1_a/R1_b component is worth considering. (c) If only the PM-extracted k = 9–12 values mismatch while k = 4, 5 (two independent records) match, compare with the sealed A2-S2 output before treating it as a code defect (D:541 already lists the extraction as unverified).
+- **R4-NOTE-4 — absolute 1e-12 is bit equality at ESS scale.** A2's own G-INT compares `ess_all_e0_candidate/reference` (≈ 9.1e3 and 9.7e3; `S3_gint` compared lists, `ope_sealed.py:50–51`); the spacing of doubles there is 1.8e-12, so "≤ 1e-12" means identical bits. That held in A2 because the code was the same; if G-INT-EVAL's compared keys include them (A2's list does), the copied evaluator must keep the reduction order. *Fix:* state in the G-CODE brief that ESS-scale keys and counts are compared bit-exactly (the listed 25-row-vs-A2 bit-identity test is the control) and that selected λ/M, including `inf`, are compared by equality (A2's `_same` would reject `inf − inf`).
+- **R4-NOTE-5 — tie the two evaluator modes together.** G-INT-EVAL proves the 12-row S6 mode; the registered rehearsal runs the 25-row mode. The G-CODE list has "25-row evaluator bit-identical to A2 on the 12-pair part" and "S6 mode computes only the 12 rows" (D:386) but not "S6-mode output ≡ the 12-pair part of the 25-row mode on the same synthetic ledger". *Fix:* add that test, and one for the row type no S6 check can reach: the λ-fixed row equals the R2-1 row whenever the selection returns the same λ.
+
+## Verdict
+
+VERDICT: PASS_WITH_NOTES
+
+0 BLOCKER, 0 MAJOR, 0 MINOR. The six round-3 items are CLOSED (two as not applicable under D192), D192 1–7 are fixed consistently in the design and the draft with the unchosen branches kept and marked, the hard constraints hold, the tolerance form matches the A2 code, the cost arithmetic is right, and all pins recompute. R4-NOTE-1..5 ride along: 1–2 are cosmetic edits for v2.4/G-REG, 3–5 go into the G-CODE brief. Implementation **may start** now per D192 6 ① (new worktree; small code under decision 2 ③). The Codex re-confirmation (after 2026-11-02 18:57 KST) and G-CODE remain required regardless, as do G-REG and G-SIGN before any registered stage runs.

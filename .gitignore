@@ -41,3 +41,4 @@ apps/observer/live_snapshots/
 apps/observer/web/offline/media/
 apps/observer/web/**/*.mp4
 apps/observer/web/**/*.mp4.part
+docs/capstone/out/*.zip

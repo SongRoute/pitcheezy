@@ -3,6 +3,17 @@
 **2026-10-17 postseason 6경기 회고 자료:** [별도 계보·노출 기록](postseason-six-lineage-2026-10-17.md)의 10월 12~15일 `L` 경기 6개는 결과를 보기 전 고정해 수집했다. 1,665 원천행 → 1,659 품질 수락(라벨 미매핑 6 제외) → 1,323 T 7-leaf 채점 + 선행 품질 미확인 336 보류. 같은 채점행의 서술 평균 NLL/Brier는 T `1.5735607976880972`/`0.7517152440398711`, 고정 FIT 주변분포 `1.674090242525202`/`0.7868804155540476`이다. 독립 검토는 저장 결과의 분모·7확률·산술을 확인했지만 원천 라벨·모델·프로필을 다시 계산하지 않았다. 모델 학습 cutoff는 10월 11일이나 최종 모델·프로필은 경기 후 생성됐고 이전 노출·원천 도착 시각은 미확인이다. **EXPOSED DEVELOPMENT 정정 회고**이며 전향·독립 TEST·우월성·선택·정책 주장이 아니다. 기존 R holdout 행과 봉인 증거는 그대로다.
 
 **2026-10-17 fullseason T source-only 후속:** [capture shadow handoff](../service/fullseason-capture-shadow-2026-10-17.md)는 노출 개발 경기의 bounded forecast 저장·identity guard 집계와 생성 전용 FF 평가기를 연결한다. 전향적 미노출 경기의 paired 성능·동일 조건 Step 5 비교는 아직 없다. 아래 이력의 다른 모델/경기 평가와 합산하지 않는다.
+## 현재 진입점 — 2026-10-18 문서 동기화
+
+아래는 공개 상황판과 고정 서술 문서의 상태·한계를 연결한 안내다. 새 자료 열람·성능 재계산·모델 선택·승격·운영 교체 승인이 아니다. 10/12 이하 블록의 당시 상태·수치는 이력으로 보존한다.
+
+- **현재 작업·소유권:** [상황판 #35](https://github.com/SongRoute/pitcheezy/issues/35)와 [공동 작업큐 #37](https://github.com/SongRoute/pitcheezy/issues/37)의 최신 전체 댓글을 함께 읽는다. 유효 CLAIM·DONE·RELEASE 이력이 현재 점유를 정하며, 아래 완료 보고가 다른 세션의 파일·자원 사용권을 주지 않는다.
+- **Fullseason OOF·T_FINAL:** 고정 문서 `5f3f06426edb97ee8b60dc72886641c158c5fb41:docs/pm/research/fullseason-2026-10-16.md`는 OOF·단일 pooled 보정·최종 학습과 산출물 회수의 독립 수용을 기록한다. 자료는 **2026 EXPOSED DEVELOPMENT**이며 사후 재구성·조리법 조건부 증거다. 보정 후/최종 가중치의 독립 성능평가·운영 승격 완료를 뜻하지 않는다. 문서 commit과 실행 commit은 구분한다.
+- **7-leaf shadow와 서비스 연결:** `bf2050a17b7a6743ccff60a8f9be6763d3c39021:docs/pm/service/fullseason-shadow-2026-10-16.md`는 제한된 encoded 입력의 CPU 구현 동치, 후속 `7407eccc6c2ca938c3ca79941d8a708a7a869c0e:docs/pm/service/fullseason-capture-shadow-2026-10-17.md`는 노출 개발 자료의 수신·예측 원장 및 별도 앱의 합성 연결 증거를 기록한다. 첫 로컬 수신 전 기록은 실제 투구 전 예측의 증명이 아니며, 연구/앱 계보 전체 통합·실호스트·실경기 성능·기존10outcome/WE 대체는 별도 미완이다.
+- **K2:** [#35의 검증 완료 보고](https://github.com/SongRoute/pitcheezy/issues/35)는 산출물 회수·비교와 독립 집계 수용을 보고한다. EXPOSED DEVELOPMENT 범위이며 새 fit·재보정·선택·승격으로 확대하지 않는다. 이 진입점은 보드 보고를 연결할 뿐 결과 payload를 재검증하지 않았고, 보드의 코드 commit을 결과 직접 증거로 취급하지 않는다.
+- **RS-01:** [등록 v2 조건부 검토 보고](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6248795531)는 소유권을 REVIEW로 유지한다. [AGG-01 완료](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6248795312)는 별도 준비 집계이며 전향 평가 실행 완료가 아니다. REGISTRATION-EXEC에는 CL-04 경기 목록·대체 1차 비교 사전 선언·메타데이터 전용 드라이런·메모리 하한 확정이 남았다. 전향적 자료 역할은 실제 고정·수신·실행 조건에 따라 구분하며, 기존 EXPOSED DEVELOPMENT를 독립 TEST로 바꾸지 않는다.
+
+위 고정 git 문서들은 이 checkout에 없는 별도 계보이므로 `git show <commit>:<path>`로 읽는다. 연결된 원자료·모델·결과 payload 접근은 각 작업 등록·검토 범위가 필요하다. 기존 과학/운영 게이트와 다른 담당자의 RS-01·서비스 파일 소유권은 그대로다.
 
 **노출 장부(2026-10-12):** 849809 RC 저장소 tee 재생을 시퀀스 모델 그림자(SEQ-001 N1 3-seed + CAL2, 코드 a779fbb, 설정 개정 2)로 1회 읽는다. 자료 역할 SERVICE_EXPOSED_DEV(8772 드라이런에서 노출) + 모델 기준 PROSPECTIVE_SHADOW(코드·모델·보정기·인코더·프로필 `42f0ce33…e272`가 첫 투구 2026-10-12T00:00Z 전에 고정). 그림자 예측 기록·기술 통계·Step 5 849809 원장 대비 짝지은 기술 CI, fit·튜닝·선택·OPE 없음, 게이트 P 재실행 없음. 등록 `20261012-shadow-849809/seq/REGISTRATION-849809-SECTION9.md`.
 
@@ -109,3 +120,5 @@
 - 기존논문 재현 B1/B2·봉인모델/결과·OPE접근경계·이전우발열람사고를 보존한다. 새권한으로 과거독립성이 회복되지 않는다. [작업 전 상태](history-2026-10-09-before-ws-adaptation.md).
 
 [이번 결과/검토](/Users/song/Projects/pitcheezy-pm-jobs/20261009-ws-adaptation-contract-001/REPORT.md).
+
+- **노출 장부(2026-10-20 봉인):** 2026 월드시리즈 치른 경기(game_pk는 경기마다 RS-01 STORE-BACKUPS.jsonl로 확정)를 RS-02(연구 G0-global, EXP-P11-001 1차 혼합, G0-RESEARCH-FROZEN-v1 c839dbf7…)의 사후 as-of 재생 채점에 쓴다. RS-01 저장소 백업 사본만 읽고 새 수집 없음. 비교 기준 = aux.pkl 상황 빈도(온도 1.0303). 10종 NLL 1차, 2026-11-06T00Z 이후 1회 열람. fit·튜닝·선택·OPE·서빙 없음. 서비스 모델·추천 정책에 대한 주장 아님. 봉인본 sha 38b528da…, v1 7ee03c24…, 독립 검토 REVIEW-SEAL-001 03e44644…(PASS). Song 결정 D179.
