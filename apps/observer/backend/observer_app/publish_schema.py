@@ -145,6 +145,8 @@ def problems(instance, schema, pointer=''):
 # from the builder code, not from data: (path, types the field can take, True if the key may be absent).
 #   jersey          game_history.jersey: ``str(number)`` from the game's boxscore, or None
 #   venue           game_history card: ``(venue or {}).get('name')``: a string or None
+#   setup           SetupEstimates._view: no plate_feet -> null coordinates/band; unavailable -> string reason
+#                   game_history.build copies those nullable coordinates into actual.catcher_setup
 #   context stats   game_history context: every stat is None while the context is incomplete or the player is unknown;
 #                   earned_runs is also None when an earned-run attribution is unknown
 #   batting_order   set when the plate appearance's first pitch is seen (absent before); an integer or None
@@ -156,13 +158,19 @@ CONTRACT_TYPES = {
     # RC adds feature/viewer metadata; already published v1 files without it remain valid.
     'health': [(('game_checks',), ('object',), True),
                (('game_checks', '*', 'file_sequence'), ('integer', 'null'), False)],
-    'games': [(('features',), ('object',), True)],
+    'games': [(('features',), ('object',), True),
+              (('games', '*', 'venue'), ('string', 'null'), False)],
+    'setup': [(('pitches', '*', 'plate_x_feet'), ('number', 'null'), False),
+              (('pitches', '*', 'x_band'), ('string', 'null'), False),
+              (('pitches', '*', 'unavailable_reason'), ('string', 'null'), False)],
     'game': [(('features',), ('object',), True), (('viewer',), ('object',), True),
              # The synthetic fixture has an unsupported next pitch (nulls); a supported ARM-B candidate
              # uses a probability and a target point, just like the saved past-pitch recommendation.
              (('next', 'rec', 'candidates', '*', 'detail', 'probability'), ('number', 'null'), False),
              (('next', 'rec', 'candidates', '*', 'target'), ('object', 'null'), False),
              (('game', 'venue'), ('string', 'null'), False),
+             (('pitches', '*', 'actual', 'catcher_setup', 'plate_x_feet'), ('number', 'null'), False),
+             (('pitches', '*', 'actual', 'catcher_setup', 'x_band'), ('string', 'null'), False),
              *(((*where, role, 'jersey'), ('string', 'null'), False) for where in PEOPLE for role in ('batter', 'pitcher')),
              (('current', 'context', 'batter', '*'), ('null',), False), (('current', 'context', 'pitcher', '*'), ('null',), False),
              (('current', 'context', 'pitcher', 'earned_runs'), ('integer', 'null'), False),

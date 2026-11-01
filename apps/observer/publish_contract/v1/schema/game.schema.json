@@ -1539,13 +1539,19 @@
        "catcher_setup": {
         "properties": {
          "plate_x_feet": {
-          "type": "number"
+          "type": [
+           "number",
+           "null"
+          ]
          },
          "status": {
           "type": "string"
          },
          "x_band": {
-          "type": "string"
+          "type": [
+           "string",
+           "null"
+          ]
          }
         },
         "required": [

@@ -218,7 +218,10 @@
       "type": "string"
      },
      "venue": {
-      "type": "null"
+      "type": [
+       "string",
+       "null"
+      ]
      }
     },
     "required": [

@@ -1354,6 +1354,52 @@ def test_the_schemas_accept_the_shapes_the_builders_can_produce_beyond_the_fixtu
                                                                     'c': {'type': 'array', 'items': {'type': 'object', 'properties': {'y': {'type': 'number'}}}}}}
 
 
+def test_archive_schemas_accept_unlocated_setups_and_named_venue(world):
+    """Exercise the writers' unavailable/uncalibrated branches, without widening unrelated types."""
+    import copy
+    import gzip
+
+    path = world.feeds/f'{ARCHIVE_GAME}_final.json.gz'
+    with gzip.open(path, 'rt') as handle:
+        feed = json.load(handle)
+    feed['gameData']['venue'] = {'name': 'Synthetic Ballpark'}
+    with gzip.open(path, 'wt') as handle:
+        json.dump(feed, handle)
+    estimates = [publish_fixture.setup_fixture.estimate(1, 1, reason='glove_not_visible'),
+                 publish_fixture.setup_fixture.estimate(1, 2, deepest='image_pixels'),
+                 publish_fixture.setup_fixture.estimate(2, 1, .1)]
+    world.write_setup([row | {'pitch_id': f'{ARCHIVE_GAME}:'+row['pitch_id'].split(':', 1)[1]} for row in estimates])
+    world.start()
+    world.cycle()
+    bodies = {'game': world.read(ARCHIVE_FILE), 'games': world.read(f'v1/games/{ARCHIVE_DATE}.json'),
+              'setup': world.read(f'v1/setup/{ARCHIVE_GAME}.json')}
+    schemas = {kind: json.loads((CONTRACT_DIR/f'schema/{kind}.schema.json').read_text()) for kind in bodies}
+    assert bodies['games']['games'][0]['venue'] == 'Synthetic Ballpark'
+    setups = bodies['setup']['pitches']
+    assert [p['status'] for p in setups] == ['unavailable', 'estimated', 'estimated']
+    assert [p['plate_x_feet'] for p in setups] == [None, None, .1]
+    assert [p['x_band'] for p in setups] == [None, None, 'middle']
+    assert setups[0]['unavailable_reason'] == 'glove_not_visible'
+    assert bodies['game']['pitches'][0]['actual']['catcher_setup'] == {
+        'status': 'unavailable', 'x_band': None, 'plate_x_feet': None}
+    for kind, body in bodies.items():
+        assert publish_schema.problems(body, schemas[kind]) == []
+    for kind, location, key, bad in (
+        ('games', ('games', 0), 'venue', 5),
+        ('setup', ('pitches', 0), 'unavailable_reason', False),
+        ('setup', ('pitches', 0), 'plate_x_feet', 'unknown'),
+        ('setup', ('pitches', 0), 'x_band', 5),
+        ('game', ('pitches', 0, 'actual', 'catcher_setup'), 'plate_x_feet', 'unknown'),
+        ('game', ('pitches', 0, 'actual', 'catcher_setup'), 'x_band', 5),
+    ):
+        broken = copy.deepcopy(bodies[kind])
+        target = broken
+        for component in location:
+            target = target[component]
+        target[key] = bad
+        assert publish_schema.problems(broken, schemas[kind]), (kind, key)
+
+
 def test_candidate_schema_covers_both_current_and_recorded_values(tmp_path):
     bodies = dict(publish_fixture.collect(tmp_path)['game'])
     rich = bodies['game-rich-candidate.json']

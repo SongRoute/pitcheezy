@@ -85,7 +85,10 @@
       "type": "integer"
      },
      "plate_x_feet": {
-      "type": "number"
+      "type": [
+       "number",
+       "null"
+      ]
      },
      "review_status": {
       "type": "string"
@@ -94,10 +97,16 @@
       "type": "string"
      },
      "unavailable_reason": {
-      "type": "null"
+      "type": [
+       "string",
+       "null"
+      ]
      },
      "x_band": {
-      "type": "string"
+      "type": [
+       "string",
+       "null"
+      ]
      }
     },
     "required": [
