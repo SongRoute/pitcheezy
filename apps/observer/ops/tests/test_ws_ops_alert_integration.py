@@ -84,6 +84,7 @@ class Rig:
         self.profile_log = tmp/'RESULTS.log'
         self.fake = wa.FakeNotifier()
         self.wcfg = wa.load_config(None, ops_status=str(self.status_path), alert_dir=str(tmp/'alert'), env={})
+        self.wcfg['schedule'] = []  # Only the synthetic ops status may supply games.
         self.wcfg['paths'].update(profile_log=str(self.profile_log), disk_paths=[str(tmp)])
         assert self.wcfg['paths']['out_dir'] is None and self.wcfg['cli_out'] is False
         self.thread, self.result = None, {}
@@ -536,21 +537,25 @@ def test_cli_start_supervisor_really_runs_then_cli_stop(rig, monkeypatch):
     table.write_text('[]')
     monkeypatch.setenv(ws.FAKE_TABLE_ENV, str(table))  # the child cannot see this test's monkeypatched process table
     rig.control(interval=0.1, live=True)
-    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
-                    '--schedule-file', str(rig.schedule)]) == 0
-    sup = json.loads((rig.run_dir/'supervisor.identity.json').read_text())
-    assert ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
-    status = rig.until(running_with_health)
-    assert status['supervisor']['pid'] == sup['pid'] and status['publisher']['fake_process_table'] is True
-    rig.watch()
-    assert rig.fired() == {} and rig.notices() == [f'watch_start:{PK}']
-    assert ws.main(['--config', str(rig.cfg_path), 'stop', '--date', rig.date]) == 0
-    status = rig.until(lambda s: s['state'] == 'stopped')
-    assert status['state_reason'] == 'operator_stop'
-    end = time.time()+10
-    while time.time() < end and ws.ps_identity(sup['pid']):
-        time.sleep(0.1)
-    assert not ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
+    sup = None
+    try:
+        assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                        '--schedule-file', str(rig.schedule)]) == 0
+        sup = json.loads((rig.run_dir/'supervisor.identity.json').read_text())
+        assert ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
+        status = rig.until(running_with_health)
+        assert status['supervisor']['pid'] == sup['pid'] and status['publisher']['fake_process_table'] is True
+        rig.watch()
+        assert rig.fired() == {} and rig.notices() == [f'watch_start:{PK}']
+    finally:
+        assert ws.main(['--config', str(rig.cfg_path), 'stop', '--date', rig.date]) == 0
+        status = rig.until(lambda s: s['state'] == 'stopped')
+        assert status['state_reason'] == 'operator_stop'
+        if sup is not None:
+            end = time.time()+10
+            while time.time() < end and ws.ps_identity(sup['pid']):
+                time.sleep(0.1)
+            assert not ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
 
 
 def test_cli_start_reports_a_supervisor_that_dies_at_once(rig, monkeypatch, capsys):
