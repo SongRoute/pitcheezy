@@ -1,8 +1,8 @@
 // Smoke test of the replayed mid-game moments of World Series game 4 (fixtures/publish-ws-moments/849803, README there) on the PUBLIC
 // bundle: for every moment SELECTION.json lists, `node tests/ui-preview.mjs --ws-moment <label>` is started and the screen must show the
 // pending pitch's state as the moment body says it — the stage headed '다음 공 추천' with its N구 and exactly the recorded candidates (the
-// screen-reader heading reads '다음 공 추천 · N구'), or 추천 없음 with the A2 teaser where the body carries next.reference — with the
-// win-probability entry carrying no number (the body's slot reads unavailable: 미측정), no page error and no 갱신 지연 notice right
+// visible UI-1026 heading carries N구 and the sr-only heading reads 추천), or 추천 없음 with the A2 teaser where the body carries next.reference — with the
+// win-probability sheet carrying no number (현재 승리확률 정보 없음), no page error and no 갱신 지연 notice right
 // after opening (the now clock). Read-only. Needs dist-public (npm run build:public) and Playwright.
 //   node tests/ws-moments-smoke.mjs
 import { spawn } from 'node:child_process';
@@ -50,20 +50,21 @@ try {
       const stage = page.locator('.sv-stage');
       const stageLabel = await stage.getAttribute('aria-label');
       const srHeading = squash(await stage.locator('h2.sr-only').first().innerText().catch(() => ''));
-      const small = squash(await page.locator('.sv-recommend-heading small').first().innerText().catch(() => ''));
-      const summaryLabel = squash(await page.locator('.sv-state-head .sv-summary-label').first().innerText().catch(() => ''));
-      const rows = (await page.locator('.sv-stage .sv-rec-row').allInnerTexts()).map(squash);
-      const stateMsg = squash(await page.locator('.sv-state-msg').first().innerText().catch(() => ''));
-      const live = squash(await page.locator('button.sv-live').first().innerText().catch(() => ''));
+      const recHeading = squash(await page.locator('.sv-rec-head h2').innerText());
+      const pitchKey = await page.locator('.sv-state').getAttribute('data-pitch');
+      const rows = (await page.locator('.sv-stage .sv-reclist:not(.empty) .sv-rec-cell').allInnerTexts()).map(squash);
+      const stateMsg = squash(await page.locator('.sv-state-msg').first().textContent().catch(() => ''));
+      const live = squash(await page.locator('.sv-hd-status').first().innerText().catch(() => ''));
       const teaser = await page.locator('.sv-ref-teaser').count();
-      const notice = squash(await page.locator('.sv-notice').first().innerText().catch(() => ''));
+      const notice = live;
       check(body.source?.kind === 'live' && typeof next.pitch_key === 'string', `${label}: a live body with a pending pitch`, next.pitch_key);
       check(live.length > 0, `${label}: the live indicator is drawn`, live);
-      check(stageLabel === '다음 공 추천' && small === `${expectedN}구` && summaryLabel.endsWith(`${expectedN}구`), `${label}: the stage is headed 다음 공 추천 with ${expectedN}구`, `${stageLabel} / ${small} / ${summaryLabel}`);
+      check(stageLabel === '다음 공 추천' && recHeading.endsWith(`${expectedN}구`) && pitchKey === next.pitch_key, `${label}: the stage is headed 다음 공 추천 with ${expectedN}구`, `${stageLabel} / ${recHeading} / ${pitchKey}`);
       if (disp.state === 'recommended') {
-        check(srHeading.includes(`다음 공 추천 · ${expectedN}구`), `${label}: screen-reader heading '다음 공 추천 · ${expectedN}구'`, srHeading);
+        check(srHeading === '추천', `${label}: UI-1026 screen-reader heading 추천 (N구 checked above)`, srHeading);
         check(rows.length === candidates.length && candidates.length > 0, `${label}: one row per recorded candidate (${candidates.length})`, `${rows.length} rows`);
-        check(candidates.every((c) => rows.some((r) => r.includes(c.pitch_label))), `${label}: every recorded pitch label is on screen`, rows.join(' | '));
+        const names = await page.locator('.sv-reclist:not(.empty) .sv-rec-type').allTextContents();
+        check(JSON.stringify(names) === JSON.stringify(candidates.map(c => c.pitch_label)), `${label}: exact recorded candidate order`, names.join(' | '));
         check(teaser === 0, `${label}: no A2 teaser beside a recommendation`);
       } else {
         check(rows.length === 0, `${label}: no candidate rows without a recommendation`, `${rows.length} rows`);
@@ -80,10 +81,13 @@ try {
           await sheet.locator('.sv-sheet-head button', { hasText: '닫기' }).click();
         }
       }
-      const win = page.locator('.sv-mobile-we');
-      const winText = (await win.count()) ? squash(await win.first().innerText()) : null;
-      check(winText !== null && winText.includes('홈팀 승리확률') && !/\d+%/.test(winText) && (body.win_expectancy?.status !== 'unavailable' || winText.includes('미측정')),
-        `${label}: the win-probability entry carries no number (미측정 where the slot is unavailable)`, winText ?? 'no entry');
+      // UI-1026: 기록 → 승리확률; unavailable remains text only.
+      await page.locator('nav.sv-bottom-nav button', { hasText: '기록' }).click();
+      await page.locator('.sv-sheet').getByRole('button', { name: '승리확률', exact: true }).click();
+      const winText = squash(await page.locator('.sv-sheet-body').innerText());
+      check(body.win_expectancy?.status !== 'available' && winText.includes('현재 승리확률 정보 없음') && !/\d+%/.test(winText)
+        && await page.locator('.sv-we-bars').count() === 0, `${label}: unavailable win probability has no number`, winText);
+      await page.locator('.sv-sheet').getByRole('button', { name: '닫기', exact: true }).click();
       check(!notice.includes('갱신 지연'), `${label}: no 갱신 지연 right after opening (now clock)`, notice);
       check(errors.length === 0, `${label}: no page errors`, errors.join('; '));
       await ctx.close();
