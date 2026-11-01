@@ -30,8 +30,11 @@ def windows():
 
 class Contract(unittest.TestCase):
     def test_draft_stops_before_grant_or_payload(self):
-        with patch.object(run,'sha',side_effect=AssertionError('no hash allowed')):
-            with self.assertRaisesRegex(ValueError,'DRAFT'): run.gates(CONFIG,Path('/absent'), 'absent','C-july-s0')
+        cfg=json.loads(CONFIG.read_text());cfg.update(status='DRAFT',execute=False)
+        with tempfile.TemporaryDirectory(dir=TMP) as temp:
+            path=Path(temp)/'draft.json';path.write_text(json.dumps(cfg))
+            with patch.object(run,'sha',side_effect=AssertionError('no hash allowed')):
+                with self.assertRaisesRegex(ValueError,'DRAFT'): run.gates(path,Path('/absent'), 'absent','C-july-s0')
 
     def test_recipe_only_changes_registered_arm_identity(self):
         cfg=json.loads(CONFIG.read_text())

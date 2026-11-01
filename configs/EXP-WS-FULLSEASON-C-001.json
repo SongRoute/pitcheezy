@@ -957,7 +957,7 @@
   },
   "source_manifest": {
     "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261101-fullseason-c/sources/source-closure.json",
-    "sha256": "d76c03a8a57be2b22091c936305e826310536cbd39f7d48e83e7560f31c7eee3"
+    "sha256": "1836fabce6c6574790c967f0c3019ea632c647f1a2947b23e81bb60dc8a8e056"
   },
   "input_metadata": {
     "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261101-fullseason-c/sources/input-metadata.json",
@@ -1015,7 +1015,7 @@
     ],
     "quality_keys_sha256": "e4479555fa3136477a181852ee48425269e346677f2bee107e8c87d5bf122085",
     "scored_keys_sha256": null,
-    "scored_keys_binding": "verify old pinned score_rows keys/status/labels before C inference; no inferred digest",
+    "scored_keys_binding": "old artifact integrity/census before C inference; exact paired keys/status/labels before comparison metrics; no inferred digest",
     "nll_clip": 1e-12,
     "simplex_atol": 1e-10,
     "leaf_order": [
