@@ -2,6 +2,8 @@
 
 책임: 통합 PM. 변경은 양쪽 영향 검토 후 기록 작업자 한 명이 반영한다.
 
+현재 유지보수·전시 작업에는 [10/31 인계 §5](../handoffs/CODEX-resume-2026-10-31.md)의 **2026 자료 학습·튜닝·모델 선택 금지**가 적용된다. 아래 10/9 허용은 해당 WS 적응 연구의 권한 이력이며 이번 작업의 실행 허가가 아니다. 기존 등록·봉인 계약은 보존한다.
+
 - 연구 비교 기준 G15 mix, 서비스 G0 유지. 예측 개선과 추천 정책 우위는 별도다. D131 NO_EVIDENCE_OF_IMPROVEMENT, D155 WITHIN_SEARCH_NOISE를 임의로 바꾸지 않는다.
 - **2026-10-09 Song 승인:** 월드시리즈 서비스 적응 연구는2026자료 학습·튜닝·모델 선택을 허용한다. [현행 권한](research/ws-adaptation/authorization.md) · [시간·역할 계약](research/ws-adaptation/data-roles.md) · [A/B/C 비교안](research/ws-adaptation/methods.md). 실행 전 exact자료/역할/노출/분할/예산·독립 검토가 필요하며 권한 자체를 다시 묻지 않는다. 기존 논문 재현·B1/B2·봉인 결과와 완료 OPE 추가 실행/열람 경계는 보존한다. 현재는 계약 갱신만 수행했고 원시2026·OPE 접근/새fit는 없다.
 - configs, source commit, seeds, data version, 분할, 비용/예산, 새 attempt 경로와 결과 해시를 보존한다. 반복 노출 DEV 결과를 새로운 독립 검증으로 부르지 않는다. 봉인 산출물은 덮어쓰지 않는다.
