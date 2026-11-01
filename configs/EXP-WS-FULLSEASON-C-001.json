@@ -1,8 +1,8 @@
 {
   "format": "ws_fullseason_c_v1",
   "id": "EXP-WS-FULLSEASON-C-001",
-  "status": "DRAFT",
-  "execute": false,
+  "status": "REGISTERED",
+  "execute": true,
   "author": "research_history",
   "source_base": "9f7df2c44522e5da40a1779b6dc6c84cf8888d2f",
   "data_role": "2026 EXPOSED DEVELOPMENT",
@@ -834,73 +834,73 @@
       "id": "C-july-s0",
       "fold": "july",
       "seed": 0,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-july-s1",
       "fold": "july",
       "seed": 1,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-july-s2",
       "fold": "july",
       "seed": 2,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-august-s0",
       "fold": "august",
       "seed": 0,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-august-s1",
       "fold": "august",
       "seed": 1,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-august-s2",
       "fold": "august",
       "seed": 2,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-september-s0",
       "fold": "september",
       "seed": 0,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-september-s1",
       "fold": "september",
       "seed": 1,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-september-s2",
       "fold": "september",
       "seed": 2,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-final-s0",
       "fold": "final",
       "seed": 0,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-final-s1",
       "fold": "final",
       "seed": 1,
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "C-final-s2",
       "fold": "final",
       "seed": 2,
-      "enabled": false
+      "enabled": true
     }
   ],
   "fit_ceiling": 12,
@@ -971,9 +971,9 @@
     "Final refit includes OOF labels and is not evaluated using those OOF scores."
   ],
   "phases": {
-    "calibrate": false,
-    "compare_oof": false,
-    "compare_final": false
+    "calibrate": true,
+    "compare_oof": true,
+    "compare_final": true
   },
   "final_comparison": {
     "games": [
