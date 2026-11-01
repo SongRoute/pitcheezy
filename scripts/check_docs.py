@@ -47,7 +47,7 @@ def links(source: str):
     for match in re.finditer(r'^\s{0,3}\[([^\]]+)\]:\s*(?:<([^>]+)>|(\S+))', text, re.M):
         definitions.setdefault(' '.join(match[1].lower().split()), match[2] or match[3])
     # Parentheses in destinations must be angle-wrapped or escaped.
-    for match in re.finditer(r'\[([^\]\n]+)\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()])+))(?:\s+["\'][^\n]*?["\'])?\s*\)', text):
+    for match in re.finditer(r'\[([^\]\n]+)\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()\\])+))(?:\s+["\'][^\n]*?["\'])?\s*\)', text):
         if (len(text[:match.start()]) - len(text[:match.start()].rstrip('\\'))) % 2:
             continue
         yield match[1], re.sub(r'\\([() ])', r'\1', match[2] or match[3])

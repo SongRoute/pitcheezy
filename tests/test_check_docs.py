@@ -88,3 +88,17 @@ def test_check_and_graph_keep_link_order_and_distinct_error_policies(tmp_path, m
             ('again', 'sub/target.md', True), ('space', '한 글.md', True))]
     assert result['errors'] == [
         {'source': 'guide.md', 'destination': 'https://[broken', 'error': 'malformed destination'}]
+
+
+def test_unterminated_backslash_destination_is_bounded():
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    code = r'''
+from scripts.check_docs import links
+assert list(links('[a](' + chr(92) * 40)) == []
+assert list(links(r'[escaped](path\(name\).md)')) == [('escaped', 'path(name).md')]
+'''
+    subprocess.run([sys.executable, '-B', '-c', code], cwd=Path(__file__).resolve().parents[1],
+                   timeout=2, check=True, capture_output=True, text=True)
