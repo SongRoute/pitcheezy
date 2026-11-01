@@ -407,8 +407,8 @@ export function normalizeDetail(raw: Raw): Detail {
   let next = raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null;
   // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
   if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
-  // win expectancy: a usable home-perspective value → available; the slot present but unusable/unavailable → unavailable (the screen says
-  // 미측정); no slot in the answer (published replays) → null, and the screen shows no entry at all
+  // win expectancy: a usable home-perspective value → available; a present but unusable slot → unavailable
+  // (the sheet says 현재 승리확률 정보 없음); an absent slot in published replays → null and no entry
   const we = raw.win_expectancy;
   const weAvailable = we?.status === 'available' && we.perspective === 'home' && num(we.home_probability) !== null && we.home_probability >= 0 && we.home_probability <= 1;
   return { win_expectancy: weAvailable ? { status: 'available', home_probability: we.home_probability } : we && typeof we === 'object' && !Array.isArray(we) ? { status: 'unavailable', home_probability: null } : null, session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
