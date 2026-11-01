@@ -6,7 +6,7 @@
 
 방향·역할·일정의 근거는 [10/31 인계 §2·§5](../handoffs/CODEX-resume-2026-10-31.md), 기존 빌드의 사실·명령은 [전시 빌드 기록](service/exhibition-build-2026-10-31.md)이다. 저장된 관측과 새 작업의 완료 주장을 구분한다. 열린 PR은 병합·배포 완료가 아니다.
 
-[11/1 유지보수 인계](../handoffs/CODEX-maintenance-2026-11-01.md)에서 후속 PR 의존 순서와 실제 통합 검사 결과를 확인한다.
+[11/1 PR 통합 기록](../handoffs/CODEX-integration-2026-11-01.md)에서 PR44~64 병합과 검사 결과를 확인한다. [이전 유지보수 인계](../handoffs/CODEX-maintenance-2026-11-01.md)는 병합 전 기록이다.
 
 ## 지금 할 일별 진입
 
@@ -23,6 +23,6 @@
 
 ## 역할과 이력
 
-Song이 방향을 결정하고 Codex가 배정된 구현·검사·PR을 수행한다. Opus 검토·통합 절차는 [관리 세션 안내](../handoffs/OPUS-github-manager-prompt-2026-10-31.md)에 있다. 실제 활성 소유권은 작업큐에서 확인하며, 문서만으로 실행 중 세션을 추정하지 않는다.
+Song이 방향을 결정하고 Codex가 배정된 구현·검사·PR을 수행한다. 이번 PR 통합은 11/1 Song의 직접 요청으로 Codex가 수행했다. 독립 검토·검사 게이트는 유지했으며 [이전 관리 세션 안내](../handoffs/OPUS-github-manager-prompt-2026-10-31.md)의 담당 지정은 이번 작업에 한해 대체됐다. 실제 활성 소유권은 작업큐에서 확인하며, 문서만으로 실행 중 세션을 추정하지 않는다.
 
 이전 3PM·모델·슬롯 표는 [고정 원문](../maintenance/instruction-history.md)으로 보존한다. 현재 절차와 함께 반복해서 로딩하지 않는다. 새 작업과 결과는 커밋·검사 증거로 연결하고, 과학 결론은 [결정](../decisions.md)·[실험 원장](../experiments.md)·고정 산출물에서 확인한다.

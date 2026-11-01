@@ -14,6 +14,8 @@ PYTHONPATH=src:.:apps/observer/backend .venv/bin/pytest tests/test_check_docs.py
 
 보존 예외가 필요하면 `docs/maintenance/length-exceptions.json`에 정확한 파일 경로와 사유를 기록한다. 예외는 길이만 면제하고 링크 검사는 유지한다. 고정 등록·증거·과거 원문·생성 파일만 보존 사유를 갖는다. 현행 안내의 미전환을 영구 면제하지 않는다.
 
+현재 예외 JSON은 저장소에 없다. 11/1 통합 변경을 기준 `6e2038fd`와 비교하면 보존 검토서·등록 초안 2건의 길이 초과가 보고된다. [통합 검사](../handoffs/CODEX-integration-2026-11-01.md)는 API에 해당 두 경로의 보존 사유만 전달해 검사했으며, 기본 CLI 전체 통과로 기록하지 않았다.
+
 ## 그래프 생성
 
 ```sh
