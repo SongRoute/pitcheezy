@@ -177,7 +177,7 @@ async function open({ width = 390, height = 664, dist = distRegression, protocol
       if (a?.raw !== undefined) return route.fulfill({ status: 200, contentType: a.contentType ?? 'text/html', body: a.raw }).catch(() => {});
       const headers = { 'content-type': 'application/json', ...(a?.date === null ? {} : { date: httpDate(a?.date ?? FILE_AT + 1000) }), ...(a?.age ? { age: String(a.age) } : {}), ...(a?.etag ? { etag: a.etag } : {}) };
       if (a?.status === 304) return route.fulfill({ status: 304, headers, body: '' });
-      if (a) return a.status && a.status !== 200 ? route.fulfill({ status: a.status, contentType: 'text/html', body: '<html>not found</html>' }) : route.fulfill({ headers, body: JSON.stringify(a.json) }).catch(() => {});
+      if (a) return a.status && a.status !== 200 ? route.fulfill(a.json ? { status: a.status, headers, body: JSON.stringify(a.json) } : { status: a.status, contentType: 'text/html', body: '<html>not found</html>' }) : route.fulfill({ headers, body: JSON.stringify(a.json) }).catch(() => {});
       const disk = path.join(files, file);
       if (!existsSync(disk)) return route.fulfill({ status: 404, contentType: 'text/html', body: '<html>not found</html>' });
       return route.fulfill({ headers, body: readFileSync(disk) });
@@ -781,18 +781,23 @@ await block(async () => {
 // ---------- R8. nothing is asked while the tab is hidden, also before the first answer ----------
 await block(async () => {
   let mode = 'down';
-  const { context, page, counts } = await open({ hidden: true, answer: (file) => file === `game/${LIVE}.json` && mode === 'down' ? { abort: true } : undefined });
+  const { context, page, counts, asks } = await open({ hidden: true, answer: (file) => file === `game/${LIVE}.json` && mode === 'down' ? { abort: true } : undefined });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
-  await page.locator('.sv-alert').waitFor();
-  const n = counts.get(`game/${LIVE}.json`);
+  await page.locator('.sv-center [role="status"]').waitFor();
+  await sleep(9500);
+  ok(dataAsks(asks).length === 0, 'hidden: no initial data request before the tab is first shown');
+  await page.evaluate(() => window.dispatchEvent(new Event('online'))); await sleep(800);
+  ok(dataAsks(asks).length === 0, 'hidden: an online event does not start an initial request');
+  await setHidden(page, false); await page.locator('.sv-alert').waitFor();
+  await setHidden(page, true); const n = counts.get(`game/${LIVE}.json`);
   await sleep(9500);
   ok(counts.get(`game/${LIVE}.json`) === n, `hidden: no retry of a failed first load while hidden (${counts.get(`game/${LIVE}.json`) - n} made)`);
   await page.evaluate(() => window.dispatchEvent(new Event('online'))); await sleep(800);
-  ok(counts.get(`game/${LIVE}.json`) === n, 'hidden: an online event does not start a request while hidden');
+  ok(counts.get(`game/${LIVE}.json`) === n, 'hidden: an online event does not retry while hidden');
   mode = 'ok'; await setHidden(page, false);
   ok(await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').first().waitFor({ timeout: 6000 }).then(() => true, () => false), 'hidden: visible again → asked at once and the game appears');
   await context.close();
-});
+}, 'hidden-first-load');
 // ---------- R9. health.json requests never overlap; a late failure of an older one cannot undo a newer answer ----------
 await block(async () => {
   const t0 = FILE_AT; let phase = 0, open9 = 0, maxOpen = 0;
@@ -871,7 +876,7 @@ await block(async () => {
   ok(await waitPitch(page, '849843:12:2', 12000), 'race: the slow answer (901) is applied when it lands, then the next one (902)');
   ok(errors.length === 0, `race: no page errors ${errors.join(' | ')}`);
   await context.close();
-});
+}, 'game-race');
 // ====================================================================================================================
 // Second review round (2026-10-11)
 // ====================================================================================================================
@@ -1217,15 +1222,16 @@ async function advance(page, ms) {
   for (let left = ms; left > 0; left -= 1000) { await page.clock.runFor(Math.min(left, 1000)); await sleep(40); }
 }
 const manifestBody = (period, seq = 120) => top({ live_dates: ['2026-09-30'], publish_interval_s: period }, seq, FILE_AT);
-async function protocolScreen({ checks = true, period = 10, final = false, pregame = false, dist = distPublic, list = false } = {}) {
+async function protocolScreen({ checks = true, period = 10, final = false, pregame = false, dist = distPublic, list = false, etag = null } = {}) {
   const state = { checks, period, fileSequence: 1, bodySequence: 1, feedOk: true, failures: [], fileMode: 'ok', final, checkedAt: null,
-    healthAt: null, healthMode: 'ok', pitchScore: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag: null, pregame, start: FILE_AT + 3600000 };
+    healthAt: null, healthMode: 'ok', pitchScore: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag, gameHeaders: [], pregame, start: FILE_AT + 3600000 };
   let h;
   h = await open({ dist, protocol: true, clock: true, answer: async (file, n, headers) => {
     const now = await h.page.evaluate(() => Date.now());
     if (file === 'manifest.json') return { json: manifestBody(state.period, state.manifestSequence), date: now };
     if (file === 'health.json') {
       if (state.healthMode === 'abort') return { abort: true };
+      if (state.healthMode === 'hide') { state.healthMode = 'ok'; await setHidden(h.page, true); }
       const json = health(++state.healthSequence, state.healthAt ?? now);
       if (state.checks) json.game_checks = { [LIVE]: state.malformed !== undefined ? state.malformed : {
         checked_at: iso(state.checkedAt ?? now), sequence_checked: 100000, file_sequence: state.fileSequence, feed_ok: state.feedOk } };
@@ -1233,6 +1239,9 @@ async function protocolScreen({ checks = true, period = 10, final = false, prega
       return { json, date: now };
     }
     if (file === `game/${LIVE}.json`) {
+      state.gameHeaders.push(headers['if-none-match']);
+      if (state.fileMode === 'notice') return { status: 503, json: { error: 'service_notice', notice: { id: 'data_hold' } } };
+      if (state.fileMode === '304') return { status: 304, etag: state.etag, date: now };
       if (state.fileMode === 'abort') return { abort: true };
       if (state.fileMode === '404') return { status: 404 };
       if (state.etag && headers['if-none-match'] === state.etag) return { status: 304, etag: state.etag, date: now };
@@ -1264,7 +1273,7 @@ await block(async () => {
   for (const scenario of [
     { name: 'baseline ef4e4df', dist: baseline, checks: false, expected: [30, 30, 0] },
     { name: 'old-style files at P=10', checks: false, expected: [6, 6, 1] },
-    { name: 'game_checks unchanged at P=10', checks: true, expected: [6, 0, 1] },
+    { name: 'game_checks unchanged at P=10 (60s notice revalidation)', checks: true, expected: [6, 1, 1] },
   ]) {
     const h = await protocolScreen(scenario); const paths = ['health.json', `game/${LIVE}.json`, 'manifest.json'];
     const before = paths.map(f => count(h, f)); const allBefore = dataAsks(h.asks).length;
@@ -1292,12 +1301,12 @@ await block(async () => {
 await block(async () => {
   const h = await protocolScreen(); const { page, state } = h;
   await advance(page, 60000);
-  ok(count(h, `game/${LIVE}.json`) === 1 && await kind(page) === 'ok', 'checks: unchanged old file stays fresh; only health is read');
+  ok(count(h, `game/${LIVE}.json`) === 2 && await kind(page) === 'ok', 'checks: unchanged old file stays fresh with one 60s notice revalidation');
   state.fileSequence = 2; state.bodySequence = 3; state.key = '849843:12:2';
   await advance(page, 10000);
-  ok(await waitPitch(page, state.key) && count(h, `game/${LIVE}.json`) === 2, 'checks: advance fetches once and accepts body ahead of announced sequence');
+  ok(await waitPitch(page, state.key) && count(h, `game/${LIVE}.json`) === 3, 'checks: advance fetches once and accepts body ahead of announced sequence');
   state.fileSequence = 3; await advance(page, 10000);
-  ok(count(h, `game/${LIVE}.json`) === 2, 'checks: body already ahead means no redundant fetch');
+  ok(count(h, `game/${LIVE}.json`) === 3, 'checks: body already ahead means no redundant fetch');
   state.fileSequence = 4; state.bodySequence = 2; await advance(page, 10000);
   ok(await kind(page) === 'checking' && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
     'checks: announced but backwards body → 확인 중, no old recommendation or actual marker');
@@ -1326,8 +1335,9 @@ await block(async () => {
   ok(await kind(page) === 'client', 'checks: object entries in feed_failing_games also fail this game');
   state.failures = [LIVE + 1]; await advance(page, 10000);
   ok(await kind(page) === 'ok', 'checks: another game failure does not affect this game');
+  const beforeWithdrawal = count(h, `game/${LIVE}.json`);
   state.fileSequence = null; await advance(page, 10000);
-  ok(await page.locator('.sv-unavailable').count() === 1 && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && count(h, `game/${LIVE}.json`) === f,
+  ok(await page.locator('.sv-unavailable').count() === 1 && await page.locator('.sv-reclist:not(.empty) .sv-rec-cell').count() === 0 && count(h, `game/${LIVE}.json`) === beforeWithdrawal,
     'checks: withdrawal clears the game without fetching its old file');
   state.fileSequence = 5; state.bodySequence = 5; await advance(page, 10000);
   ok(await waitPitch(page, state.key), 'checks: withdrawn game returns automatically when republished');
@@ -1338,17 +1348,17 @@ await block(async () => {
 await block(async () => {
   const h = await protocolScreen({ final: true }); const { page, state } = h;
   state.healthAt = FILE_AT; state.checkedAt = FILE_AT; await advance(page, 120000);
-  ok(await page.locator('.sv-hd-status').count() === 0 && count(h, `game/${LIVE}.json`) === 1, 'final checks: no time warnings or unchanged-body downloads');
+  ok(await page.locator('.sv-hd-status').count() === 0 && count(h, `game/${LIVE}.json`) === 3, 'final checks: no time warnings; two 60s notice revalidations in 120s');
   await openAtBat(page);
   const selected = page.locator('.sv-pitch-row[aria-pressed="true"]');
   const selectedLabel = await selected.getAttribute('aria-label');
   const score = page.locator('.sv-hd-score strong').first();
   ok(await score.innerText() === '1', 'final checks: the header shows the final score while the first pitch stays selected');
   state.fileSequence = 2; state.bodySequence = 2; await advance(page, 10000);
-  ok(count(h, `game/${LIVE}.json`) === 2 && await score.innerText() === '2' && await selected.getAttribute('aria-label') === selectedLabel, 'final checks: the final total updates without changing the selected pitch');
+  ok(count(h, `game/${LIVE}.json`) === 4 && await score.innerText() === '2' && await selected.getAttribute('aria-label') === selectedLabel, 'final checks: the final total updates without changing the selected pitch');
   // UI-1026 keeps the final total in the header even while the selected pitch's historical context changes.
   state.fileSequence = 3; state.bodySequence = 3; state.pitchScore = 2; await advance(page, 10000);
-  ok(count(h, `game/${LIVE}.json`) === 3 && await score.innerText() === '3' && await selected.getAttribute('aria-label') === selectedLabel,
+  ok(count(h, `game/${LIVE}.json`) === 5 && await score.innerText() === '3' && await selected.getAttribute('aria-label') === selectedLabel,
     'final checks: higher file_sequence keeps final header and selected pitch independently');
   state.feedOk = false; await advance(page, 10000);
   ok(await kind(page) === 'client', 'final checks: explicit failure remains visible');
@@ -1404,8 +1414,8 @@ await block(async () => {
 await block(async () => {
   const h = await protocolScreen({ pregame: true }); const { page, state } = h;
   state.healthAt = FILE_AT; state.checkedAt = FILE_AT; await advance(page, 60000);
-  ok(await kind(page) === 'ok' && count(h, 'health.json') === 7 && count(h, `game/${LIVE}.json`) === 1,
-    'pregame checks: polls at P, no age warning before scheduled start');
+  ok(await kind(page) === 'ok' && count(h, 'health.json') === 7 && count(h, `game/${LIVE}.json`) === 2,
+    'pregame checks: polls at P plus 60s notice revalidation, no age warning before scheduled start');
   state.start = FILE_AT; state.fileSequence = 2; state.bodySequence = 2; await advance(page, 10000);
   ok(await kind(page) === 'publish-late', 'pregame checks: after scheduled start, stale health/check warns');
   state.healthAt = null; state.checkedAt = null; await advance(page, 10000);
@@ -1416,6 +1426,49 @@ await block(async () => {
   ok(await kind(page) === 'publish-late', 'live checks: in-play time rule applies after transition');
   await h.context.close();
 }, 'pregame-checks');
+
+// 60s is the active-tab revalidation budget, not a maximum discovery latency: the next poll and network still apply.
+await block(async () => {
+  for (const final of [false, true]) {
+    const h = await protocolScreen({ final, etag: '"notice-check"' }); const { page, state } = h;
+    const gamePath = `game/${LIVE}.json`, label = final ? 'final' : 'live';
+    await advance(page, 59000);
+    ok(count(h, gamePath) === 1, `${label} notice: no unchanged-game read before 60s`);
+    await advance(page, 1000);
+    ok(count(h, gamePath) === 2 && state.gameHeaders[1] === state.etag, `${label} notice: 60s conditional read accepts 304`);
+    await advance(page, 59000);
+    ok(count(h, gamePath) === 2, `${label} notice: 304 restarts the 60s budget`);
+    state.fileMode = 'notice'; await advance(page, 1000);
+    ok(count(h, gamePath) === 3 && /자료를 확인하고 있어요/.test(await page.locator('.sv-alert').innerText()) && await page.locator('.sv-zone').count() === 0,
+      `${label} notice: game-only notice discovered despite unchanged healthy sequence; old content hidden`);
+    state.fileMode = '304'; await advance(page, 10000);
+    ok(state.gameHeaders.at(-1) === undefined && await page.locator('.sv-zone').count() === 0,
+      `${label} notice: held retry requires a body; even an unsolicited 304 cannot restore old content`);
+    state.fileMode = 'ok'; state.etag = null; state.bodySequence = 0; await advance(page, 10000);
+    ok(await page.locator('.sv-zone').count() === 0, `${label} notice: lower sequence cannot lift hold`);
+    state.bodySequence = 1; await advance(page, 10000);
+    ok(await page.locator('.sv-zone').count() > 0 && await page.locator('.sv-unavailable').count() === 0,
+      `${label} notice: accepted current body restores content`);
+    state.fileMode = 'abort'; await advance(page, 60000); const failedAt = count(h, gamePath);
+    state.fileMode = 'ok'; await advance(page, 10000);
+    ok(count(h, gamePath) === failedAt + 1 && await page.locator('.sv-zone').count() > 0,
+      `${label} notice: failed revalidation retries at next poll, not after another minute`);
+    state.bodySequence = 0; await advance(page, 60000); const oldAt = count(h, gamePath);
+    state.bodySequence = 1; await advance(page, 10000);
+    ok(count(h, gamePath) === oldAt + 1, `${label} notice: lower sequence does not reset verification budget`);
+    await setHidden(page, true); const hiddenAt = dataAsks(h.asks).length;
+    await advance(page, 120000);
+    ok(dataAsks(h.asks).length === hiddenAt, `${label} notice: no requests while hidden, including past deadline`);
+    await setHidden(page, false); await sleep(200);
+    ok(count(h, gamePath) === oldAt + 2, `${label} notice: visible wake revalidates overdue game once`);
+    state.healthMode = 'hide'; const beforeHiddenHealth = count(h, gamePath);
+    await advance(page, 60000);
+    ok(count(h, gamePath) === beforeHiddenHealth, `${label} notice: hiding during health skips the follow-up game request`);
+    await setHidden(page, false); await sleep(200);
+    ok(h.errors.length === 0, `${label} notice: no page errors`);
+    await h.context.close();
+  }
+}, 'game-notice');
 
 // HTTP behaviour has exact parse-count assertions in coreChecks; this exercises the rendered screen as well.
 await block(async () => {

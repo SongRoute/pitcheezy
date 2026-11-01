@@ -66,6 +66,13 @@ try {
   console.log('SKIP #9 header series words / aria-label: 미포팅 기능 — UI-1026 .sv-hd-1 has no series metadata (G4).');
   await check('UI-1026 score header is accessible', async () => assert.ok(await page.locator('.sv-hd-1 h1').getAttribute('aria-label')));
   await check('#7 no win-probability entry without win_expectancy', async () => { assert.equal('win_expectancy' in g4, false); await nav('기록'); assert.equal(await sheet.getByRole('button', { name: '승리확률', exact: true }).count(), 0); await closeSheet(); });
+  await nav('선수'); await sheet.getByRole('tab', { name: '투수', exact: true }).click();
+  await check('player today names its pre-pitch basis; mix includes the selected pitch', async () => {
+    assert.ok((await sheet.locator('dt').allInnerTexts()).includes('오늘 · 이 공 전'));
+    assert.match(await dd('오늘 · 이 공 전'), /^0구/);
+    assert.match(await text('.sv-sheet-h3'), /오늘 구종 · 1구/);
+  });
+  await closeSheet();
   await page.locator('.sv-pitch-row').last().click(); await sheet.waitFor();
   const t0 = g4.pitches[0].actual.tracking;
   await check('#11 extension one decimal, spin whole', async () => { assert.equal(await dd('익스텐션'), `${fixed1(t0.extension_feet)} ft`); assert.equal(await dd('회전수'), `${Math.round(t0.spin_rate_rpm)} rpm`); assert.doesNotMatch(await dd('익스텐션'), /\d\.\d{2,}/); });
@@ -82,7 +89,7 @@ try {
     assert.equal(await sheet.locator('.sv-recent-pas li').count(), expectPas.length);
     const first = squash(await sheet.locator('.sv-recent-pas li').first().innerText());
     if (open) { const thrown = g4.pitches.filter(p => p.pa_key === open.pa_key && p.index <= 100).length; assert.match(first, new RegExp(`타석 진행 중 · ${thrown}구$`)); }
-    assert.match(await text('.sv-basis'), new RegExp(`고른 공\\(${mid.inning}회 ${mid.half === 'Top' ? '초' : '말'} ${mid.pitch_number}구\\)까지의 타석`));
+    assert.match(await text('.sv-basis'), new RegExp(`고른 공\\(${mid.inning}회 ${mid.half === 'Top' ? '초' : '말'} · ${mid.batter.name} · ${mid.pitch_number}구\\)까지의 타석`));
   });
   const corr4 = g4.pitches.filter(p => p.index <= 100 && p.receipt?.corrected).length, held4 = g4.pitches.filter(p => p.index <= 100 && p.receipt?.reason === 'held_last_accepted').length;
   const tagged4 = g4.pitches.filter(p => p.index <= 100 && p.receipt?.corrected && !p.receipt.reason).length;
@@ -128,7 +135,7 @@ try {
   await gotoPitch(849804, g3.pitches.at(-1).index); await nav('기록');
   const corr3 = g3.pitches.filter(p => p.receipt?.corrected).length, held3 = g3.pitches.filter(p => p.receipt?.reason === 'held_last_accepted').length;
   await check('#10 G3 aggregate line: every corrected pitch, none tagged, the held count, the overlap said', async () => { const line = await text('.sv-corrections');
-    assert.match(line, new RegExp(`^고른 공까지 정정된 기록 ${corr3}구\\(투구 카드에 ‘정정됨’ 표시 0구, 보류 중이라 표시하지 않은 ${corr3}구\\)`)); assert.match(line, new RegExp(`보류한 공 ${held3}구`)); assert.match(line, /겹칠 수 있어요/); });
+    assert.match(line, new RegExp(`^고른 공까지 정정된 기록 ${corr3}구\\(투구 카드에 ‘정정됨’ 표시 0구, 카드에 표시하지 않은 ${corr3}구\\)`)); assert.match(line, new RegExp(`보류한 공 ${held3}구`)); assert.match(line, /겹칠 수 있어요/); });
   await closeSheet();
 
   // ---- G1 849805: series words, Misiorowski's scatter ----

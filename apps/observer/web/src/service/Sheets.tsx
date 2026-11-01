@@ -168,8 +168,8 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
 function ActualFacts({ actual, speed, paResult, withType = false }: { actual: Actual; speed: (mph: number | null) => string; paResult: string | null; withType?: boolean }) {
   const t = actual.tracking ?? null;
   const have: [string, string][] = [], miss: string[] = [];
-  const add = (label: string, v: number | null | undefined, unit: string) => { if (v == null) miss.push(label); else have.push([label, `${v}${unit}`]); };
-  add('회전수', t?.spin_rate_rpm, ' rpm'); add('익스텐션', t?.extension_feet, ' ft'); add('타구 속도', t?.exit_velocity_mph, ' mph'); add('발사각', t?.launch_angle_deg, '°'); add('비거리', t?.distance_feet, ' ft');
+  const add = (label: string, v: number | null | undefined, unit: string, digits?: number) => { if (v == null) miss.push(label); else have.push([label, `${digits === undefined ? v : v.toFixed(digits)}${unit}`]); };
+  add('회전수', t?.spin_rate_rpm, ' rpm', 0); add('익스텐션', t?.extension_feet, ' ft', 1); add('타구 속도', t?.exit_velocity_mph, ' mph'); add('발사각', t?.launch_angle_deg, '°'); add('비거리', t?.distance_feet, ' ft');
   const last = miss[miss.length - 1] ?? '', batchim = last && (last.charCodeAt(last.length - 1) - 0xac00) % 28 !== 0;
   return <><dl className="sv-dl sv-facts">
     {withType && <><dt>구종</dt><dd>{actual.pitch_label}{actual.speed_mph !== null ? ` · ${speed(actual.speed_mph)}` : ''}</dd></>}

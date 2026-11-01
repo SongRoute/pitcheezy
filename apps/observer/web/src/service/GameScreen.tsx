@@ -215,12 +215,16 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [withdrawn, setWithdrawn] = useState(false);
   const withdrawal = useRef(false);  // only a valid, explicit non-null game check can reopen a withdrawn game
   const appliedSequence = useRef<number | null>(null);
+  // Product request budget, not measured notice latency: while visible, revalidate an unchanged game after 60s
+  // at the next regular poll. Failures/older bodies do not reset it; 304 does. Existing single-flight/visibility gates apply.
+  const gameVerifiedAt = useRef<number | null>(null);
   const [checking, setChecking] = useState(false);
   const inflight = useRef<AbortController | null>(null);
   const drawn = useRef<Drawn | null>(null);
   const picked = useRef(false);  // the viewer chose a past pitch (as opposed to the default first pitch of a game that is not live)
 
   const load = useCallback(async (full = false, force = false) => {
+    if (__PZ_STATIC__ && document.hidden) return;
     // a background poll never cancels a slower answer still on its way (only a manual refresh does)
     if (inflight.current && !inflight.current.signal.aborted && !force) return;
     inflight.current?.abort();
@@ -230,7 +234,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       if (__PZ_STATIC__) {  // one health-first chain; malformed/old health falls back to a whole-file read
         let h: PublishHealth | null = null;
         try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch (e) { if (e instanceof FetchError && e.notice) throw e; /* keep the last health */ }
-        if (ctrl.signal.aborted) return;
+        if (ctrl.signal.aborted || document.hidden) return;
         const { present, check } = gameCheck(h, gamePk);
         if (withdrawal.current && !check) { setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 }); return; }
         if (present) { setLastOk(Date.now()); if (!holdRef.current) setError(null); }
@@ -243,13 +247,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
           setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 });
           return;
         }
-        if (!holdRef.current && pendingTarget.current === null && check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
+        if (!holdRef.current && pendingTarget.current === null && check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current && gameVerifiedAt.current !== null && performance.now() - gameVerifiedAt.current < 60000) {
           setError(null); setLastOk(Date.now()); return;
         }
-        const got = await fetchPublishedDetail(gamePk, ctrl.signal);
+        const got = await fetchPublishedDetail(gamePk, ctrl.signal, holdRef.current);
         if (ctrl.signal.aborted) return;
         if (pendingTarget.current !== null && got.stamp.seq! < pendingTarget.current) return;  // propagation delay: retry this target next tick
-        pendingTarget.current = null; pending.current = null; setPendingSince(null); appliedSequence.current = got.stamp.seq;
+        pendingTarget.current = null; pending.current = null; setPendingSince(null); appliedSequence.current = got.stamp.seq; gameVerifiedAt.current = got.verifiedAt;
         withdrawal.current = false; setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now()); holdRef.current = false; setHold(false);
         return;
       }
@@ -581,7 +585,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const pt = context?.pitcher;
   const isDemo = detail.session !== null;
   // Header status button (UI 10/26 ⑥): ONE marker tells the whole state; its sentence opens in a bubble. Order: connection trouble,
-  // then a late feed, then a changed recommendation, then the pending pitch's own state. A finished game has no marker.
+  // then a late feed, then a changed recommendation, then the pending pitch's own state. A healthy finished game has no marker.
   const recvTime = lastOk !== null ? ` · ${kstTime(new Date(lastOk).toISOString())} 수신` : '';
   const chip: { label: string; tone: Tone; state: string; lines: string[] } | null = (() => {
     if (stateSlot) {
@@ -596,15 +600,15 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       // unconfirmed, waiting, ledger_unavailable: the neutral 확인 중 look with the server's own words
       return { label: e.label, tone: 'checking', state: e.state, lines };
     }
-    if (game.status === 'final') return null;
     // no display state (archive, demo, older server): the transport story as before the contract
     if (error || feedDown || clientStale || disp?.state === 'disconnected') return { label: '연결 끊김', tone: 'lost', state: 'disconnected', lines: [error?.text ?? CLIENT_LOST.message] };
+    if (game.status === 'final') return null;
     if (maskPublished || publishChecking) return { label: '확인 중', tone: 'checking', state: 'unconfirmed', lines: [PUBLISH_CHECKING.message] };
     if (isDemo && detail.session_status === 'ended') return { label: '시연 종료', tone: 'checking', state: 'demo', lines: ['지난 경기 시연이 끝났어요.'] };
     if (isDemo && detail.session_status === 'ready') return { label: '시연 대기', tone: 'checking', state: 'demo', lines: ['지난 경기 시연이 곧 시작돼요.'] };
     if (isDemo && detail.session_status === 'paused') return { label: '일시정지', tone: 'checking', state: 'demo', lines: ['지난 경기 시연이 멈춰 있어요.'] };
-    if (live && (!auto || behind > 0 || publishStale || !!lagText || disp?.state === 'feed_delayed'))
-      return { label: '딜레이', tone: 'late', state: 'delayed', lines: [publishStale ? PUBLISH_LATE.message : lagText ?? (behind > 0 ? `${behind}초 늦춰 보여 드리고 있어요.` : '새 내용이 늦어지고 있어요.')] };
+    if (publishStale || (live && (!auto || behind > 0 || !!lagText || disp?.state === 'feed_delayed')))
+      return { label: publishStale ? PUBLISH_LATE.label : '딜레이', tone: publishStale ? 'lost' : 'late', state: publishStale ? PUBLISH_LATE.state : 'delayed', lines: [publishStale ? PUBLISH_LATE.message : lagText ?? (behind > 0 ? `${behind}초 늦춰 보여 드리고 있어요.` : '새 내용이 늦어지고 있어요.')] };
     if (live) return isDemo ? { label: '시연 중', tone: 'checking', state: 'demo', lines: ['지난 경기를 다시 보여 드리고 있어요.'] } : { label: '라이브', tone: 'live', state: 'live', lines: [`실시간으로 받는 중${recvTime}`] };
     return game.status === 'scheduled' ? { label: '경기 전', tone: 'pregame', state: 'pregame', lines: ['경기 시작 전이에요.'] } : { label: '대기', tone: 'checking', state: 'waiting', lines: ['지금은 경기가 진행 중이 아니에요.'] };
   })();
@@ -746,7 +750,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <p className="sv-player-title"><b>{sheetPerson?.name ?? '—'}</b> <span>{short((playerRole === 'b') === top ? game.away_team : game.home_team)}{handText(playerRole === 'b' ? batterP?.side : pitcherP?.hand, playerRole) ? ` · ${handText(playerRole === 'b' ? batterP?.side : pitcherP?.hand, playerRole)}` : ''}</span></p>
       <dl className="sv-dl sv-facts"><dt>등번호</dt><dd>{sheetInfo?.jersey ? `#${sheetInfo.jersey}` : '—'}</dd>
         <dt>시즌</dt><dd>{playerRole === 'b' ? `AVG ${stat3(sheetInfo?.avg)} · OPS ${stat3(sheetInfo?.ops)}` : `ERA ${era(sheetInfo?.era)}`}</dd>
-        <dt>오늘</dt><dd>{playerRole === 'b' ? [part(bt?.at_bats, '타수'), part(bt?.hits, '안타'), part(bt?.on_base, '출루')].join(' · ') : [part(pt?.pitches, '구'), part(pt?.strikeouts, '삼진'), part(pt?.earned_runs, '자책')].join(' · ')}</dd></dl>
+        <dt>{latest ? '오늘' : '오늘 · 이 공 전'}</dt><dd>{playerRole === 'b' ? [part(bt?.at_bats, '타수'), part(bt?.hits, '안타'), part(bt?.on_base, '출루')].join(' · ') : [part(pt?.pitches, '구'), part(pt?.strikeouts, '삼진'), part(pt?.earned_runs, '자책')].join(' · ')}</dd></dl>
       {playerRole === 'p' && !maskPublished && <MixTable detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} heading asOfIndex={asOfIndex} />}
       <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 —로 표시합니다.</p>
       </div>
