@@ -54,3 +54,37 @@ def test_first_reference_and_malformed_url(tmp_path, monkeypatch):
     result = graph(tmp_path)
     assert result['edges'] == []
     assert result['errors'][0]['error'] == 'malformed destination'
+
+
+def test_check_and_graph_keep_link_order_and_distinct_error_policies(tmp_path, monkeypatch):
+    (tmp_path / 'CLAUDE.md').write_text('@AGENTS.md\n')
+    (tmp_path / 'sub').mkdir()
+    (tmp_path / 'sub/target.md').write_text('target')
+    (tmp_path / '한 글.md').write_text('target')
+    text = '''[good](sub/target.md#topic)
+[missing](sub/missing.md?view=1)
+[again](sub/target.md)
+[space](%ED%95%9C%20%EA%B8%80.md)
+[external](https://example.com/doc)
+[absolute](/tmp/external.md)
+[fragment](#topic)
+[outside](../outside.md)
+[invalid](https://[broken)
+[undefined][absent]
+'''
+    (tmp_path / 'guide.md').write_text(text)
+    monkeypatch.setattr('scripts.check_docs.git_files', lambda root: ['guide.md'])
+    assert check(tmp_path, ['guide.md', 'guide.md'], {}) == {
+        'documents': 1, 'characters': {'guide.md': len(text)}, 'local_links': 4,
+        'errors': ['guide.md: missing target sub/missing.md?view=1',
+                   'guide.md: malformed destination https://[broken',
+                   'guide.md: undefined reference [undefined]']}
+    result = graph(tmp_path)
+    assert result['nodes'] == [{'path': 'guide.md', 'characters': len(text)}]
+    assert result['edges'] == [
+        {'from': 'guide.md', 'to': destination, 'label': label, 'exists': exists}
+        for label, destination, exists in (
+            ('good', 'sub/target.md', True), ('missing', 'sub/missing.md', False),
+            ('again', 'sub/target.md', True), ('space', '한 글.md', True))]
+    assert result['errors'] == [
+        {'source': 'guide.md', 'destination': 'https://[broken', 'error': 'malformed destination'}]
