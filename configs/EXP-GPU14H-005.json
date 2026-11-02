@@ -1,0 +1,676 @@
+{
+  "format": "gpu14h-identity-v1",
+  "id": "EXP-GPU14H-005",
+  "status": "DRAFT",
+  "execute": false,
+  "author": "research_history",
+  "source_base": "37a84c53f678fcf8d402b42fd9958f06ef33de8f",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "arm": "PREPITCH9_ID",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "variants": {
+    "pitcher_mlp": {
+      "architecture": "state_mlp",
+      "embedding_dim": 16
+    },
+    "pitcher_t32": {
+      "architecture": "state_t32",
+      "embedding_dim": 16
+    },
+    "pitcher_c32": {
+      "architecture": "state_c32",
+      "embedding_dim": 16
+    }
+  },
+  "folds": {
+    "july": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-001.json",
+      "producer_recipe_sha256": "f09fc1ae99ac998b288effe2942634e5ee6de29c119d8858b00eced305dfa0c9"
+    },
+    "august": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-OOF2.json",
+      "producer_recipe_sha256": "43908f9422da4e9bc1162e85df08778b0504641b5d6b4cca6b9cbf85940a890c"
+    },
+    "september": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-OOF3.json",
+      "producer_recipe_sha256": "9ec47ad13c78be1b0a0536a7441dd12baa5075d930e1c3e02d0bc2c125f8580d"
+    }
+  },
+  "jobs": [
+    {
+      "id": "H14-B5-id-pitcher_mlp-july-s0",
+      "variant": "pitcher_mlp",
+      "fold": "july",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-july-s0",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-july-s0",
+      "variant": "pitcher_c32",
+      "fold": "july",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-august-s0",
+      "variant": "pitcher_mlp",
+      "fold": "august",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-august-s0",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-august-s0",
+      "variant": "pitcher_c32",
+      "fold": "august",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-september-s0",
+      "variant": "pitcher_mlp",
+      "fold": "september",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-september-s0",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-september-s0",
+      "variant": "pitcher_c32",
+      "fold": "september",
+      "seed": 0,
+      "kind": "id",
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-july-s1",
+      "variant": "pitcher_mlp",
+      "fold": "july",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-july-s1",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-july-s1",
+      "variant": "pitcher_c32",
+      "fold": "july",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-august-s1",
+      "variant": "pitcher_mlp",
+      "fold": "august",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-august-s1",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-august-s1",
+      "variant": "pitcher_c32",
+      "fold": "august",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-september-s1",
+      "variant": "pitcher_mlp",
+      "fold": "september",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-september-s1",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-september-s1",
+      "variant": "pitcher_c32",
+      "fold": "september",
+      "seed": 1,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-july-s2",
+      "variant": "pitcher_mlp",
+      "fold": "july",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-july-s2",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-july-s2",
+      "variant": "pitcher_c32",
+      "fold": "july",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-august-s2",
+      "variant": "pitcher_mlp",
+      "fold": "august",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-august-s2",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-august-s2",
+      "variant": "pitcher_c32",
+      "fold": "august",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_mlp-september-s2",
+      "variant": "pitcher_mlp",
+      "fold": "september",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_t32-september-s2",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-id-pitcher_c32-september-s2",
+      "variant": "pitcher_c32",
+      "fold": "september",
+      "seed": 2,
+      "kind": "id",
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B5-control-pitcher_mlp-july-s1",
+      "variant": "pitcher_mlp",
+      "fold": "july",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_t32-july-s1",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_c32-july-s1",
+      "variant": "pitcher_c32",
+      "fold": "july",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_mlp-august-s1",
+      "variant": "pitcher_mlp",
+      "fold": "august",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_t32-august-s1",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_c32-august-s1",
+      "variant": "pitcher_c32",
+      "fold": "august",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_mlp-september-s1",
+      "variant": "pitcher_mlp",
+      "fold": "september",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_t32-september-s1",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_c32-september-s1",
+      "variant": "pitcher_c32",
+      "fold": "september",
+      "seed": 1,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_mlp-july-s2",
+      "variant": "pitcher_mlp",
+      "fold": "july",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_t32-july-s2",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_c32-july-s2",
+      "variant": "pitcher_c32",
+      "fold": "july",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_mlp-august-s2",
+      "variant": "pitcher_mlp",
+      "fold": "august",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_t32-august-s2",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_c32-august-s2",
+      "variant": "pitcher_c32",
+      "fold": "august",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_mlp-september-s2",
+      "variant": "pitcher_mlp",
+      "fold": "september",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_t32-september-s2",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    },
+    {
+      "id": "H14-B5-control-pitcher_c32-september-s2",
+      "variant": "pitcher_c32",
+      "fold": "september",
+      "seed": 2,
+      "kind": "control",
+      "enabled": false,
+      "stage": "conditional_missing_control"
+    }
+  ],
+  "phases": {
+    "score_screen": false,
+    "score_stability": false
+  },
+  "fit_ceiling": 21,
+  "potential_task_slots": 45,
+  "screen_fit_ceiling": 9,
+  "stability_fit_ceiling": 6,
+  "deadline_utc": "2026-11-03T03:21:56Z",
+  "recovery_grace_seconds": 900,
+  "minimum_fit_seconds": 900,
+  "source_manifest": {
+    "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261102-gpu14h/author-batch5/source-manifest.json",
+    "sha256": "799965649733f8282c7bed2f6415ebefe5907a1121b768480c249757418ec6af"
+  },
+  "input_metadata": {
+    "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261102-gpu14h/author-batch5/input-metadata.json",
+    "sha256": "5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d"
+  },
+  "selection": {
+    "screen_seeds": [
+      0
+    ],
+    "control_seeds": [
+      0
+    ],
+    "eligible": "complete3fold paired incremental deltaNLL<0 and deltaBrier<=0 vs same003 architecture/seed",
+    "rank": "ascending pooled delta NLL; tied within 1e-6 of remaining minimum use lexicographic variant ID",
+    "top_max": 1,
+    "stability_seeds": [
+      0,
+      1,
+      2
+    ],
+    "stability_aggregation": "ID3seed mean vs paired samearchitecture3seed no-ID mean on identicalE9 keys",
+    "incomplete": "no selection; preserve missing/failed tasks; no favorable-fold pooling",
+    "calibration_fits": 0,
+    "final_fits": 0,
+    "final_six_game_evaluations": 0,
+    "independent_test": false,
+    "deployment": false
+  },
+  "metrics": {
+    "classes": 9,
+    "NLL_clip": 1e-12,
+    "Brier": "sum over9 groups",
+    "ECE10": "top-label equal-width bins descriptive",
+    "pooling": "all mapped E9_pkg pitches; identical keys for every candidate and baseline",
+    "additional": [
+      "top1",
+      "top2 stable class-order tie",
+      "zero-truth-probability counts",
+      "classwise support/NLL",
+      "Q_pkg/E9_pkg census",
+      "unseen/support-out diagnostics"
+    ]
+  },
+  "limits": {
+    "fit_wall_seconds": 7200,
+    "cpu_wall_seconds": 3600,
+    "rss_bytes": 8589934592,
+    "vram_bytes": 17179869184,
+    "output_bytes_per_fit": 67108864,
+    "cpu_output_bytes": 16777216,
+    "aggregate_new_remote_bytes": 6442450944,
+    "torch_intraop_fit": 2,
+    "blas_threads": 1,
+    "cpu_threads": 1
+  },
+  "resource_admission": {
+    "remote_disk_free_bytes": 25769803776,
+    "remote_host_available_bytes": 77309411328,
+    "local_T7_free_bytes": 25769803776,
+    "min_gpu_free_mib": 20480,
+    "aggregate_scope": "all NOV14H batches share6GiB; no additional per-batch allocation"
+  },
+  "interpretation": [
+    "new current pitch type target, separate from old conditional outcome target",
+    "Q_pkg already selected for 7leaf outcome eligibility; not all pitches Q",
+    "nine-group distribution conditional on mapped taxonomy; predicting Q_pkg does not imply full-taxonomy accuracy",
+    "current type/outcome/physics do not reach forward; strict historical tokens only",
+    "original final-snapshot arrival UNKNOWN; repeated2026 EXPOSED DEVELOPMENT",
+    "candidate seed0 selection and seed stability are not independent confirmation",
+    "old outcome T/C weights/predictions are not reused as pitch-type predictions",
+    "no CAL/FINAL/six-game/RS/OPE/service promotion",
+    "unknown zero offset does not imply same fitted trunk as no-ID",
+    "direct matched increment is primary; frequency comparison is secondary",
+    "no-ID missing completion preserves exact003 recipe/RNG, no existing/claimed retry"
+  ],
+  "screen_queue": [
+    "H14-B5-id-pitcher_mlp-july-s0",
+    "H14-B5-id-pitcher_t32-july-s0",
+    "H14-B5-id-pitcher_c32-july-s0",
+    "H14-B5-id-pitcher_mlp-august-s0",
+    "H14-B5-id-pitcher_t32-august-s0",
+    "H14-B5-id-pitcher_c32-august-s0",
+    "H14-B5-id-pitcher_mlp-september-s0",
+    "H14-B5-id-pitcher_t32-september-s0",
+    "H14-B5-id-pitcher_c32-september-s0"
+  ],
+  "target": {
+    "type_codes": [
+      "UNKNOWN",
+      "CH",
+      "CS",
+      "CU",
+      "EP",
+      "FA",
+      "FC",
+      "FF",
+      "FO",
+      "FS",
+      "KC",
+      "KN",
+      "PO",
+      "SC",
+      "SI",
+      "SL",
+      "ST",
+      "SV",
+      "UN"
+    ],
+    "classes": [
+      "FF",
+      "SI",
+      "FC",
+      "SL",
+      "ST",
+      "CU",
+      "CH",
+      "FS",
+      "OT"
+    ],
+    "groups": {
+      "FF": [
+        "FF",
+        "FA"
+      ],
+      "SI": [
+        "SI"
+      ],
+      "FC": [
+        "FC"
+      ],
+      "SL": [
+        "SL",
+        "SV"
+      ],
+      "ST": [
+        "ST"
+      ],
+      "CU": [
+        "CU",
+        "KC",
+        "CS"
+      ],
+      "CH": [
+        "CH"
+      ],
+      "FS": [
+        "FS",
+        "FO"
+      ],
+      "OT": [
+        "KN",
+        "SC",
+        "EP"
+      ]
+    },
+    "unmapped": [
+      "UNKNOWN",
+      "PO",
+      "UN"
+    ],
+    "prediction_population": "all original OOF Q_pkg keys",
+    "scoring_population": "mapped E9_pkg only",
+    "training_population": "original FIT and mapped9 label",
+    "support_filter": false
+  },
+  "features": {
+    "matrix_slice": [
+      0,
+      11
+    ],
+    "columns": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_lead",
+      "home_defense",
+      "on_1b",
+      "on_2b",
+      "on_3b",
+      "batter_left",
+      "pitcher_left"
+    ],
+    "excluded": "all x indices11:199; all currenttype/physics/transfer/hinge",
+    "sequence": "strictly earlier samepitcher samegame32; original rows retained, including unmapped labels",
+    "current_truth_as_input": false,
+    "pitcher_identity": {
+      "vocabulary": "sorted FIT_E9 pitchers only",
+      "dimension": 16,
+      "unknown_index": 0,
+      "unknown_vector": "permanent zero",
+      "transport": "state11 plus one exact categorical index; model trunk still11",
+      "fusion": "additive low-rank pitcher logit offset, no direct ID-state interaction",
+      "initial_offset": "zero",
+      "initial_rng": "preserved"
+    }
+  },
+  "baseline": {
+    "primary": "matched003 architecture/fold/seed frozen predictions",
+    "secondary": "same003 screen FIT alpha4 frequency tables; reuse only",
+    "count_fits": 0,
+    "missing_control": "only selected005 architecture not selected003 AND original003 claim absent; exact003 trainer under005; max6",
+    "no_retry_or_duplicate": true
+  },
+  "queue_predecessor": "registered003 screen and original conditional followups have priority; single shared controller",
+  "missing_control_fit_ceiling": 6,
+  "reference": {
+    "commit": "37a84c53f678fcf8d402b42fd9958f06ef33de8f",
+    "config_sha256": "90e0cc453e1c10320949bd0bb489be7d4784f4ecdd1caa134c1142547cf4f7a1",
+    "source_manifest_sha256": "b2081354d15954624419fbbd6c97325bc73f573e136025744cac72565743bbb4",
+    "input_metadata_sha256": "5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d"
+  }
+}
