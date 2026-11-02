@@ -1,8 +1,8 @@
 {
   "format": "gpu14h-identity-v1",
   "id": "EXP-GPU14H-005",
-  "status": "DRAFT",
-  "execute": false,
+  "status": "REGISTERED",
+  "execute": true,
   "author": "research_history",
   "source_base": "37a84c53f678fcf8d402b42fd9958f06ef33de8f",
   "data_role": "2026 EXPOSED DEVELOPMENT",
@@ -47,7 +47,7 @@
       "fold": "july",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -56,7 +56,7 @@
       "fold": "july",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -65,7 +65,7 @@
       "fold": "july",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -74,7 +74,7 @@
       "fold": "august",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -83,7 +83,7 @@
       "fold": "august",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -92,7 +92,7 @@
       "fold": "august",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -101,7 +101,7 @@
       "fold": "september",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -110,7 +110,7 @@
       "fold": "september",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -119,7 +119,7 @@
       "fold": "september",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -128,7 +128,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -137,7 +137,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -146,7 +146,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -155,7 +155,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -164,7 +164,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -173,7 +173,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -182,7 +182,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -191,7 +191,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -200,7 +200,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -209,7 +209,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -218,7 +218,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -227,7 +227,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -236,7 +236,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -245,7 +245,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -254,7 +254,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -263,7 +263,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -272,7 +272,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -281,7 +281,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -290,7 +290,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -299,7 +299,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -308,7 +308,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -317,7 +317,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -326,7 +326,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -335,7 +335,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -344,7 +344,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -353,7 +353,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -362,7 +362,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -371,7 +371,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -380,7 +380,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -389,7 +389,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -398,7 +398,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -407,7 +407,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -416,7 +416,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -425,7 +425,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -434,7 +434,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     },
     {
@@ -443,13 +443,13 @@
       "fold": "september",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_missing_control"
     }
   ],
   "phases": {
-    "score_screen": false,
-    "score_stability": false
+    "score_screen": true,
+    "score_stability": true
   },
   "fit_ceiling": 21,
   "potential_task_slots": 45,
