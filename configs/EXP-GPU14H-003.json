@@ -1,0 +1,464 @@
+{
+  "format": "gpu14h-prepitch-v1",
+  "id": "EXP-GPU14H-003",
+  "status": "DRAFT",
+  "execute": false,
+  "author": "research_history",
+  "source_base": "c3d586c01b1d4e5bdbb480211add65dfd6167c5c",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "arm": "PREPITCH9",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "variants": {
+    "state_mlp": {
+      "arm": "N0"
+    },
+    "state_t32": {
+      "arm": "T"
+    },
+    "state_c32": {
+      "arm": "C"
+    }
+  },
+  "folds": {
+    "july": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-001.json",
+      "producer_recipe_sha256": "f09fc1ae99ac998b288effe2942634e5ee6de29c119d8858b00eced305dfa0c9"
+    },
+    "august": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-OOF2.json",
+      "producer_recipe_sha256": "43908f9422da4e9bc1162e85df08778b0504641b5d6b4cca6b9cbf85940a890c"
+    },
+    "september": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-OOF3.json",
+      "producer_recipe_sha256": "9ec47ad13c78be1b0a0536a7441dd12baa5075d930e1c3e02d0bc2c125f8580d"
+    }
+  },
+  "jobs": [
+    {
+      "id": "H14-B3-state_mlp-july-s0",
+      "variant": "state_mlp",
+      "fold": "july",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_t32-july-s0",
+      "variant": "state_t32",
+      "fold": "july",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_c32-july-s0",
+      "variant": "state_c32",
+      "fold": "july",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_mlp-august-s0",
+      "variant": "state_mlp",
+      "fold": "august",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_t32-august-s0",
+      "variant": "state_t32",
+      "fold": "august",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_c32-august-s0",
+      "variant": "state_c32",
+      "fold": "august",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_mlp-september-s0",
+      "variant": "state_mlp",
+      "fold": "september",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_t32-september-s0",
+      "variant": "state_t32",
+      "fold": "september",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_c32-september-s0",
+      "variant": "state_c32",
+      "fold": "september",
+      "seed": 0,
+      "enabled": false,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B3-state_mlp-july-s1",
+      "variant": "state_mlp",
+      "fold": "july",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_t32-july-s1",
+      "variant": "state_t32",
+      "fold": "july",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_c32-july-s1",
+      "variant": "state_c32",
+      "fold": "july",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_mlp-august-s1",
+      "variant": "state_mlp",
+      "fold": "august",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_t32-august-s1",
+      "variant": "state_t32",
+      "fold": "august",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_c32-august-s1",
+      "variant": "state_c32",
+      "fold": "august",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_mlp-september-s1",
+      "variant": "state_mlp",
+      "fold": "september",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_t32-september-s1",
+      "variant": "state_t32",
+      "fold": "september",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_c32-september-s1",
+      "variant": "state_c32",
+      "fold": "september",
+      "seed": 1,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_mlp-july-s2",
+      "variant": "state_mlp",
+      "fold": "july",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_t32-july-s2",
+      "variant": "state_t32",
+      "fold": "july",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_c32-july-s2",
+      "variant": "state_c32",
+      "fold": "july",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_mlp-august-s2",
+      "variant": "state_mlp",
+      "fold": "august",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_t32-august-s2",
+      "variant": "state_t32",
+      "fold": "august",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_c32-august-s2",
+      "variant": "state_c32",
+      "fold": "august",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_mlp-september-s2",
+      "variant": "state_mlp",
+      "fold": "september",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_t32-september-s2",
+      "variant": "state_t32",
+      "fold": "september",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    },
+    {
+      "id": "H14-B3-state_c32-september-s2",
+      "variant": "state_c32",
+      "fold": "september",
+      "seed": 2,
+      "enabled": false,
+      "stage": "conditional_seed_stability"
+    }
+  ],
+  "phases": {
+    "score_screen": false,
+    "score_stability": false
+  },
+  "fit_ceiling": 21,
+  "potential_task_slots": 27,
+  "screen_fit_ceiling": 9,
+  "stability_fit_ceiling": 12,
+  "deadline_utc": "2026-11-03T03:21:56Z",
+  "recovery_grace_seconds": 900,
+  "minimum_fit_seconds": 900,
+  "source_manifest": {
+    "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261102-gpu14h/author-batch3/source-manifest.json",
+    "sha256": "b2081354d15954624419fbbd6c97325bc73f573e136025744cac72565743bbb4"
+  },
+  "input_metadata": {
+    "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261102-gpu14h/author-batch3/input-metadata.json",
+    "sha256": "5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d"
+  },
+  "selection": {
+    "screen_seeds": [
+      0
+    ],
+    "control_seeds": [],
+    "eligible": "complete 3 folds AND E9_pkg pooled delta NLL < 0 AND delta Brier <= 0 vs frozen frequency",
+    "rank": "ascending pooled delta NLL; tied within 1e-6 of remaining minimum use lexicographic variant ID",
+    "top_max": 2,
+    "stability_seeds": [
+      0,
+      1,
+      2
+    ],
+    "stability_aggregation": "candidate 3-seed probability mean vs same frozen deterministic frequency baseline; same exposed E9_pkg",
+    "incomplete": "no selection; preserve missing/failed tasks; no favorable-fold pooling",
+    "calibration_fits": 0,
+    "final_fits": 0,
+    "final_six_game_evaluations": 0,
+    "independent_test": false,
+    "deployment": false
+  },
+  "metrics": {
+    "classes": 9,
+    "NLL_clip": 1e-12,
+    "Brier": "sum over9 groups",
+    "ECE10": "top-label equal-width bins descriptive",
+    "pooling": "all mapped E9_pkg pitches; identical keys for every candidate and baseline",
+    "additional": [
+      "top1",
+      "top2 stable class-order tie",
+      "zero-truth-probability counts",
+      "classwise support/NLL",
+      "Q_pkg/E9_pkg census",
+      "unseen/support-out diagnostics"
+    ]
+  },
+  "limits": {
+    "fit_wall_seconds": 7200,
+    "cpu_wall_seconds": 3600,
+    "rss_bytes": 8589934592,
+    "vram_bytes": 17179869184,
+    "output_bytes_per_fit": 67108864,
+    "cpu_output_bytes": 16777216,
+    "aggregate_new_remote_bytes": 6442450944,
+    "torch_intraop_fit": 2,
+    "blas_threads": 1,
+    "cpu_threads": 1
+  },
+  "resource_admission": {
+    "remote_disk_free_bytes": 25769803776,
+    "remote_host_available_bytes": 77309411328,
+    "local_T7_free_bytes": 25769803776,
+    "min_gpu_free_mib": 20480,
+    "aggregate_scope": "all NOV14H batches share6GiB; no additional per-batch allocation"
+  },
+  "interpretation": [
+    "new current pitch type target, separate from old conditional outcome target",
+    "Q_pkg already selected for 7leaf outcome eligibility; not all pitches Q",
+    "nine-group distribution conditional on mapped taxonomy; predicting Q_pkg does not imply full-taxonomy accuracy",
+    "current type/outcome/physics do not reach forward; strict historical tokens only",
+    "original final-snapshot arrival UNKNOWN; repeated2026 EXPOSED DEVELOPMENT",
+    "candidate seed0 selection and seed stability are not independent confirmation",
+    "old outcome T/C weights/predictions are not reused as pitch-type predictions",
+    "no CAL/FINAL/six-game/RS/OPE/service promotion"
+  ],
+  "screen_queue": [
+    "H14-B3-state_mlp-july-s0",
+    "H14-B3-state_t32-july-s0",
+    "H14-B3-state_c32-july-s0",
+    "H14-B3-state_mlp-august-s0",
+    "H14-B3-state_t32-august-s0",
+    "H14-B3-state_c32-august-s0",
+    "H14-B3-state_mlp-september-s0",
+    "H14-B3-state_t32-september-s0",
+    "H14-B3-state_c32-september-s0"
+  ],
+  "target": {
+    "type_codes": [
+      "UNKNOWN",
+      "CH",
+      "CS",
+      "CU",
+      "EP",
+      "FA",
+      "FC",
+      "FF",
+      "FO",
+      "FS",
+      "KC",
+      "KN",
+      "PO",
+      "SC",
+      "SI",
+      "SL",
+      "ST",
+      "SV",
+      "UN"
+    ],
+    "classes": [
+      "FF",
+      "SI",
+      "FC",
+      "SL",
+      "ST",
+      "CU",
+      "CH",
+      "FS",
+      "OT"
+    ],
+    "groups": {
+      "FF": [
+        "FF",
+        "FA"
+      ],
+      "SI": [
+        "SI"
+      ],
+      "FC": [
+        "FC"
+      ],
+      "SL": [
+        "SL",
+        "SV"
+      ],
+      "ST": [
+        "ST"
+      ],
+      "CU": [
+        "CU",
+        "KC",
+        "CS"
+      ],
+      "CH": [
+        "CH"
+      ],
+      "FS": [
+        "FS",
+        "FO"
+      ],
+      "OT": [
+        "KN",
+        "SC",
+        "EP"
+      ]
+    },
+    "unmapped": [
+      "UNKNOWN",
+      "PO",
+      "UN"
+    ],
+    "prediction_population": "all original OOF Q_pkg keys",
+    "scoring_population": "mapped E9_pkg only",
+    "training_population": "original FIT and mapped9 label",
+    "support_filter": false
+  },
+  "features": {
+    "matrix_slice": [
+      0,
+      11
+    ],
+    "columns": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_lead",
+      "home_defense",
+      "on_1b",
+      "on_2b",
+      "on_3b",
+      "batter_left",
+      "pitcher_left"
+    ],
+    "excluded": "all x indices11:199; all currenttype/physics/transfer/hinge",
+    "sequence": "strictly earlier samepitcher samegame32; original rows retained, including unmapped labels",
+    "current_truth_as_input": false
+  },
+  "baseline": {
+    "kind": "global -> pitcher -> pitcher/balls/strikes",
+    "alpha": 4.0,
+    "count_fits": 3,
+    "calibration": "identity",
+    "OOF_updates": false,
+    "unseen": "fixed parent fallback",
+    "stability": "reuse pinned screen count tables, no refit"
+  },
+  "queue_predecessor": "001 screen/stability then002 screen/stability under single controller; this fixed9 next"
+}
