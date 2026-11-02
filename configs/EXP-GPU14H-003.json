@@ -1,8 +1,8 @@
 {
   "format": "gpu14h-prepitch-v1",
   "id": "EXP-GPU14H-003",
-  "status": "DRAFT",
-  "execute": false,
+  "status": "REGISTERED",
+  "execute": true,
   "author": "research_history",
   "source_base": "c3d586c01b1d4e5bdbb480211add65dfd6167c5c",
   "data_role": "2026 EXPOSED DEVELOPMENT",
@@ -43,7 +43,7 @@
       "variant": "state_mlp",
       "fold": "july",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -51,7 +51,7 @@
       "variant": "state_t32",
       "fold": "july",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -59,7 +59,7 @@
       "variant": "state_c32",
       "fold": "july",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -67,7 +67,7 @@
       "variant": "state_mlp",
       "fold": "august",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -75,7 +75,7 @@
       "variant": "state_t32",
       "fold": "august",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -83,7 +83,7 @@
       "variant": "state_c32",
       "fold": "august",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -91,7 +91,7 @@
       "variant": "state_mlp",
       "fold": "september",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -99,7 +99,7 @@
       "variant": "state_t32",
       "fold": "september",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -107,7 +107,7 @@
       "variant": "state_c32",
       "fold": "september",
       "seed": 0,
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -115,7 +115,7 @@
       "variant": "state_mlp",
       "fold": "july",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -123,7 +123,7 @@
       "variant": "state_t32",
       "fold": "july",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -131,7 +131,7 @@
       "variant": "state_c32",
       "fold": "july",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -139,7 +139,7 @@
       "variant": "state_mlp",
       "fold": "august",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -147,7 +147,7 @@
       "variant": "state_t32",
       "fold": "august",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -155,7 +155,7 @@
       "variant": "state_c32",
       "fold": "august",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -163,7 +163,7 @@
       "variant": "state_mlp",
       "fold": "september",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -171,7 +171,7 @@
       "variant": "state_t32",
       "fold": "september",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -179,7 +179,7 @@
       "variant": "state_c32",
       "fold": "september",
       "seed": 1,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -187,7 +187,7 @@
       "variant": "state_mlp",
       "fold": "july",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -195,7 +195,7 @@
       "variant": "state_t32",
       "fold": "july",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -203,7 +203,7 @@
       "variant": "state_c32",
       "fold": "july",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -211,7 +211,7 @@
       "variant": "state_mlp",
       "fold": "august",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -219,7 +219,7 @@
       "variant": "state_t32",
       "fold": "august",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -227,7 +227,7 @@
       "variant": "state_c32",
       "fold": "august",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -235,7 +235,7 @@
       "variant": "state_mlp",
       "fold": "september",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -243,7 +243,7 @@
       "variant": "state_t32",
       "fold": "september",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     },
     {
@@ -251,13 +251,13 @@
       "variant": "state_c32",
       "fold": "september",
       "seed": 2,
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_seed_stability"
     }
   ],
   "phases": {
-    "score_screen": false,
-    "score_stability": false
+    "score_screen": true,
+    "score_stability": true
   },
   "fit_ceiling": 21,
   "potential_task_slots": 27,
