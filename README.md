@@ -1,29 +1,27 @@
 # Pitcheezy
 
-MLB 투구 직전 상황으로 다음 공의 구종·목표 위치 후보를 보여 주는 관전 보조 서비스. 충북대 졸업 캡스톤, 2026-11-24 전시. 
-A second-screen companion for MLB fans that suggests the next pitch type and target zone from pre-pitch context (graduation capstone).
+MLB 투구 직전 상황으로 다음 공의 구종·목표 위치 후보를 보여 주는 관전 보조 서비스. 충북대 졸업 캡스톤, 2026-11-24 전시.
 
-<img src="docs/capstone/diagrams/shots/state-recommended-ledger_recorded-390x844.png" width="260" alt="추천 화면 / recommendation screen">
+<img src="docs/capstone/diagrams/shots/state-recommended-ledger_recorded-390x844.png" width="260" alt="추천 화면">
 
-## 핵심 / Highlights
+## 핵심
 
-| | 내용 / Details |
+| | 내용 |
 |---|---|
-| 데이터 Data | Statcast. 학습 2023-05~2025-04, 검증 2025-07~09, 2026은 학습·튜닝·모델 선택에 쓰지 않음 · Time-split train/validation; 2026 never used for training or selection |
-| 예측 Prediction | 다음 공 결과 10클래스 확률. 검증 구간 311,721구에서 log loss 1.4904 vs 상황 빈도 기준선 1.5041, 5/5 시드 개선 ([근거](results/EXP-P11-001.json)) · 10-class next-pitch outcome; beats frequency baseline on 311,721 pitches |
-| 추천 Policy | 2026 시즌 2,429경기 오프폴리시 평가에서 개선 근거 없음 → 화면에 "검증 전 실험"으로 표시 · No evidence of improvement in off-policy evaluation, shown as experimental |
-| 실시간 Live | MLB StatsAPI 피드 → FastAPI → React, 추천이 투구 전 계산인지 사후 재생인지 배지로 구분 |
+| 데이터 | Statcast. 학습 2023-05~2025-04, 검증 2025-07~09, 2026은 학습·튜닝·모델 선택에 쓰지 않음 |
+| 예측 | 다음 공 결과 10클래스 확률. 검증 구간 311,721구에서 log loss 1.4904 vs 상황 빈도 기준선 1.5041, 5/5 시드 개선 ([근거](results/EXP-P11-001.json)) |
+| 추천 | 2026 시즌 2,429경기 오프폴리시 평가에서 개선 근거 없음 → 화면에 "검증 전 실험"으로 표시 |
+| 실시간 | MLB StatsAPI 피드 → FastAPI → React, 추천이 투구 전 계산인지 사후 재생인지 배지로 구분 |
 
 ```
 Statcast 수집 → 전처리·특징 → 학습·동결 → 추론(사전/실시간) → FastAPI → React
 ```
 
-## 내 역할 / My role
+## 내 역할
 
-방향 설정, 실험 설계, ML 모델(전이 확률·추천 정책). 구현·검사는 AI 코딩 에이전트와 나누고, 작성자와 다른 에이전트의 검토를 거쳐 병합. 
-Product direction, experiment design, and ML models. Implementation is shared with AI coding agents, with cross-agent review before merge.
+방향 설정, 실험 설계, ML 모델(전이 확률·추천 정책). 구현·검사는 AI 코딩 에이전트와 나누고, 작성자와 다른 에이전트의 검토를 거쳐 병합.
 
-## 팀원용 / For contributors
+## 팀원용
 
 1. [30~60분 온보딩](docs/onboarding.md): 데이터·모델 없이 실행하는 첫 CPU 검사.
 2. [프로젝트 지도](docs/pm/project-map.md): 코드와 문서의 역할.
