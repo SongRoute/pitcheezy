@@ -1,8 +1,8 @@
 {
   "format": "gpu14h-batter-v1",
   "id": "EXP-GPU14H-008",
-  "status": "DRAFT",
-  "execute": false,
+  "status": "REGISTERED",
+  "execute": true,
   "author": "research_history",
   "source_base": "d7d7f4bb74568fcbd0db95053beda430bada8fc0",
   "data_role": "2026 EXPOSED DEVELOPMENT",
@@ -46,7 +46,7 @@
       "fold": "july",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -55,7 +55,7 @@
       "fold": "july",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -64,7 +64,7 @@
       "fold": "august",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -73,7 +73,7 @@
       "fold": "august",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -82,7 +82,7 @@
       "fold": "september",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -91,7 +91,7 @@
       "fold": "september",
       "seed": 0,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "screen"
     },
     {
@@ -100,7 +100,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -109,7 +109,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -118,7 +118,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -127,7 +127,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -136,7 +136,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -145,7 +145,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -154,7 +154,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -163,7 +163,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -172,7 +172,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -181,7 +181,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -190,7 +190,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -199,7 +199,7 @@
       "fold": "september",
       "seed": 2,
       "kind": "id",
-      "enabled": false,
+      "enabled": true,
       "stage": "conditional_stability"
     },
     {
@@ -208,7 +208,7 @@
       "fold": "july",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "independent_control_replication"
     },
     {
@@ -217,7 +217,7 @@
       "fold": "august",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "independent_control_replication"
     },
     {
@@ -226,7 +226,7 @@
       "fold": "september",
       "seed": 1,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "independent_control_replication"
     },
     {
@@ -235,7 +235,7 @@
       "fold": "july",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "independent_control_replication"
     },
     {
@@ -244,7 +244,7 @@
       "fold": "august",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "independent_control_replication"
     },
     {
@@ -253,14 +253,14 @@
       "fold": "september",
       "seed": 2,
       "kind": "control",
-      "enabled": false,
+      "enabled": true,
       "stage": "independent_control_replication"
     }
   ],
   "phases": {
-    "score_screen": false,
-    "score_stability": false,
-    "score_control": false
+    "score_screen": true,
+    "score_stability": true,
+    "score_control": true
   },
   "fit_ceiling": 18,
   "potential_task_slots": 24,
