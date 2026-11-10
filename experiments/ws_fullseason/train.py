@@ -4,7 +4,9 @@ OOF is predicted only after the final epoch; no SELECT, calibration, or checkpoi
 choice. Every optimizer batch records its actual indices for exact epoch coverage.
 """
 import math
+import os
 from pathlib import Path
+import platform
 import time
 import numpy as np
 import torch
@@ -21,9 +23,25 @@ def check_epoch(seen, fit, keys):
             'every_key_once':True,'positive_parent_weight_every_row':True}
 
 
-def run(recipe, seed, package, out, *, synthetic=False):
+DEVICES=('cuda','mps')
+
+
+def resolve_device(device, synthetic):
+    """Explicit device only. 'cuda' keeps the original contract (synthetic -> CPU, else CUDA required).
+    'mps' requires Apple MPS and refuses PYTORCH_ENABLE_MPS_FALLBACK (no silent CPU substitution)."""
+    if device not in DEVICES: raise ValueError('unknown device: '+repr(device))
+    if device=='cuda':
+        if not synthetic and not torch.cuda.is_available(): raise ValueError('CUDA required')
+        return torch.device('cpu' if synthetic else 'cuda')
+    if os.environ.get('PYTORCH_ENABLE_MPS_FALLBACK','') not in ('','0'):
+        raise ValueError('PYTORCH_ENABLE_MPS_FALLBACK must be unset for device=mps (CPU fallback forbidden)')
+    if not torch.backends.mps.is_available(): raise ValueError('MPS required')
+    return torch.device('mps')
+
+
+def run(recipe, seed, package, out, *, synthetic=False, device='cuda'):
     if seed not in recipe['seeds'] or recipe['arm']!='T': raise ValueError('fixed T seed')
-    if not synthetic and not torch.cuda.is_available(): raise ValueError('CUDA required')
+    requested=device; device=resolve_device(device, synthetic)
     rule=recipe['training_rule']; t=recipe['base']['training']
     stage=recipe.get('execution_stage','OOF')
     if stage not in ('OOF','FINAL_REFIT'): raise ValueError('registered execution stage')
@@ -33,8 +51,8 @@ def run(recipe, seed, package, out, *, synthetic=False):
     torch.set_num_threads(2); torch.manual_seed(seed); np.random.seed(seed)
     campaign.configure_backend({'arm':'T'}, {})
     torch.backends.cuda.matmul.allow_tf32=False; torch.backends.cudnn.allow_tf32=False
-    if torch.cuda.is_available() and not synthetic: torch.cuda.manual_seed_all(seed)
-    device=torch.device('cpu' if synthetic else 'cuda')
+    if requested=='cuda' and torch.cuda.is_available() and not synthetic: torch.cuda.manual_seed_all(seed)
+    if device.type=='mps': torch.mps.manual_seed(seed)
     x,c,s=package
     if c['tuning'].any() or c['calibration'].any() or not np.array_equal(c['fit']|c['evaluation'],np.ones(len(x),bool)) or (c['fit']&c['evaluation']).any():
         raise ValueError('FIT/OOF only disjoint complete package')
@@ -78,10 +96,17 @@ def run(recipe, seed, package, out, *, synthetic=False):
         if q.shape!=(len(oofrows),7) or not np.isfinite(q).all() or (q<0).any() or not np.allclose(q.sum(1),1,atol=1e-7):
             raise ValueError('complete finite normalized OOF probabilities')
         np.savez(out/'oof-predictions.npz',keys=c['keys'][oofrows],probabilities=q)
-    return {'status':'COMPLETED','arm':'T','seed':seed,'epochs':rule['epochs'],
+    result={'status':'COMPLETED','arm':'T','seed':seed,'epochs':rule['epochs'],
         'optimization_steps':steps,'sample_presentations':int(len(fitrows)*rule['epochs']),
         'consumption':trace,'OOF_rows':len(oofrows),'OOF_keys_sha256':key_digest(c['keys'][oofrows]),
         'temperature':1.0,'calibration_fits':0,'SELECT_queries':0,'checkpoint':'final epoch',
         'metrics_computed':False,'execution_stage':stage,'elapsed_compute_seconds':time.monotonic()-start,
         'backend':{'deterministic':True,'warn_only':True,'cudnn_benchmark':False,'tf32':False,'dtype':'fp32'},
         'versions':{'torch':torch.__version__,'cuda':torch.version.cuda,'numpy':np.__version__}}
+    if device.type=='mps':
+        # MPS results are a separate lane: never pooled with CUDA results. Default/synthetic schema unchanged.
+        torch.mps.synchronize()
+        result['backend'].update(device='mps',mps_fallback_env=False,deterministic_guaranteed=False)
+        result['versions'].update(mps={'macos':platform.mac_ver()[0],'machine':platform.machine(),
+            'driver_allocated_bytes':int(torch.mps.driver_allocated_memory())})
+    return result

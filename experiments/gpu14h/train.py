@@ -28,6 +28,6 @@ def recipe(producer, variant):
     return result
 
 
-def run(producer, variant, seed, package, out, synthetic=False):
+def run(producer, variant, seed, package, out, synthetic=False, device='cuda'):
     from experiments.ws_fullseason.train import run as accepted_t
-    return accepted_t(recipe(producer, variant), seed, package, out, synthetic=synthetic)
+    return accepted_t(recipe(producer, variant), seed, package, out, synthetic=synthetic, device=device)

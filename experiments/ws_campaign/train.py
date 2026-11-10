@@ -38,7 +38,7 @@ def predict(model, data, keys, rows, batch):
         for offset in range(0, len(rows), batch):
             idx = rows[offset:offset + batch]
             z = model(data.x[idx], data.tokens(idx) if model.seq else None, keys[idx])
-            for k, v in z.items(): collected.setdefault(k, []).append(v.double().cpu().numpy())
+            for k, v in z.items(): collected.setdefault(k, []).append(v.cpu().double().numpy())
     result = {k: np.concatenate(v) for k, v in collected.items()}
     if not result or not all(np.isfinite(v).all() for v in result.values()):
         raise ValueError('empty/nonfinite prediction')
