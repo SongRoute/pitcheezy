@@ -1,0 +1,519 @@
+{
+  "format": "gpu14h-batter-v1",
+  "id": "EXP-GPU14H-008",
+  "status": "DRAFT",
+  "execute": false,
+  "author": "claude_opus_worker",
+  "source_base": "d7d7f4bb74568fcbd0db95053beda430bada8fc0",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "arm": "PREPITCH9_BATTER",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "variants": {
+    "batter_only": {
+      "factors": [
+        "batter"
+      ]
+    },
+    "pitcher_batter": {
+      "factors": [
+        "pitcher",
+        "batter"
+      ]
+    }
+  },
+  "folds": {
+    "july": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-001.json",
+      "producer_recipe_sha256": "f09fc1ae99ac998b288effe2942634e5ee6de29c119d8858b00eced305dfa0c9"
+    },
+    "august": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-OOF2.json",
+      "producer_recipe_sha256": "43908f9422da4e9bc1162e85df08778b0504641b5d6b4cca6b9cbf85940a890c"
+    },
+    "september": {
+      "producer_recipe": "configs/EXP-WS-FULLSEASON-T-OOF3.json",
+      "producer_recipe_sha256": "9ec47ad13c78be1b0a0536a7441dd12baa5075d930e1c3e02d0bc2c125f8580d"
+    }
+  },
+  "jobs": [
+    {
+      "id": "H14-B8-id-batter_only-july-s0",
+      "variant": "batter_only",
+      "fold": "july",
+      "seed": 0,
+      "kind": "id",
+      "enabled": true,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-july-s0",
+      "variant": "pitcher_batter",
+      "fold": "july",
+      "seed": 0,
+      "kind": "id",
+      "enabled": true,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B8-id-batter_only-august-s0",
+      "variant": "batter_only",
+      "fold": "august",
+      "seed": 0,
+      "kind": "id",
+      "enabled": true,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-august-s0",
+      "variant": "pitcher_batter",
+      "fold": "august",
+      "seed": 0,
+      "kind": "id",
+      "enabled": true,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B8-id-batter_only-september-s0",
+      "variant": "batter_only",
+      "fold": "september",
+      "seed": 0,
+      "kind": "id",
+      "enabled": true,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-september-s0",
+      "variant": "pitcher_batter",
+      "fold": "september",
+      "seed": 0,
+      "kind": "id",
+      "enabled": true,
+      "stage": "screen"
+    },
+    {
+      "id": "H14-B8-id-batter_only-july-s1",
+      "variant": "batter_only",
+      "fold": "july",
+      "seed": 1,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-july-s1",
+      "variant": "pitcher_batter",
+      "fold": "july",
+      "seed": 1,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-batter_only-august-s1",
+      "variant": "batter_only",
+      "fold": "august",
+      "seed": 1,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-august-s1",
+      "variant": "pitcher_batter",
+      "fold": "august",
+      "seed": 1,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-batter_only-september-s1",
+      "variant": "batter_only",
+      "fold": "september",
+      "seed": 1,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-september-s1",
+      "variant": "pitcher_batter",
+      "fold": "september",
+      "seed": 1,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-batter_only-july-s2",
+      "variant": "batter_only",
+      "fold": "july",
+      "seed": 2,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-july-s2",
+      "variant": "pitcher_batter",
+      "fold": "july",
+      "seed": 2,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-batter_only-august-s2",
+      "variant": "batter_only",
+      "fold": "august",
+      "seed": 2,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-august-s2",
+      "variant": "pitcher_batter",
+      "fold": "august",
+      "seed": 2,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-batter_only-september-s2",
+      "variant": "batter_only",
+      "fold": "september",
+      "seed": 2,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-id-pitcher_batter-september-s2",
+      "variant": "pitcher_batter",
+      "fold": "september",
+      "seed": 2,
+      "kind": "id",
+      "enabled": true,
+      "stage": "conditional_stability"
+    },
+    {
+      "id": "H14-B8-control-pitcher_t32-july-s1",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 1,
+      "kind": "control",
+      "enabled": true,
+      "stage": "independent_control_replication"
+    },
+    {
+      "id": "H14-B8-control-pitcher_t32-august-s1",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 1,
+      "kind": "control",
+      "enabled": true,
+      "stage": "independent_control_replication"
+    },
+    {
+      "id": "H14-B8-control-pitcher_t32-september-s1",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 1,
+      "kind": "control",
+      "enabled": true,
+      "stage": "independent_control_replication"
+    },
+    {
+      "id": "H14-B8-control-pitcher_t32-july-s2",
+      "variant": "pitcher_t32",
+      "fold": "july",
+      "seed": 2,
+      "kind": "control",
+      "enabled": true,
+      "stage": "independent_control_replication"
+    },
+    {
+      "id": "H14-B8-control-pitcher_t32-august-s2",
+      "variant": "pitcher_t32",
+      "fold": "august",
+      "seed": 2,
+      "kind": "control",
+      "enabled": true,
+      "stage": "independent_control_replication"
+    },
+    {
+      "id": "H14-B8-control-pitcher_t32-september-s2",
+      "variant": "pitcher_t32",
+      "fold": "september",
+      "seed": 2,
+      "kind": "control",
+      "enabled": true,
+      "stage": "independent_control_replication"
+    }
+  ],
+  "phases": {
+    "score_screen": true,
+    "score_stability": true,
+    "score_control": true
+  },
+  "fit_ceiling": 18,
+  "potential_task_slots": 24,
+  "screen_fit_ceiling": 6,
+  "stability_fit_ceiling": 6,
+  "deadline_utc": "2026-11-03T03:21:56Z",
+  "recovery_grace_seconds": 900,
+  "minimum_fit_seconds": 900,
+  "source_manifest": {
+    "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261110-nov14h-followup/rescore-008/source-manifest.score-attempt-002.json",
+    "sha256": "9bd3cb447079747e45d293e3a987c83ede1ff011f40831c34079386406fd77a0"
+  },
+  "input_metadata": {
+    "path": "/Users/song/Projects/pitcheezy-pm-jobs/20261102-gpu14h/author-batch8/input-metadata.json",
+    "sha256": "5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d"
+  },
+  "selection": {
+    "screen_seeds": [
+      0
+    ],
+    "control_seeds": [
+      0
+    ],
+    "eligible": "완결3fold에서 paired 대조(B→003T,P+B→005P) 및 동결빈도 및 원003T 각각 ΔNLL<0 AND ΔBrier<=0",
+    "rank": "적격 raw candidate pooled NLL 최소, 최소와1e-6 이내 동률은 variantID 사전순; 최고1",
+    "top_max": 1,
+    "stability_seeds": [
+      0,
+      1,
+      2
+    ],
+    "stability_aggregation": "후보와각대조의 matched3seed 확률평균,동일E9키",
+    "incomplete": "부모 또는 후보 불완전이면INCOMPLETE;유리한fold만pooling0",
+    "calibration_fits": 0,
+    "final_fits": 0,
+    "final_six_game_evaluations": 0,
+    "independent_test": false,
+    "deployment": false
+  },
+  "metrics": {
+    "classes": 9,
+    "NLL_clip": 1e-12,
+    "Brier": "sum over9 groups",
+    "ECE10": "top-label equal-width bins descriptive",
+    "pooling": "all mapped E9_pkg pitches; identical keys for every candidate and baseline",
+    "additional": [
+      "top1",
+      "top2 stable class-order tie",
+      "zero-truth-probability counts",
+      "classwise support/NLL",
+      "Q_pkg/E9_pkg census",
+      "unseen/support-out diagnostics"
+    ]
+  },
+  "limits": {
+    "fit_wall_seconds": 7200,
+    "cpu_wall_seconds": 3600,
+    "rss_bytes": 8589934592,
+    "vram_bytes": 17179869184,
+    "output_bytes_per_fit": 67108864,
+    "cpu_output_bytes": 16777216,
+    "aggregate_new_remote_bytes": 6442450944,
+    "torch_intraop_fit": 2,
+    "blas_threads": 1,
+    "cpu_threads": 1
+  },
+  "resource_admission": {
+    "remote_disk_free_bytes": 25769803776,
+    "remote_host_available_bytes": 77309411328,
+    "local_T7_free_bytes": 25769803776,
+    "min_gpu_free_mib": 20480,
+    "aggregate_scope": "all NOV14H batches share6GiB; no additional per-batch allocation"
+  },
+  "interpretation": [
+    "2026 EXPOSED DEVELOPMENT,반복OOF·사후후보선정편향",
+    "Q_pkg는기존7leaf outcome적격으로선택된패키지;전체투구Q 아님",
+    "mapped E9조건부9종,전체Q_pkg에는예측status를보존",
+    "현재type/physics/outcome을query에입력하지않음;과거strictprior32만사용",
+    "arrival UNKNOWN final snapshot",
+    "005미선정raw최저T를별도008에서재검증하는사후설계;005선정소급변경0",
+    "분리ID 가산offset이며ID×state/P×B비선형상호작용주장0",
+    "unknownoffset0이no-ID학습trunk동일을뜻하지않음",
+    "known/cold pitcher×batter 네집단/월/seed/전체키/ECE보존",
+    "새CAL/FINAL/6game/RS/OPE/서비스교체0;기존FINAL pool자동추가0"
+  ],
+  "screen_queue": [
+    "H14-B8-id-batter_only-july-s0",
+    "H14-B8-id-pitcher_batter-july-s0",
+    "H14-B8-id-batter_only-august-s0",
+    "H14-B8-id-pitcher_batter-august-s0",
+    "H14-B8-id-batter_only-september-s0",
+    "H14-B8-id-pitcher_batter-september-s0"
+  ],
+  "target": {
+    "type_codes": [
+      "UNKNOWN",
+      "CH",
+      "CS",
+      "CU",
+      "EP",
+      "FA",
+      "FC",
+      "FF",
+      "FO",
+      "FS",
+      "KC",
+      "KN",
+      "PO",
+      "SC",
+      "SI",
+      "SL",
+      "ST",
+      "SV",
+      "UN"
+    ],
+    "classes": [
+      "FF",
+      "SI",
+      "FC",
+      "SL",
+      "ST",
+      "CU",
+      "CH",
+      "FS",
+      "OT"
+    ],
+    "groups": {
+      "FF": [
+        "FF",
+        "FA"
+      ],
+      "SI": [
+        "SI"
+      ],
+      "FC": [
+        "FC"
+      ],
+      "SL": [
+        "SL",
+        "SV"
+      ],
+      "ST": [
+        "ST"
+      ],
+      "CU": [
+        "CU",
+        "KC",
+        "CS"
+      ],
+      "CH": [
+        "CH"
+      ],
+      "FS": [
+        "FS",
+        "FO"
+      ],
+      "OT": [
+        "KN",
+        "SC",
+        "EP"
+      ]
+    },
+    "unmapped": [
+      "UNKNOWN",
+      "PO",
+      "UN"
+    ],
+    "prediction_population": "all original OOF Q_pkg keys",
+    "scoring_population": "mapped E9_pkg only",
+    "training_population": "original FIT and mapped9 label",
+    "support_filter": false
+  },
+  "features": {
+    "matrix_slice": [
+      0,
+      11
+    ],
+    "columns": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_lead",
+      "home_defense",
+      "on_1b",
+      "on_2b",
+      "on_3b",
+      "batter_left",
+      "pitcher_left"
+    ],
+    "excluded": "all x indices11:199; all currenttype/physics/transfer/hinge",
+    "sequence": "strictly earlier samepitcher samegame32; original rows retained, including unmapped labels",
+    "current_truth_as_input": false,
+    "identity_factors": {
+      "vocabulary": "각각 sorted FIT_E9-only pitcher/batter",
+      "dimension": 16,
+      "unknown_index": 0,
+      "unknown_vector": "permanent zero",
+      "transport": "state11 plus one/two exact ID indices; trunk still11",
+      "fusion": "분리 가산 factorized logit offsets; ID×state/P×B 비선형 상호작용0",
+      "initial_offset": "zero",
+      "initial_rng": "원backbone/RNG 보존,각factor는단독과동일seed/embedding"
+    }
+  },
+  "baseline": {
+    "paired": {
+      "batter_only": "003 state_t32",
+      "pitcher_batter": "005 pitcher_t32"
+    },
+    "required_common": [
+      "003 state_t32",
+      "003 frozen frequency"
+    ],
+    "count_fits": 0,
+    "references": [
+      "003 no-ID T3seed",
+      "005 pitcher T seed0",
+      "008 independent pitcher T seed1/2"
+    ],
+    "control_replication": "005 screen에서pitcher_t32미선정이고원H14-B5-id-pitcher_t32 claim없음일때만 원005.run 직접호출; 신규후보적격과독립6",
+    "no_retry_or_duplicate": true
+  },
+  "queue_predecessor": "기존단일controller;screen6 및 독립control6은각운영grant후실행,후보선정은control추가결과와무관한고정seed0계약",
+  "control_fit_ceiling": 6,
+  "reference003": {
+    "commit": "37a84c53f678fcf8d402b42fd9958f06ef33de8f",
+    "config_sha256": "90e0cc453e1c10320949bd0bb489be7d4784f4ecdd1caa134c1142547cf4f7a1",
+    "source_manifest_sha256": "b2081354d15954624419fbbd6c97325bc73f573e136025744cac72565743bbb4",
+    "input_metadata_sha256": "5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d"
+  },
+  "reference005": {
+    "commit": "d7d7f4bb74568fcbd0db95053beda430bada8fc0",
+    "config_sha256": "d79895d4b106087d23a1cd56f609e9b4856e9a7bfe23239eeea208a4a8ee9f26",
+    "source_manifest_sha256": "799965649733f8282c7bed2f6415ebefe5907a1121b768480c249757418ec6af",
+    "input_metadata_sha256": "5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d"
+  },
+  "control_queue": [
+    "H14-B8-control-pitcher_t32-july-s1",
+    "H14-B8-control-pitcher_t32-august-s1",
+    "H14-B8-control-pitcher_t32-september-s1",
+    "H14-B8-control-pitcher_t32-july-s2",
+    "H14-B8-control-pitcher_t32-august-s2",
+    "H14-B8-control-pitcher_t32-september-s2"
+  ],
+  "control_score": "score_control은own screen없이원003/005핀+008control6만으로독립검토가능;후보미선정이어도보고",
+  "score_amendment": {
+    "amends": {
+      "commit": "167fedc9d5cad428785402dfea3486bc1fa254f7",
+      "config": "configs/EXP-GPU14H-008.json",
+      "config_sha256": "8368e2c484317d7d6154357668666355bd8340cfe3365927682dc491e9587a86",
+      "source_manifest_sha256": "30b8b273613ac7ec1f61e702fa1a9862221431329b588acb15adc186c4e91c42"
+    },
+    "score_deadline_utc": "2026-11-17T14:59:00Z",
+    "reason": "NOV14H-008-RESCORE-20261110: score_screen/score_control attempt-001 KeyError batter (parent population omits batter). score-only: no fit, same jobs/variants/metrics/selection/baselines/denominators; 008 fit receipts stay verified under the original config and source manifest."
+  }
+}

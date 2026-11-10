@@ -92,6 +92,7 @@ def gates(config_path, grant_path, grant_sha, task):
     if any(os.environ.get(k) != '1' for k in THREAD_ENV) or os.environ.get('PYTHONPATH') or os.environ.get('PYTHONHOME'): raise ValueError('fixed import/thread environment')
     jobs = {j['id']: j for j in cfg['jobs']}; fit = task in jobs
     if fit:
+        if cfg.get('score_amendment') is not None: raise ValueError('score-only amendment: no fit')
         job = jobs[task]
         if not job['enabled']: raise ValueError('disabled fit')
         if job['kind']=='control':
@@ -107,6 +108,7 @@ def gates(config_path, grant_path, grant_sha, task):
         if len(chosen) != 1: raise ValueError('gpu run one numeric device')
         g.update(gpu_index=chosen[0]['index'], gpu_uuid=chosen[0]['uuid'], lock=str(Path(g['gpu_lock_root']) / (chosen[0]['uuid'] + '.lock')))
     elif task not in cfg['phases'] or cfg['phases'][task] is not True: raise ValueError('disabled phase')
+    else: score_amendment(cfg)
     limits = cfg['limits']
     if (g['rss_bytes'] != limits['rss_bytes'] or g['wall_seconds'] != limits['fit_wall_seconds' if fit else 'cpu_wall_seconds']
             or g['output_bytes'] != limits['output_bytes_per_fit' if fit else 'cpu_output_bytes']
@@ -135,6 +137,28 @@ def fit_worker(cfg,g,meta,out):
 
 
 REFERENCE005={'commit':'d7d7f4bb74568fcbd0db95053beda430bada8fc0','config_sha256':'d79895d4b106087d23a1cd56f609e9b4856e9a7bfe23239eeea208a4a8ee9f26','source_manifest_sha256':'799965649733f8282c7bed2f6415ebefe5907a1121b768480c249757418ec6af','input_metadata_sha256':'5b64a6ccc41e59048f22e9d5ae0dbe68c6e81da6d06d77006ccefa9817994a3d'}
+
+
+# 끝난 008 fit 12개(screen6+control6)의 등록. 채점 수정 재시도는 이 등록을 바꾸지 않고 source/마감만 바꾼
+# score 전용 amendment config로 돈다. 008 fit receipt는 계속 이 원 config/source manifest 사슬로 검증한다.
+FIT008={'commit':'167fedc9d5cad428785402dfea3486bc1fa254f7','config':'configs/EXP-GPU14H-008.json','config_sha256':'8368e2c484317d7d6154357668666355bd8340cfe3365927682dc491e9587a86','source_manifest_sha256':'30b8b273613ac7ec1f61e702fa1a9862221431329b588acb15adc186c4e91c42'}
+AMENDABLE=('status','execute','author','source_manifest','score_amendment')
+
+
+def score_amendment(cfg):
+    a=cfg.get('score_amendment')
+    if a is None:return None
+    old=ROOT/FIT008['config']
+    if sha(old)!=FIT008['config_sha256'] or set(a)!={'amends','score_deadline_utc','reason'} or a['amends']!=FIT008:raise ValueError('frozen fit008 registration')
+    same=lambda d:{k:v for k,v in d.items() if k not in AMENDABLE and not k.startswith('_')}
+    if same(cfg)!=same(document(old)) or cfg['source_manifest']['sha256']==FIT008['source_manifest_sha256']:raise ValueError('score amendment changes only source/deadline custody')
+    datetime.fromisoformat(a['score_deadline_utc'].replace('Z','+00:00'))
+    return a
+
+
+def fit008_config(cfg):
+    if score_amendment(cfg) is None:return cfg
+    return dict(cfg,_config_sha256=FIT008['config_sha256'],source_manifest={'sha256':FIT008['source_manifest_sha256']})
 
 
 def task_id(kind,variant,fold,seed):return f'H14-B8-{kind}-{variant}-{fold}-s{seed}'
@@ -217,7 +241,7 @@ def score_worker(cfg,g,meta,out):
     screen=g['task']=='score_screen';control=g['task']=='score_control';variants=[train.CONTROL] if control else list(train.VARIANTS) if screen else selected_screen(g['screen'],cfg,cfg['_config_sha256']);seeds=[0] if screen else [0,1,2]
     expected=set() if control else {(v,f,s) for v in variants for f in FOLDS for s in seeds}
     by=partition(g['results'],g['unavailable_tasks'],expected);noids=factor_partition(g['noid_results'],g['noid_unavailable'],seeds);pitchers=factor_partition(g['pitcher_results'],g['pitcher_unavailable'],seeds)
-    selected005=identity_screen(g['identity_screen'],cfg)
+    selected005=identity_screen(g['identity_screen'],cfg);fit008=fit008_config(cfg)
     if train.CONTROL in selected005:raise ValueError('008 control protocol requires005 unselected T')
     for (f,seed),r in pitchers.items():
         if r['origin']!=('005' if seed==0 else '008'):raise ValueError('fixed seed0 reuse and008 control ledger')
@@ -235,13 +259,13 @@ def score_worker(cfg,g,meta,out):
             if (f,seed) in noids:N[f][seed]=parent.prediction(noids[f,seed],old003,meta,f,seed,p,'state_t32')[keep[f]]
             if (f,seed) in pitchers:
                 r=pitchers[f,seed]
-                P[f][seed]=(identity.prediction(r,old005,meta,f,seed,p,train.CONTROL,'id') if seed==0 else prediction(r,cfg,meta,f,seed,p,train.CONTROL,'control'))[keep[f]]
+                P[f][seed]=(identity.prediction(r,old005,meta,f,seed,p,train.CONTROL,'id') if seed==0 else prediction(r,fit008,meta,f,seed,p,train.CONTROL,'control'))[keep[f]]
     y=np.concatenate([ys[f] for f in FOLDS]);freq=np.concatenate([frequency[f] for f in FOLDS]);kp=np.concatenate([known[f]['pitcher'] for f in FOLDS]);kb=np.concatenate([known[f]['batter'] for f in FOLDS]);rows=[]
     complete_factors=all((f,s) in noids and (f,s) in pitchers for f in FOLDS for s in seeds)
     for v in variants:
         if not complete_factors or (not control and not all((v,f,s) in by for f in FOLDS for s in seeds)):
             rows.append({'variant':v,'status':'INCOMPLETE_NOT_SELECTED','pooled':None,'vs_frozen_frequency':None,'vs_noid_T':None});continue
-        own=P if control else {f:{s:prediction(by[v,f,s],cfg,meta,f,s,pops[f],v,'id')[keep[f]] for s in seeds} for f in FOLDS}
+        own=P if control else {f:{s:prediction(by[v,f,s],fit008,meta,f,s,pops[f],v,'id')[keep[f]] for s in seeds} for f in FOLDS}
         base=P if v=='pitcher_batter' else N
         mean=lambda group:{f:np.mean(list(group[f].values()),axis=0,dtype=np.float64) for f in FOLDS}
         means,bases,nmeans,pmeans=map(mean,(own,base,N,P));q=np.concatenate([means[f] for f in FOLDS]);bc=np.concatenate([bases[f] for f in FOLDS]);nq=np.concatenate([nmeans[f] for f in FOLDS]);pq=np.concatenate([pmeans[f] for f in FOLDS])
@@ -291,7 +315,8 @@ def supervise(cfg, g, args):
         env = dict(os.environ, PITCHEEZY_H14B8_LOCK_FD=str(lock.fileno()), TMPDIR=str(out / 'tmp'))
         (out / 'tmp').mkdir()
         cmd = [sys.executable, '-B', str(Path(__file__)), '--config', str(args.config), '--grant', str(args.grant), '--grant-sha256', args.grant_sha256, '--task', args.task, '--worker']
-        absolute_end = datetime.fromisoformat(cfg['deadline_utc'].replace('Z', '+00:00')).timestamp() - (900 if fit else 60)
+        deadline = cfg['deadline_utc'] if fit or cfg.get('score_amendment') is None else cfg['score_amendment']['score_deadline_utc']
+        absolute_end = datetime.fromisoformat(deadline.replace('Z', '+00:00')).timestamp() - (900 if fit else 60)
         wall = effective_wall(cfg) if fit else min(g['wall_seconds'], absolute_end - time.time())
         if wall <= 0: raise ValueError('absolute phase deadline')
         start = time.monotonic(); peak = 0; reason = None

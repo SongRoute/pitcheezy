@@ -11,6 +11,9 @@ from experiments.gpu14h_batter import run,train
 from experiments.gpu14h_prepitch.test_contract import tiny
 from experiments.ws_seq import train_seq as base
 
+AMENDED='configs/EXP-GPU14H-008.score-attempt-002.json'
+
+
 def _bind(path):
     path=Path(path);return {'path':str(path),'bytes':path.stat().st_size,'sha256':run.sha(path)}
 
@@ -142,9 +145,23 @@ class Contract(unittest.TestCase):
 
     def test_synthetic_score_control_end_to_end(self):self.score_end_to_end('score_control',[train.CONTROL])
 
-    def score_end_to_end(self,task,variants):
+    def test_amended_score_screen_and_control_end_to_end(self):
+        for task,variants in (('score_screen',list(train.VARIANTS)),('score_control',[train.CONTROL])):self.score_end_to_end(task,variants,AMENDED)
+
+    def test_score_amendment_changes_only_source_and_deadline(self):
+        cfg=json.loads((run.ROOT/AMENDED).read_text());self.assertEqual(run.score_amendment(cfg)['amends'],run.FIT008)
+        self.assertEqual(run.FIT008['config_sha256'],run.sha(run.ROOT/run.FIT008['config']))
+        self.assertEqual(run.FIT008['source_manifest_sha256'],json.loads((run.ROOT/run.FIT008['config']).read_text())['source_manifest']['sha256'])
+        old=json.loads((run.ROOT/run.FIT008['config']).read_text());self.assertIsNone(run.score_amendment(old));self.assertIs(run.fit008_config(old),old)
+        fit=run.fit008_config(cfg);self.assertEqual((fit['_config_sha256'],fit['source_manifest']['sha256']),(run.FIT008['config_sha256'],run.FIT008['source_manifest_sha256']))
+        for key,value in (('selection',{}),('metrics',{}),('baseline',{}),('jobs',[]),('variants',{}),('deadline_utc','2026-12-01T00:00:00Z'),('limits',{})):
+            with self.assertRaisesRegex(ValueError,'only source/deadline'):run.score_amendment(dict(cfg,**{key:value}))
+        with self.assertRaisesRegex(ValueError,'frozen fit008'):run.score_amendment(dict(cfg,score_amendment=dict(cfg['score_amendment'],extra=1)))
+        with self.assertRaisesRegex(ValueError,'only source/deadline'):run.score_amendment(dict(cfg,source_manifest=old['source_manifest']))
+
+    def score_end_to_end(self,task,variants,config='configs/EXP-GPU14H-008.json'):
         """population→FIT-only P/B known·cold→prediction→comparison9→4집단→receipt JSON까지 생성 자료로 끝까지."""
-        cfg=json.loads((run.ROOT/'configs/EXP-GPU14H-008.json').read_text());cfg['_config_sha256']=run.sha(run.ROOT/'configs/EXP-GPU14H-008.json')
+        cfg=json.loads((run.ROOT/config).read_text());cfg['_config_sha256']=run.sha(run.ROOT/config)
         with tempfile.TemporaryDirectory() as d:
             meta,grants,info=scoring_fixture(d,cfg)
             if True:
