@@ -242,7 +242,7 @@
 - 회수 단위 폴더 수(`returned/gpu14h/` 아래): 001 42, 002 15, 003 21, 004 24, 005 21, 006 15, 007 15, 008 12, 009 0, FINAL 5. fit 폴더 하나에는 `model-state.pt`, `oof-predictions.npz`, `receipt.json`, `SUPERVISOR.json`, `worker.log`, `tmp/`가 있다(001 예시).
 - 맥 쪽 운영 기록: `OPS/`(장부, 279개 이벤트 폴더·파일, grant, source snapshot), 실험별 등록 `author*/`, H1 `operations-h1/`, 검토 `review/`·`review-h1/`.
 - 서버에만 있던 것(기록에서 알 수 있는 범위):
-  - 입력 패키지: 기존 T OOF 3개·FINAL 학습 패키지가 서버의 이전 잡 폴더 안에 있었다(grant의 `package_root`). 맥에 같은 사본이 있는지는 이 문서에서 확인하지 않았다(미확인).
+  - 입력 패키지: 기존 T OOF 3개·FINAL 학습 패키지가 서버의 이전 잡 폴더 안에 있었다(grant의 `package_root`). PM 확인(2026-11-10): 학습 입력 패키지 4개가 맥에 있다(파일 7개씩) — 7월 `/Users/song/Projects/pitcheezy-pm-jobs/20261016-followon-execution-002/research/prepare-attempt-002/inputs/`, 8월·9월·FINAL `/Users/song/Projects/pitcheezy-pm-jobs/20261016-oof-completion-003/research/{oof2,oof3,final}-prepare-attempt-001/inputs/`. 7~9월은 `author-batch5/input-metadata.json`(11/1 관측)의 `exists`·`size_matches`가 모두 true다. 해시는 이번에 다시 계산하지 않았다.
   - 서버 공유 폴더의 원격 grant 사본, task claim, source/input metadata.
   - 서버 잡 폴더의 실행기 로그·코드 스냅샷. 회수는 잡별 결과 하위폴더만 했다.
 - 운영 효율(`REP/efficiency-through-first165.json`, FINAL 5건 제외):
@@ -267,7 +267,7 @@
 
 ## 맥미니로 이어서 할 만한 후보 (판단 재료만)
 
-결정은 PM·Song이 한다. 스텝 수는 기존 receipt의 `optimization_steps`로 셌다. 이 값은 ⌈FIT 행 ÷ 배치 2048⌉ × 30epoch와 일치한다(7월 FIT_E9 375,407 → 5,520, 8월 484,179 → 7,110, 9월 606,805 → 8,910 — 005 pitcher T32 receipt; FINAL 720,505 → 10,560 — FINAL receipt). MPS 결과는 기존 규칙대로 CUDA 결과의 근거가 아니며, 같은 recipe라도 숫자가 같다고 가정하지 않는다. 입력 패키지의 맥 사본이 있는지는 미확인이다.
+결정은 PM·Song이 한다. 스텝 수는 기존 receipt의 `optimization_steps`로 셌다. 이 값은 ⌈FIT 행 ÷ 배치 2048⌉ × 30epoch와 일치한다(7월 FIT_E9 375,407 → 5,520, 8월 484,179 → 7,110, 9월 606,805 → 8,910 — 005 pitcher T32 receipt; FINAL 720,505 → 10,560 — FINAL receipt). MPS 결과는 기존 규칙대로 CUDA 결과의 근거가 아니며, 같은 recipe라도 숫자가 같다고 가정하지 않는다. 입력 패키지의 맥 사본은 "자원·보존 상태"의 PM 확인을 따른다(7~9월·FINAL 있음, 해시는 재확인 전).
 
 1. **FINAL outcome7 3건 수용 검토** — 0 fit. 파일이 이미 T7에 있다. 기대값 키 오류를 기록하고 독립 검토하면 outcome7 연구 가중치 3seed가 완성된다. 다시 학습하면 3 fit × 10,560 = 31,680 스텝이지만 필요하지 않을 수 있다.
 2. **FINAL prepitch9-s2** — 1 fit, 10,560 스텝. prepitch9 연구 가중치 3seed가 완성된다.
