@@ -196,6 +196,22 @@ def factor_partition(records,missing,seeds):
     return by
 
 
+def population(meta,fold):
+    # 원003 population은 seq에서 batter를 읽지 않는다(원003/005 source 불변). 학습(base.load_package
+    # SEQ_MEMBERS)과 같은 pinned seq-inputs.npz의 batter 열만 같은 행 순서로 더한다.
+    import numpy as np
+    from experiments.ws_fullseason.calibrate_worker import pinned,header_check,file_digest
+    from experiments.ws_seq.train_seq import SEQ_MEMBERS
+    p=parent.population(meta,fold);spec=meta['training']['packages'][fold];n=spec['expected']['rows']
+    sb=next(binding(v) for v in spec['files'] if Path(v['path']).name=='seq-inputs.npz');fields=('game_pk','at_bat_number','pitch_number','batter')
+    with ExitStack() as stack:
+        seq,_=pinned(sb,stack);header_check(seq,set(SEQ_MEMBERS),{v:((n,),'iu') for v in fields})
+        with np.load(seq,allow_pickle=False) as z:k,batter=np.column_stack([z[v] for v in fields[:3]]),z['batter']
+        if not np.array_equal(k,p['keys']) or file_digest(seq)!=sb['sha256']:raise ValueError('batter sequence keys')
+    p['seq']['batter']=batter
+    return p
+
+
 def score_worker(cfg,g,meta,out):
     import numpy as np
     screen=g['task']=='score_screen';control=g['task']=='score_control';variants=[train.CONTROL] if control else list(train.VARIANTS) if screen else selected_screen(g['screen'],cfg,cfg['_config_sha256']);seeds=[0] if screen else [0,1,2]
@@ -208,7 +224,7 @@ def score_worker(cfg,g,meta,out):
     prior=identity.reference_screen(g['prepitch_screen'],cfg);old003=identity.reference_config(cfg);old005=identity_config(cfg)
     b=binding(g['baseline'])
     if prior['outputs_sha256']['baseline-counts.json']!=b['sha256']:raise ValueError('frozen003 count provenance')
-    tables=json.loads(verify_file(b,16<<20).read_text());pops={f:parent.population(meta,f) for f in FOLDS};keep={};ys={};frequency={};fallback={};known={};N={};P={}
+    tables=json.loads(verify_file(b,16<<20).read_text());pops={f:population(meta,f) for f in FOLDS};keep={};ys={};frequency={};fallback={};known={};N={};P={}
     for f,p in pops.items():
         keep[f]=p['y'][p['oof']]>=0;ys[f]=p['y'][p['oof']][keep[f]];q,fallback[f]=parent.frequency(tables[f],p);frequency[f]=q[keep[f]];known[f]={}
         for role in ('pitcher','batter'):
