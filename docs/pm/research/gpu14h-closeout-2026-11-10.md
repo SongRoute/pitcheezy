@@ -290,3 +290,29 @@ FINAL: prepitch9 s0/s1 보존, s2 미실행. outcome7 s0~s2는 파일이 T7에 �
 미판정: 007 반복확인 채점 없음, 008 채점 STOP(KeyError 'batter'), 009 24 fit 미실행, 010 등록만, H1 시도 1·2 STOP·시도 3 검토 대기.
 이 작업 ID의 파일·자원 점유를 반환한다. Codex 브랜치·worktree·T7 산출물은 수정하지 않았다. 후속 실행은 별도 CLAIM·등록·검토로만.
 ```
+
+## 후속 기록 (2026-11-10, Song 결정 "학습 없이 닫을 수 있는 것부터")
+
+큐 #37 CLAIM 6756439612. 새 fit 0, GPU·MPS 사용 0. 작업 폴더 `/Users/song/Projects/pitcheezy-pm-jobs/20261110-nov14h-followup/`.
+
+### FINAL outcome7 s0~s2 — 수동 감사 수용(연구용 가중치 한정)
+
+- 위 "끝나지 않은 것"의 FINAL outcome7 3건을 수용했다. 배차기 `recover()`의 정식 통과가 아니라 수동 감사 수용이며, Codex 장부는 고치지 않았다.
+- 근거: recover 재현 48/49, 부가 검사 30/30(세 건 모두). 유일한 불일치는 등록 기대값의 `variant` 키가 receipt에 없다는 것(기대값 28키 중 27개 일치). 정상 수용된 prepitch9 s0/s1은 같은 스크립트에서 전부 통과. 독립 재검증(Sonnet 5.5, 자기 진술)이 스크립트 없이 같은 결과를 냈고 결함 주입 3종을 스크립트가 모두 잡았다.
+- 한계: 보정 전 가중치(`research_weights_only=true`, `performance_validated=false`). 가중치 내용은 열지 않았다. 서버 원본과 다시 대조할 수 없다.
+- 기록: `final7-accept/ACCEPTANCE.md`(sha256 `d8484c1285e38d537940f8dcdfadbeec1215e291f1a373d98337c205c4750205`), `AUDIT.json`(`cf8c8f52…`), `REVIEW.md`(`6446f619…`). 가중치 둘째 사본은 `final7-accept/backup/`.
+
+### EXP-GPU14H-008 재채점 (attempt-002) — score_screen·score_control 완료
+
+- 원인: 채점용 `population`이 타자 열을 읽지 않았다(003 부모 코드 재사용, `experiments/gpu14h_prepitch/run.py:144`). 자료와 학습은 정상.
+- 수정: 브랜치 `research/gpu14h-batter-scorefix-1110` — `7e4bb7a4`(타자 열 읽기), `ddf13083`(채점 전용 amendment), `c5e368b9`(활성화: status/execute만). 지표·선택 규칙·비교 대상·분모는 원 등록과 같다(다르면 코드가 거부). 독립 검토 Sonnet 5.5 조건부 PASS(P1 0), `rescore-008/REVIEW.md` sha256 `5d6ae5b9…`.
+- 실행: 맥 CPU 1스레드, 공통 `.heavy.lock`. config sha `81420206…`, grant sha screen `1f7c2117…` / control `3197d22f…`. 둘 다 COMPLETED(각 2~3초, 최대 RSS 약 0.9GB). receipt sha screen `e57b5e9e…` / control `e24bb18f…`. 출력: `T7/EXP-GPU14H-008/attempt-001/evaluation/score-{screen,control}/attempt-002/`. attempt-001은 보존.
+- score_screen (seed0, 337,196구, 출처 screen `receipt.json`의 `candidates[*]`):
+  - `batter_only` 대 ID 없는 T: ΔNLL −0.0028246, ΔBrier −0.0011933, ΔECE +0.0042051(악화). 7·8·9월 ΔNLL 모두 음수.
+  - `pitcher_batter` 대 투수 ID T: ΔNLL −0.0027611, ΔBrier −0.0013614, ΔECE +0.0030519(악화). 7·8·9월 ΔNLL 모두 음수.
+  - 등록 규칙에 따른 선정: `selected_variants` = `pitcher_batter`. 뒤따를 반복확인(seed1·2 × 3달 = 6 fit)은 실행되지 않았다 → **3seed 판정은 미완**.
+- score_control (투수 ID T32, seed0·1·2, 출처 control `receipt.json`의 `candidates[0]`):
+  - ID 없는 T 3seed 대비: ΔNLL −0.0726167, ΔBrier −0.0140571, ΔECE +0.0246911(악화). seed별 ΔNLL −0.0682 / −0.0700 / −0.0716, 7·8·9월 모두 음수.
+  - 빈도표 대비: ΔNLL −0.1264899.
+  - FIT에서 본 투수(321,795구)에서는 좋아지고, 처음 보는 투수에서는 나빠진다: 처음 보는 투수·본 타자 15,009구 ΔNLL +0.2665760, 처음 보는 투수·처음 보는 타자 392구 ΔNLL +0.3502120.
+- 읽는 법: 구종 예측에서는 "누가 던지는가"가 큰 정보이고(투수마다 구종 구성이 다르다), 타자 ID가 더하는 것은 작다. 다만 처음 보는 투수에게는 오히려 해롭고 ECE(말한 확률과 실제 빈도의 차이)가 나빠진다. 전부 2026 EXPOSED DEVELOPMENT의 반복 OOF이고 사후 가설이라 독립 확증·승격 근거가 아니다.
