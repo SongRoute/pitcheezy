@@ -1,8 +1,8 @@
 {
   "format": "gpu14h-batter-v1",
   "id": "EXP-GPU14H-008",
-  "status": "DRAFT",
-  "execute": false,
+  "status": "REGISTERED",
+  "execute": true,
   "author": "claude_opus_worker",
   "source_base": "d7d7f4bb74568fcbd0db95053beda430bada8fc0",
   "data_role": "2026 EXPOSED DEVELOPMENT",
