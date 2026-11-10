@@ -96,6 +96,7 @@ def run(recipe, seed, package, out, *, synthetic=False, device='cuda'):
         if q.shape!=(len(oofrows),7) or not np.isfinite(q).all() or (q<0).any() or not np.allclose(q.sum(1),1,atol=1e-7):
             raise ValueError('complete finite normalized OOF probabilities')
         np.savez(out/'oof-predictions.npz',keys=c['keys'][oofrows],probabilities=q)
+    if device.type=='mps': torch.mps.synchronize()  # MPS is asynchronous: finish queued work before reading the clock
     result={'status':'COMPLETED','arm':'T','seed':seed,'epochs':rule['epochs'],
         'optimization_steps':steps,'sample_presentations':int(len(fitrows)*rule['epochs']),
         'consumption':trace,'OOF_rows':len(oofrows),'OOF_keys_sha256':key_digest(c['keys'][oofrows]),
@@ -105,8 +106,9 @@ def run(recipe, seed, package, out, *, synthetic=False, device='cuda'):
         'versions':{'torch':torch.__version__,'cuda':torch.version.cuda,'numpy':np.__version__}}
     if device.type=='mps':
         # MPS results are a separate lane: never pooled with CUDA results. Default/synthetic schema unchanged.
-        torch.mps.synchronize()
-        result['backend'].update(device='mps',mps_fallback_env=False,deterministic_guaranteed=False)
+        # 'deterministic' means a bit-reproducibility claim; MPS only requests it (warn_only) and does not guarantee it.
+        result['backend'].update(device='mps',mps_fallback_env=False,deterministic=False,
+            deterministic_algorithms_requested=True,deterministic_guaranteed=False)
         result['versions'].update(mps={'macos':platform.mac_ver()[0],'machine':platform.machine(),
             'driver_allocated_bytes':int(torch.mps.driver_allocated_memory())})
     return result

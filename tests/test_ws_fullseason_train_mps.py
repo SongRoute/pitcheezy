@@ -66,11 +66,17 @@ class DeviceGuards(unittest.TestCase):
                 train.run(self.recipe, 0, self.package, tmp, synthetic=True, device=name)
 
     def test_fallback_env_refused_before_any_work(self):
-        for value in ['1', 'true']:
+        for value in ['1', 'true', 'false', '0 ', 'False']:
             with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'PYTORCH_ENABLE_MPS_FALLBACK': value}):
                 with self.assertRaisesRegex(ValueError, 'PYTORCH_ENABLE_MPS_FALLBACK'):
                     train.run(self.recipe, 0, self.package, tmp, synthetic=True, device='mps')
                 self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_fallback_env_off_values_pass_the_guard(self):
+        for value in ['', '0']:
+            with patch.dict(os.environ, {'PYTORCH_ENABLE_MPS_FALLBACK': value}), \
+                    patch.object(torch.backends.mps, 'is_available', return_value=True):
+                self.assertEqual(train.resolve_device('mps', True).type, 'mps')
 
     def test_missing_mps_refused(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(torch.backends.mps, 'is_available', return_value=False):
@@ -95,6 +101,7 @@ class MpsRun(unittest.TestCase):
         r, keys, q = oof_probabilities(recipe, (x, c, s), 'mps')
         self.assertEqual(r['status'], 'COMPLETED'); self.assertEqual(r['execution_stage'], 'OOF')
         self.assertEqual(r['backend']['device'], 'mps'); self.assertFalse(r['backend']['mps_fallback_env'])
+        self.assertIs(r['backend']['deterministic'], False); self.assertIs(r['backend']['deterministic_guaranteed'], False)
         self.assertIn('macos', r['versions']['mps']); self.assertGreater(r['versions']['mps']['driver_allocated_bytes'], 0)
         np.testing.assert_array_equal(keys, c['keys'][c['evaluation']])
         self.assertEqual(q.shape, (int(c['evaluation'].sum()), 7))
