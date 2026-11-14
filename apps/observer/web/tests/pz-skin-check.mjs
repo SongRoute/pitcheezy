@@ -12,7 +12,7 @@
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -120,18 +120,27 @@ const silhouette = (page) => page.evaluate(() => { const s = document.querySelec
 const sideScroll = (page) => page.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
 
 try {
-  // ---------- 0. build output ----------
+  // ---------- 0. build output (3D build: PZ_SKIN=3d; colour-only build: PZ_SKIN=theme, detected from index.html) ----------
   const html = readFileSync(path.join(dist, 'index.html'), 'utf8');
-  ok(/<script type="importmap">\{ "imports": \{ "three": "\.\/pz\/batter3d\/vendor\/three\.module\.js", "three\/addons\/": "\.\/pz\/batter3d\/vendor\/addons\/" \} \}<\/script>/.test(html), 'index.html: import map tag');
-  ok(html.indexOf('type="importmap"') < html.indexOf('<script type="module"'), 'index.html: import map before the first module script');
-  const cssApp = html.indexOf('assets/index-'), cssPz = html.indexOf('./pz/pz-theme.css');
-  ok(cssPz > 0 && html.lastIndexOf('<link rel="stylesheet" crossorigin href="./assets/') < cssPz, 'index.html: pz-theme.css linked after the app CSS', { cssApp, cssPz });
-  ok(html.includes('<script type="module" src="./pz/pz-boot.js"></script>') && !html.includes('pz-batter.js'), 'index.html: ③ only the small boot script is static (no pz-batter.js tag)');
+  const mode3d = html.includes('pz/pz-boot.js');
+  console.log(`mode: ${mode3d ? '3d (colour + 3D batter)' : 'theme (colour only)'} — ${dist}`);
+  const cssApp = html.lastIndexOf('<link rel="stylesheet" crossorigin href="./assets/'), cssPz = html.indexOf('<link rel="stylesheet" href="./pz/pz-theme.css">');
+  ok(cssPz > 0 && cssApp >= 0 && cssApp < cssPz, 'index.html: pz-theme.css linked after the app CSS', { cssApp, cssPz });
   ok(html.includes('<meta name="theme-color" content="#091811" />'), 'index.html: theme-color #091811');
-  for (const f of ['pz/pz-theme.css', 'pz/pz-boot.js', 'pz/pz-batter.js', 'pz/batter3d/batter3d.js', 'pz/batter3d/vendor/three.module.js', 'pz/batter3d/vendor/three.core.js',
-    'pz/batter3d/vendor/addons/loaders/GLTFLoader.js', 'pz/batter3d/vendor/addons/utils/BufferGeometryUtils.js', 'pz/batter3d/vendor/addons/utils/SkeletonUtils.js', 'pz/batter3d/vendor/LICENSE'])
-    ok(existsSync(path.join(dist, f)), `dist: ${f}`);
-  ok(!existsSync(path.join(dist, 'pz', 'batter3d', 'assets')) || !process.env.PZ_EXPECT_NO_ASSETS, 'dist: no model files unless PZ_BATTER_ASSETS_DIR was given');
+  if (mode3d) {
+    ok(/<script type="importmap">\{ "imports": \{ "three": "\.\/pz\/batter3d\/vendor\/three\.module\.js", "three\/addons\/": "\.\/pz\/batter3d\/vendor\/addons\/" \} \}<\/script>/.test(html), 'index.html: import map tag');
+    ok(html.indexOf('type="importmap"') < html.indexOf('<script type="module"'), 'index.html: import map before the first module script');
+    ok(html.includes('<script type="module" src="./pz/pz-boot.js"></script>') && !html.includes('pz-batter.js'), 'index.html: ③ only the small boot script is static (no pz-batter.js tag)');
+    for (const f of ['pz/pz-theme.css', 'pz/pz-boot.js', 'pz/pz-batter.js', 'pz/batter3d/batter3d.js', 'pz/batter3d/vendor/three.module.js', 'pz/batter3d/vendor/three.core.js',
+      'pz/batter3d/vendor/addons/loaders/GLTFLoader.js', 'pz/batter3d/vendor/addons/utils/BufferGeometryUtils.js', 'pz/batter3d/vendor/addons/utils/SkeletonUtils.js', 'pz/batter3d/vendor/LICENSE'])
+      ok(existsSync(path.join(dist, f)), `dist: ${f}`);
+    const assets = path.join(dist, 'pz', 'batter3d', 'assets');
+    const models = existsSync(assets) ? readdirSync(assets).filter((f) => /\.(glb|meta\.json)$/.test(f)) : [];
+    ok(models.length === 0 || !!process.env.PZ_BATTER_ASSETS_DIR, `dist: no model / meta files in pz/batter3d/assets (${models.join(',') || 'none'})`);
+  } else {
+    ok(!html.includes('importmap') && (html.match(/<script /g) || []).length === 1, 'index.html (colour only): no import map, only the app script');
+    ok(!existsSync(path.join(dist, 'pz', 'batter3d')) && !existsSync(path.join(dist, 'pz', 'pz-batter.js')) && !existsSync(path.join(dist, 'pz', 'pz-boot.js')), 'dist (colour only): no 3D files');
+  }
   const css = readFileSync(path.join(dist, 'pz', 'pz-theme.css'), 'utf8');
 
   // ---------- ② contrast (tokens in pz-theme.css, then what the page computes) ----------
@@ -141,156 +150,168 @@ try {
     ok(cr(play[0], bg) >= 3, `② in-play mark vs ${name} ${bg}: ${cr(play[0], bg).toFixed(2)}:1 ≥ 3:1`);
   ok(!/ffb782/i.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), '② the old #ffb782 is no longer used by any rule (comments aside)');
 
+  if (!mode3d) {   // colour only: neither screen asks for anything under pz/ but the theme
+    const { context, page, errors, requests } = await open(390, 844);
+    await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 });
+    const card = page.locator(`a.sv-card[href*="${PK}"]`).first(); await card.click(); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1500);
+    const pz = [...new Set(requests.filter((p) => p.includes('/pz/')))];
+    ok(pz.length === 1 && pz[0].endsWith('/pz/pz-theme.css'), `colour only: list → game asks only pz/pz-theme.css under pz/ (${pz.join(',')})`);
+    ok(await silhouette(page) === 'visible' && await page.locator('.pz-bat3d').count() === 0, 'colour only: silhouette visible, no 3D box');
+    ok(errors.length === 0, `colour only: no page errors (${errors.length})`, errors.slice(0, 3));
+    await context.close();
+  }
+  if (mode3d) {
   // ---------- ③ list screen downloads no 3D code; the game screen does ----------
-  host.model = '404';
-  {
-    const { context, page, errors, external, requests } = await open(390, 844);
-    await page.goto(origin + '/');
-    await page.locator('.sv-list').waitFor({ timeout: 15000 });
-    await page.waitForTimeout(1500);
-    ok(requests.some((p) => p.endsWith('/pz/pz-boot.js')) && requests.some((p) => p.endsWith('/pz/pz-theme.css')), '③ list: boot script and theme are loaded');
-    ok(!requests.some((p) => IS3D.test(p)), '③ list: no pz-batter.js / batter3d / three.js request', requests.filter((p) => IS3D.test(p)));
-    ok(await page.evaluate(() => window.PZSongSkinBoot?.status().requested === false), '③ list: boot has not requested the 3D code');
-    const card = page.locator(`a.sv-card[href*="${PK}"]`).first();
-    if (await card.count()) {
-      await card.click();
+    host.model = '404';
+    {
+      const { context, page, errors, external, requests } = await open(390, 844);
+      await page.goto(origin + '/');
+      await page.locator('.sv-list').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(1500);
+      ok(requests.some((p) => p.endsWith('/pz/pz-boot.js')) && requests.some((p) => p.endsWith('/pz/pz-theme.css')), '③ list: boot script and theme are loaded');
+      ok(!requests.some((p) => IS3D.test(p)), '③ list: no pz-batter.js / batter3d / three.js request', requests.filter((p) => IS3D.test(p)));
+      ok(await page.evaluate(() => window.PZSongSkinBoot?.status().requested === false), '③ list: boot has not requested the 3D code');
+      const card = page.locator(`a.sv-card[href*="${PK}"]`).first();
+      if (await card.count()) {
+        await card.click();
+        await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+        await waited('③ list → game: 3D code requested once the zone row exists', () => page.waitForFunction(() => window.PZSongSkinBoot?.status().loaded === true, null, { timeout: 15000 }));
+        ok(requests.filter((p) => p.endsWith('/pz/pz-batter.js')).length === 1 && requests.some((p) => p.endsWith('/vendor/three.module.js')) && requests.some((p) => p.endsWith('/vendor/three.core.js')), '③ list → game: pz-batter.js once, three.js module + core fetched');
+      } else ok(false, '③ list shows the fixture game card');
+      ok(errors.length === 0, `③ list/game: no page errors (${errors.length})`, errors.slice(0, 3));
+      ok(external.length === 0, '③ no request leaves the loopback host', external.slice(0, 3));
+      await context.close();
+    }
+
+    // ---------- model 404 (today): silhouette stays, nothing breaks, retries bounded ----------
+    for (const [w, h] of [[390, 844], [320, 568]]) {
+      const { context, page, errors, requests } = await open(w, h);
+      await page.goto(`${origin}/?game=${PK}`);
       await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
-      await waited('③ list → game: 3D code requested once the zone row exists', () => page.waitForFunction(() => window.PZSongSkinBoot?.status().loaded === true, null, { timeout: 15000 }));
-      ok(requests.filter((p) => p.endsWith('/pz/pz-batter.js')).length === 1 && requests.some((p) => p.endsWith('/vendor/three.module.js')) && requests.some((p) => p.endsWith('/vendor/three.core.js')), '③ list → game: pz-batter.js once, three.js module + core fetched');
-    } else ok(false, '③ list shows the fixture game card');
-    ok(errors.length === 0, `③ list/game: no page errors (${errors.length})`, errors.slice(0, 3));
-    ok(external.length === 0, '③ no request leaves the loopback host', external.slice(0, 3));
-    await context.close();
-  }
+      await page.waitForFunction(() => window.PZSongSkinBoot?.status().loaded === true, null, { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(4000);
+      const glb1 = requests.filter((p) => p.endsWith('.glb')).length;
+      for (let i = 0; i < 3; i++) { await page.evaluate(() => window.dispatchEvent(new Event('online'))); await page.waitForTimeout(800); }
+      await page.waitForTimeout(3000);
+      const glb2 = requests.filter((p) => p.endsWith('.glb')).length, st = await status(page);
+      const id = `404 ${w}x${h}`;
+      ok(st && st.attached === false && st.fails >= 1 && st.fails <= 3, `${id}: not attached, fails counted ${st?.fails} (≤ 3)`, st && { last: st.last });
+      ok(glb2 <= 3 && glb2 === glb1, `${id}: model asked ${glb1} → ${glb2} times (≤ 3, no new asks after re-reads)`);
+      ok(await silhouette(page) === 'visible', `${id}: silhouette stays visible`);
+      ok(await page.locator('.pz-bat3d').count() === 0 && await page.locator('.sv-zrow.pz-has3d').count() === 0, `${id}: no 3D box, no pz-has3d left behind`);
+      ok(await sideScroll(page) <= 0, `${id}: no side scroll`);
+      ok(errors.length === 0, `${id}: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, `404-${w}.png`) });
+      await context.close();
+    }
 
-  // ---------- model 404 (today): silhouette stays, nothing breaks, retries bounded ----------
-  for (const [w, h] of [[390, 844], [320, 568]]) {
-    const { context, page, errors, requests } = await open(w, h);
-    await page.goto(`${origin}/?game=${PK}`);
-    await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
-    await page.waitForFunction(() => window.PZSongSkinBoot?.status().loaded === true, null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(4000);
-    const glb1 = requests.filter((p) => p.endsWith('.glb')).length;
-    for (let i = 0; i < 3; i++) { await page.evaluate(() => window.dispatchEvent(new Event('online'))); await page.waitForTimeout(800); }
-    await page.waitForTimeout(3000);
-    const glb2 = requests.filter((p) => p.endsWith('.glb')).length, st = await status(page);
-    const id = `404 ${w}x${h}`;
-    ok(st && st.attached === false && st.fails >= 1 && st.fails <= 3, `${id}: not attached, fails counted ${st?.fails} (≤ 3)`, st && { last: st.last });
-    ok(glb2 <= 3 && glb2 === glb1, `${id}: model asked ${glb1} → ${glb2} times (≤ 3, no new asks after re-reads)`);
-    ok(await silhouette(page) === 'visible', `${id}: silhouette stays visible`);
-    ok(await page.locator('.pz-bat3d').count() === 0 && await page.locator('.sv-zrow.pz-has3d').count() === 0, `${id}: no 3D box, no pz-has3d left behind`);
-    ok(await sideScroll(page) <= 0, `${id}: no side scroll`);
-    ok(errors.length === 0, `${id}: no page errors (${errors.length})`, errors.slice(0, 3));
-    if (shots) await page.screenshot({ path: path.join(shots, `404-${w}.png`) });
-    await context.close();
-  }
-
-  // ---------- fake model: attach, first screen still, ① no replay on re-read / tab return, new pitch plays ----------
-  host.model = 'fake';
-  {
-    const { context, page, errors } = await open(390, 844);
-    await page.goto(`${origin}/?game=${PK}`);
-    await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
-    const attached = await waited('fake: 3D attaches with a valid glb (real three.js + WebGL)', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }));
-    if (attached) {
-      ok(await silhouette(page) === 'hidden' && await page.locator('.sv-zrow.pz-has3d .pz-bat3d canvas').count() === 1, 'fake: silhouette hidden, one canvas in the box');
-      await page.waitForTimeout(1200);
-      const s0 = await status(page);
-      ok(s0.played === 0, `fake: first screen does not play a reaction (played ${s0.played})`);
-      // ① the screen re-reads on 'online' and on tab return: the actual-pitch line may blank and come back as the same pitch
-      for (let i = 0; i < 4; i++) { await page.evaluate(() => window.dispatchEvent(new Event('online'))); await page.waitForTimeout(700); }
-      const other = await context.newPage(); await other.goto('about:blank'); await other.bringToFront(); await page.waitForTimeout(600);
-      await page.bringToFront(); await page.waitForTimeout(1500);
-      const hiddenSeen = await page.evaluate(() => document.visibilityState);
-      await other.close();
-      const s1 = await status(page);
-      ok(s1.played === s0.played, `① re-read ×4 + tab away/back: no replay (played ${s0.played} → ${s1.played}, visibility ${hiddenSeen})`);
-      // a different pitch (open the at-bat list and pick an older pitch) does play
-      const toggle = page.locator('.sv-atbat-toggle');
-      if (await toggle.count()) {
-        await toggle.click();
-        const rows = page.locator('.sv-pitch-row');
-        const n = await rows.count();
-        if (n >= 2) {
-          await rows.nth(n - 1).click(); await page.waitForTimeout(400);
-          const close = page.locator('.sv-sheet button', { hasText: '닫기' }); if (await close.count()) await close.first().click();
-          await page.waitForTimeout(900);
-          const s2 = await status(page);
-          ok(s2.played >= s1.played || s2.lastKey !== s1.lastKey, `① picking another pitch is seen (played ${s1.played} → ${s2.played}, key changed ${s2.lastKey !== s1.lastKey})`);
-        } else ok(true, `① (skipped: at-bat list has ${n} pitch row)`);
+    // ---------- fake model: attach, first screen still, ① no replay on re-read / tab return, new pitch plays ----------
+    host.model = 'fake';
+    {
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      const attached = await waited('fake: 3D attaches with a valid glb (real three.js + WebGL)', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }));
+      if (attached) {
+        ok(await silhouette(page) === 'hidden' && await page.locator('.sv-zrow.pz-has3d .pz-bat3d canvas').count() === 1, 'fake: silhouette hidden, one canvas in the box');
+        await page.waitForTimeout(1200);
+        const s0 = await status(page);
+        ok(s0.played === 0, `fake: first screen does not play a reaction (played ${s0.played})`);
+        // ① the screen re-reads on 'online' and on tab return: the actual-pitch line may blank and come back as the same pitch
+        for (let i = 0; i < 4; i++) { await page.evaluate(() => window.dispatchEvent(new Event('online'))); await page.waitForTimeout(700); }
+        const other = await context.newPage(); await other.goto('about:blank'); await other.bringToFront(); await page.waitForTimeout(600);
+        await page.bringToFront(); await page.waitForTimeout(1500);
+        const hiddenSeen = await page.evaluate(() => document.visibilityState);
+        await other.close();
+        const s1 = await status(page);
+        ok(s1.played === s0.played, `① re-read ×4 + tab away/back: no replay (played ${s0.played} → ${s1.played}, visibility ${hiddenSeen})`);
+        // a different pitch (open the at-bat list and pick an older pitch) does play
+        const toggle = page.locator('.sv-atbat-toggle');
+        if (await toggle.count()) {
+          await toggle.click();
+          const rows = page.locator('.sv-pitch-row');
+          const n = await rows.count();
+          if (n >= 2) {
+            await rows.nth(n - 1).click(); await page.waitForTimeout(400);
+            const close = page.locator('.sv-sheet button', { hasText: '닫기' }); if (await close.count()) await close.first().click();
+            await page.waitForTimeout(900);
+            const s2 = await status(page);
+            ok(s2.played >= s1.played || s2.lastKey !== s1.lastKey, `① picking another pitch is seen (played ${s1.played} → ${s2.played}, key changed ${s2.lastKey !== s1.lastKey})`);
+          } else ok(true, `① (skipped: at-bat list has ${n} pitch row)`);
+        }
       }
+      ok(errors.length === 0, `fake: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, 'fake-390.png') });
+      // leaving the game (list) unmounts the 3D box
+      await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 }); await page.waitForTimeout(500);
+      ok(await page.locator('.pz-bat3d').count() === 0, 'fake: list screen has no 3D box');
+      await context.close();
     }
-    ok(errors.length === 0, `fake: no page errors (${errors.length})`, errors.slice(0, 3));
-    if (shots) await page.screenshot({ path: path.join(shots, 'fake-390.png') });
-    // leaving the game (list) unmounts the 3D box
-    await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 }); await page.waitForTimeout(500);
-    ok(await page.locator('.pz-bat3d').count() === 0, 'fake: list screen has no 3D box');
-    await context.close();
-  }
 
-  // ---------- ① deterministic DOM-level regression (synthetic page, same pz-batter.js, fake model) ----------
-  {
-    const { context, page, errors } = await open(390, 844);
-    const A = '<span class="sv-al-label">실제 투구 · 3구 · Kim</span><i class="sv-g1 strike">3</i><b class="sv-actual-name">포심</b><span>헛스윙</span>';
-    const B = '<span class="sv-al-label">실제 투구 · 4구 · Kim</span><i class="sv-g1 strike">4</i><b class="sv-actual-name">슬라이더</b><span>파울</span>';   // contact: the fake model (no meta) has no take clip
-    const EMPTY = '<span class="sv-al-label">실제 투구 기록 없음</span>';
-    const CONF = '<span class="sv-al-label">실제 투구 · 4구 · Kim</span><i class="sv-g1 unknown">4</i><b class="sv-actual-name">슬라이더</b><span>확인 중</span>';
-    host.synthetic = `<!doctype html><html><head><meta charset="utf-8">${html.match(/<script type="importmap">[^<]*<\/script>/)[0]}<link rel="stylesheet" href="./pz/pz-theme.css"></head><body>
-      <div class="sv-page sv-game"><main><div class="sv-zrow bat-r" style="position:relative;height:240px;--sv-zone-mid:50%"><div class="sv-batband at-right"><svg width="40" height="120"></svg></div><div class="sv-zone-wrap" style="position:relative"></div></div>
-      <p class="sv-actual-line" id="line">${A}</p></main></div><script type="module" src="./pz/pz-batter.js"></script></body></html>`;
-    await page.goto(`${origin}/__synthetic__.html`);
-    const set = (h) => page.evaluate((h) => { document.getElementById('line').innerHTML = h; }, h);
-    const att = await waited('① synthetic: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }));
-    if (att) {
-      const played = async () => (await status(page)).played;
-      const step = async (h) => { await set(h); await page.waitForTimeout(250); return played(); };
-      const p0 = await played();
-      ok(p0 === 0, `① synthetic: pitch on screen at attach does not play (${p0})`);
-      ok(await step(EMPTY) === 0 && await step(A) === 0, '① synthetic: A → 기록 없음 → A does not replay');
-      ok(await step(CONF) === 0 && await step(A) === 0, '① synthetic: A → 확인 중 → A does not replay');
-      ok(await step(B) === 1, '① synthetic: A → B plays once');
-      ok(await step(EMPTY) === 1 && await step(B) === 1, '① synthetic: B → 기록 없음 → B does not replay');
-      ok(await step(A) === 2, '① synthetic: B → A (picked again) plays');
-      await page.evaluate(() => { document.querySelector('.sv-zrow').className = 'sv-zrow bat-l'; }); await page.waitForTimeout(300);
-      const st = await status(page);
-      ok(st.side === 'L' && await page.locator('.pz-bat3d.side-r').count() === 0, '① synthetic: batter side follows bat-l');
+    // ---------- ① deterministic DOM-level regression (synthetic page, same pz-batter.js, fake model) ----------
+    {
+      const { context, page, errors } = await open(390, 844);
+      const A = '<span class="sv-al-label">실제 투구 · 3구 · Kim</span><i class="sv-g1 strike">3</i><b class="sv-actual-name">포심</b><span>헛스윙</span>';
+      const B = '<span class="sv-al-label">실제 투구 · 4구 · Kim</span><i class="sv-g1 strike">4</i><b class="sv-actual-name">슬라이더</b><span>파울</span>';   // contact: the fake model (no meta) has no take clip
+      const EMPTY = '<span class="sv-al-label">실제 투구 기록 없음</span>';
+      const CONF = '<span class="sv-al-label">실제 투구 · 4구 · Kim</span><i class="sv-g1 unknown">4</i><b class="sv-actual-name">슬라이더</b><span>확인 중</span>';
+      host.synthetic = `<!doctype html><html><head><meta charset="utf-8">${html.match(/<script type="importmap">[^<]*<\/script>/)[0]}<link rel="stylesheet" href="./pz/pz-theme.css"></head><body>
+        <div class="sv-page sv-game"><main><div class="sv-zrow bat-r" style="position:relative;height:240px;--sv-zone-mid:50%"><div class="sv-batband at-right"><svg width="40" height="120"></svg></div><div class="sv-zone-wrap" style="position:relative"></div></div>
+        <p class="sv-actual-line" id="line">${A}</p></main></div><script type="module" src="./pz/pz-batter.js"></script></body></html>`;
+      await page.goto(`${origin}/__synthetic__.html`);
+      const set = (h) => page.evaluate((h) => { document.getElementById('line').innerHTML = h; }, h);
+      const att = await waited('① synthetic: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }));
+      if (att) {
+        const played = async () => (await status(page)).played;
+        const step = async (h) => { await set(h); await page.waitForTimeout(250); return played(); };
+        const p0 = await played();
+        ok(p0 === 0, `① synthetic: pitch on screen at attach does not play (${p0})`);
+        ok(await step(EMPTY) === 0 && await step(A) === 0, '① synthetic: A → 기록 없음 → A does not replay');
+        ok(await step(CONF) === 0 && await step(A) === 0, '① synthetic: A → 확인 중 → A does not replay');
+        ok(await step(B) === 1, '① synthetic: A → B plays once');
+        ok(await step(EMPTY) === 1 && await step(B) === 1, '① synthetic: B → 기록 없음 → B does not replay');
+        ok(await step(A) === 2, '① synthetic: B → A (picked again) plays');
+        await page.evaluate(() => { document.querySelector('.sv-zrow').className = 'sv-zrow bat-l'; }); await page.waitForTimeout(300);
+        const st = await status(page);
+        ok(st.side === 'L' && await page.locator('.pz-bat3d.side-r').count() === 0, '① synthetic: batter side follows bat-l');
+      }
+      ok(errors.length === 0, `① synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
     }
-    ok(errors.length === 0, `① synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
-    await context.close();
-  }
 
-  // ---------- ④ box geometry (real attach with fake model at each width, both sides by class) + zone painted above ----------
-  for (const w of [320, 344, 359, 360, 390, 402]) {
-    const { context, page, errors } = await open(w, w < 360 ? 640 : 760);
-    await page.goto(`${origin}/?game=${PK}`);
-    await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
-    if (!(await waited(`④ ${w}: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 })))) { await context.close(); continue; }
-    for (const side of ['R', 'L']) {
-      const r = await page.evaluate((side) => {
-        const box = document.querySelector('.pz-bat3d'); box.classList.toggle('side-r', side === 'R');
-        const b = box.getBoundingClientRect(), zw = document.querySelector('.sv-zrow .sv-zone-wrap');
-        return { l: b.left, r: b.right, w: b.width, h: b.height, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zBox: getComputedStyle(box).zIndex, zZone: getComputedStyle(zw).zIndex, posZone: getComputedStyle(zw).position };
-      }, side);
-      ok(r.l >= 0 && r.r <= r.vw && r.sw <= 0, `④ ${w} side ${side}: box inside the screen (${r.l.toFixed(1)}..${r.r.toFixed(1)} of ${r.vw}, side scroll ${r.sw})`);
-      ok(r.w === 140 && r.h === 210, `④ ${w} side ${side}: box size unchanged 140×210 (${r.w}×${r.h})`);
-      ok(Number(r.zZone) > Number(r.zBox) && r.posZone === 'relative', `④ ${w} side ${side}: zone (z ${r.zZone}) above the 3D box (z ${r.zBox})`);
+    // ---------- ④ box geometry (real attach with fake model at each width, both sides by class) + zone painted above ----------
+    for (const w of [320, 344, 359, 360, 390, 402]) {
+      const { context, page, errors } = await open(w, w < 360 ? 640 : 760);
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (!(await waited(`④ ${w}: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 })))) { await context.close(); continue; }
+      for (const side of ['R', 'L']) {
+        const r = await page.evaluate((side) => {
+          const box = document.querySelector('.pz-bat3d'); box.classList.toggle('side-r', side === 'R');
+          const b = box.getBoundingClientRect(), zw = document.querySelector('.sv-zrow .sv-zone-wrap');
+          return { l: b.left, r: b.right, w: b.width, h: b.height, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zBox: getComputedStyle(box).zIndex, zZone: getComputedStyle(zw).zIndex, posZone: getComputedStyle(zw).position };
+        }, side);
+        ok(r.l >= 0 && r.r <= r.vw && r.sw <= 0, `④ ${w} side ${side}: box inside the screen (${r.l.toFixed(1)}..${r.r.toFixed(1)} of ${r.vw}, side scroll ${r.sw})`);
+        ok(r.w === 140 && r.h === 210, `④ ${w} side ${side}: box size unchanged 140×210 (${r.w}×${r.h})`);
+        ok(Number(r.zZone) > Number(r.zBox) && r.posZone === 'relative', `④ ${w} side ${side}: zone (z ${r.zZone}) above the 3D box (z ${r.zBox})`);
+      }
+      // paint: fill the box red; the zone frame's right edge where it overlaps the box must still show the zone stroke, not red
+      const probe = await page.evaluate(() => {
+        const box = document.querySelector('.pz-bat3d'); box.classList.add('side-r');
+        const red = document.createElement('div'); red.id = 'pz-red'; red.style.cssText = 'position:absolute;inset:0;background:#ff0000'; box.append(red);
+        const zb = document.querySelector('.sv-zrow .sv-zone-box'); const z = zb.getBoundingClientRect(), b = box.getBoundingClientRect();
+        return { x: z.right, y: (Math.max(z.top, b.top) + Math.min(z.bottom, b.bottom)) / 2, overlap: z.right > b.left && z.left < b.right };
+      });
+      if (probe.overlap) {
+        const png = await page.screenshot({ clip: { x: probe.x - 1, y: probe.y - 1, width: 2, height: 2 } });   // 4×4 device px; (2,2) = the stroke centre (SVG bbox = geometry edge)
+        const px = await page.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(2, 2, 1, 1).data]; }, png.toString('base64'));
+        ok(!(px[0] > 200 && px[1] < 60 && px[2] < 60), `④ ${w}: zone frame painted over the box where they overlap (pixel ${px.slice(0, 3).join(',')})`);
+      } else ok(true, `④ ${w}: box does not reach the zone frame (no overlap to paint-check)`);
+      await page.evaluate(() => document.getElementById('pz-red')?.remove());
+      ok(errors.length === 0, `④ ${w}: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, `fake-${w}.png`) });
+      await context.close();
     }
-    // paint: fill the box red; the zone frame's right edge where it overlaps the box must still show the zone stroke, not red
-    const probe = await page.evaluate(() => {
-      const box = document.querySelector('.pz-bat3d'); box.classList.add('side-r');
-      const red = document.createElement('div'); red.id = 'pz-red'; red.style.cssText = 'position:absolute;inset:0;background:#ff0000'; box.append(red);
-      const zb = document.querySelector('.sv-zrow .sv-zone-box'); const z = zb.getBoundingClientRect(), b = box.getBoundingClientRect();
-      return { x: z.right, y: (Math.max(z.top, b.top) + Math.min(z.bottom, b.bottom)) / 2, overlap: z.right > b.left && z.left < b.right };
-    });
-    if (probe.overlap) {
-      const png = await page.screenshot({ clip: { x: probe.x - 1, y: probe.y - 1, width: 2, height: 2 } });   // 4×4 device px; (2,2) = the stroke centre (SVG bbox = geometry edge)
-      const px = await page.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(2, 2, 1, 1).data]; }, png.toString('base64'));
-      ok(!(px[0] > 200 && px[1] < 60 && px[2] < 60), `④ ${w}: zone frame painted over the box where they overlap (pixel ${px.slice(0, 3).join(',')})`);
-    } else ok(true, `④ ${w}: box does not reach the zone frame (no overlap to paint-check)`);
-    await page.evaluate(() => document.getElementById('pz-red')?.remove());
-    ok(errors.length === 0, `④ ${w}: no page errors (${errors.length})`, errors.slice(0, 3));
-    if (shots) await page.screenshot({ path: path.join(shots, `fake-${w}.png`) });
-    await context.close();
   }
 
   // ---------- ② what the page paints: list mark and zone mark of an in-play pitch, legend ----------
@@ -357,18 +378,20 @@ try {
   }
   for (const n of notes) console.log('note', n);
 
+  if (mode3d) {
   // ---------- reduced motion: attaches but never plays ----------
-  {
-    const { context, page, errors } = await open(390, 844, { reduceMotion: true });
-    await page.goto(`${origin}/?game=${PK}`);
-    await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
-    if (await waited('reduced motion: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
-      await page.waitForTimeout(800);
-      const st = await status(page);
-      ok(st.state && st.state.idleLoop === false, `reduced motion: no idle loop (${st.state?.idleLoop})`);
+    {
+      const { context, page, errors } = await open(390, 844, { reduceMotion: true });
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('reduced motion: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        await page.waitForTimeout(800);
+        const st = await status(page);
+        ok(st.state && st.state.idleLoop === false, `reduced motion: no idle loop (${st.state?.idleLoop})`);
+      }
+      ok(errors.length === 0, `reduced motion: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
     }
-    ok(errors.length === 0, `reduced motion: no page errors (${errors.length})`, errors.slice(0, 3));
-    await context.close();
   }
 } catch (e) {
   ok(false, `unexpected: ${String(e && e.stack || e).slice(0, 400)}`);
