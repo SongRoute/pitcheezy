@@ -2,7 +2,7 @@
 
 상위: 인계 문서 `docs/pm/integration/handoffs/2026-11-15-session-survey-and-todo.md` 5·7·8·9절(본 체크아웃에만 있음, 미커밋) · [UI 확정 기준](../../handoffs/UI-design-1026.md) · 통합 전 기준선 `pitcheezy-worktrees/prof-demo-1117/docs/pm/service/prof-demo-rebuild-check-2026-11-13.md` · 작업 큐 #37 CLAIM `FRONT-INTEG-20261115`(PM 작성)
 
-- 작성·실행: Claude Code 하위 세션(요청 모델 Opus 5.5). **독립 검토 전**(PM Fable이 한다). push·병합·배포·전달 없음.
+- 작성·실행: Claude Code 하위 세션(요청 모델 Opus 5.5). 독립 검토: Claude Fable 5.2, **조건부 PASS, P1 0건**(`pitcheezy-pm-jobs/20261115-front/REVIEW-FABLE.md`). 검토 P2·P3 반영은 10절. push·병합·배포·전달 없음.
 - 작업 트리 `~/Projects/pitcheezy-worktrees/front-3d-1115`, 가지 `demo/front-3d-1115`, 기준 main `a7a13c9a`.
 - 작업 폴더(저장소 밖) `~/Projects/pitcheezy-pm-jobs/20261115-front/`: `teammate-src/`(받은 원본), `logs/`, `bundles/`, `bin/`(검사·묶음 스크립트).
 - 방식: Song 결정 "가"(팀원 방식 그대로 + 수정). 우리 화면 소스(`src/service`, `src/v3`, 경기 목록)는 **한 줄도 바꾸지 않았다**. 빌드 결과물의 앱 JS·CSS는 c47과 바이트까지 같다.
@@ -50,7 +50,7 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 - 팀원 파일을 `apps/observer/web/pz-skin/`에 원본 바이트로 먼저 커밋(`2802f5b8`)하고, 수정은 따로 커밋했다.
 - `pz-skin/plugin.mjs`(Vite 빌드 플러그인, `vite.config.ts`에 등록)가 `npm run build:public` 때 빌드 결과물 옆에 `pz/`를 만들고 index.html에 태그 세 가지를 넣는다: ① 첫 모듈 스크립트 앞 import map, ② 앱 CSS 뒤 `pz/pz-theme.css` 링크, ③ 모듈 스크립트(수정 ③ 때문에 `pz-batter.js` 대신 작은 `pz/pz-boot.js`). `theme-color`는 `#091811`. 손으로 dist를 고치지 않는다.
 - three.js는 `devDependencies`의 `three@0.187.0`(정확한 버전, package-lock 무결성 고정)에서 복사하고, 복사할 때마다 팀원 표의 SHA-256과 대조한다(다르면 빌드 실패). `vendor/` 2.3 MB를 저장소에 넣지 않았다.
-- 변수: `PZ_SKIN=3d`(기본)|`theme`|`off`, `PZ_BATTER_MODEL=batter-ctl|batter-indexed`(비우면 `__MODEL__` 그대로 → 404 → 실루엣), `PZ_BATTER_ASSETS_DIR`(저장소 밖 모델 폴더, 주면 `pz/batter3d/assets/`로 복사). 모델 이름은 `^[a-z0-9][a-z0-9-]{0,63}$`만 받는다.
+- 변수: `PZ_SKIN=off`(기본, 검토 P2-4로 `3d`에서 바꿈)|`theme`|`3d`, `PZ_BATTER_MODEL=batter-ctl|batter-indexed`(비우면 `pz-boot.js`가 3D 코드를 부르지 않음 — 요청 0, 실루엣, 검토 P2-3), `PZ_BATTER_ASSETS_DIR`(저장소 밖 모델 폴더, 주면 `pz/batter3d/assets/`로 복사). 모델 이름은 `^[a-z0-9][a-z0-9-]{0,63}$`만 받는다.
 - 재현 확인:
   - `PZ_SKIN=off` 빌드 = c47 화면 파일 4개와 바이트까지 같다(index.html `85616c4b…`, JS `e46d431a…`, CSS `292dd392…`, favicon `bbfd72e5…`).
   - `PZ_SKIN=theme` 빌드의 index.html = 팀원 `theme-only/index.html`과 바이트까지 같다(`b50993b5…`, 712 B).
@@ -70,7 +70,7 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 `batter3d.js`는 바꾸지 않았다(`66a3664c…` 그대로). 전체 diff: `git diff 2802f5b8 368d1b22 -- apps/observer/web/pz-skin/`.
 
 - **① `tick()`:** 전에는 '실제 투구' 줄의 열쇠가 바뀌기만 하면 재생했다. 이제 (가) 결과 종류(`kindFromActual`)가 있는 줄이고 (나) 마지막으로 재생한(또는 붙을 때 본) 공(`playedKey`)과 다를 때만 재생한다. 결과 없는 줄('기록 없음'·'확인 중')은 `playedKey`를 바꾸지 않는다 → A → 빈 줄 → A는 재생 안 함, A → B → A(관람자가 다시 고름)는 재생. 붙을 때 줄이 비어 있었으면 처음 나타난 결과 줄은 기준으로만 삼는다.
-- **② 색:** `--sv-g1-play`를 `#ffb782` → `#c4500f`(같은 주황 계열, 진하게). 타격 번호를 짙은 글자 → 흰 글자로(짙은 글자는 새 바탕에서 3.21~3.57:1이라 4.5 미달). 계산(WCAG 상대 휘도, `bin/contrast.mjs`):
+- **② 색:** `--sv-g1-play`를 `#ffb782` → `#c4500f`(같은 주황 계열, 진하게). 타격 번호를 짙은 글자 → 흰 글자로(짙은 글자는 새 바탕에서 `#0f2217` 3.57:1·`#2b1a0d` 3.58:1이라 4.5 미달. 처음 적은 "3.21"은 버린 후보색 `#c2410c`의 값이었다 — 검토 P3-2로 고침). 계산(WCAG 상대 휘도, `bin/contrast.mjs`):
 
   | 대상 | 팀원 `#ffb782` | 바꾼 `#c4500f` | 기준 |
   |---|---:|---:|---:|
@@ -94,11 +94,11 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 | zone-label-clip-check | 160 ok, 0 FAIL | 160 ok, 0 FAIL | 160 |
 | notice-hide-smoke | 267 ok / 0 FAIL | 267 ok / 0 FAIL | 267 |
 | ws-launch-layout-check | 360 passed, 0 failed | 360 passed, 0 failed | 360 |
-| static-publish-smoke | 돌리지 않음(11/13 기록 416 사용, 시간 절약) | 1회차 415 passed, **1 failed** → 허용 목록에 `pz/` 고정 이름 추가(`92913f20`) → **416 passed, 0 failed** | 416 |
+| static-publish-smoke | 돌리지 않음 — 비교 기준 416은 **11/13 기록 값**(prof-demo-1117, 같은 main `a7a13c9a`)이다 | 1회차 415 passed, **1 failed** → 허용 목록에 `pz/` 고정 이름 추가(`92913f20`) → **416 passed, 0 failed** | 416 |
 | pz-skin-check(새) · dist-public | — | 158 ok, 0 FAIL | — |
 | pz-skin-check · 묶음 A 사람형 / A 마네킹 / B 색만 | — | 158 / 158 / 57 ok, 0 FAIL | — |
 
-- static-publish-smoke 1회차의 실패 1건: `inject: every request stays inside the prefix and the published layout`. 조작한 `?date=`·`?game=` 주소로 열어도 모든 요청이 발행 자리 안에 있어야 하는 검사인데, 목록 화면이 새로 받는 `pz/pz-theme.css`·`pz/pz-boot.js`를 몰랐다. 기준은 그대로 두고 허용 정규식에 이 묶음의 고정 파일 이름만 더했다(질의 문자열 금지 유지). 확인: `/pub/pz/../api/x`, `/pub/pz/evil.js`, `/pub/pz/pz-theme.css?x=1`, `/api/x`는 여전히 거부. 2회차 같은 줄 `(117 requests checked)` 통과.
+- static-publish-smoke 1회차 415 passed / 1 failed의 원인과 고친 것 — 실패 1건: `inject: every request stays inside the prefix and the published layout`. 조작한 `?date=`·`?game=` 주소로 열어도 모든 요청이 발행 자리 안에 있어야 하는 검사인데, 목록 화면이 새로 받는 `pz/pz-theme.css`·`pz/pz-boot.js`를 몰랐다. 기준은 그대로 두고 허용 정규식에 이 묶음의 고정 파일 이름만 더했다(질의 문자열 금지 유지). 확인: `/pub/pz/../api/x`, `/pub/pz/evil.js`, `/pub/pz/pz-theme.css?x=1`, `/api/x`는 여전히 거부. 2회차 같은 줄 `(117 requests checked)` 통과.
 - 걸린 시간(초): zone-geometry 22, zone-label-clip 32, notice-hide 92, ws-launch 93, static-publish 683/675, pz-skin-check 49~50(B 16).
 - 기존 검사 4종(notice-hide·ws-launch·zone 둘)은 고칠 것 없이 같은 수로 통과했다. 이 검사들은 3D가 404로 실루엣이 남는 상태(모델 없음)의 통합 화면을 본 것이다.
 
@@ -107,7 +107,8 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 가짜 정적 호스트(127.0.0.1:8884, 8880~8889 범위)와 `tests/fixtures/publish/v1`(849843 종료 경기, 990003 합성 라이브 경기). 다른 출처 요청은 모두 막는다. 3D 빌드(`PZ_SKIN=3d`)와 색만 빌드(`PZ_SKIN=theme`)를 index.html로 알아보고 각각 맞는 항목만 본다. 손대지 않은 화면과 비교하려고 검사 안에서 `PZ_SKIN=off` 빌드(`dist-public-plain/`, git 무시)를 만든다.
 
 - 모델 404(지금 상태): 실루엣 보임, 3D 상자·`pz-has3d` 남지 않음, 오류 0, 모델 요청 ≤ 3이고 `online` 재확인 3번 뒤에도 늘지 않음, 가로 넘침 0(390·320).
-- 가짜 모델(검사가 만든 삼각형 하나짜리 glb, 동작 `idle`·`contact_hit1`·`miss`·`take`·`hit`): 실제 three.js + SwiftShader WebGL로 붙음, 실루엣 숨김, 첫 화면 동작 0, ① `online` 재확인 4번 + 다른 탭 앞에 두었다 돌아오기 뒤 재생 수 그대로, 다른 공 고르면 반응, 목록으로 가면 상자 해제.
+- 가짜 모델(검사가 만든 삼각형 하나짜리 glb, 동작 `idle`·`contact_hit1`·`miss`·`take`·`hit`, 설명 파일 없음 → `take`·`hit`은 쓰이지 않음): 실제 three.js + SwiftShader WebGL로 붙음, 실루엣 숨김, 첫 화면 동작 0, 목록으로 가면 상자 해제(목록 이동은 새 문서 로드라 자명한 항목).
+  - **정정(검토 P2-1·P2-2):** 1차 판의 "`online` 4번 + 다른 탭 앞에 두었다 돌아오기 뒤 재생 수 그대로"는 아무것도 증명하지 못했다 — 이 fixture(끝난 경기)에서는 그 동작으로 '실제 투구' 줄이 비지 않았고(헤드리스는 다른 탭을 앞에 둬도 `visible`), 처음 공이 루킹 스트라이크라 가짜 모델에서는 재생돼도 수가 늘지 않는다. "다른 공 고르면 반응" 단언은 항상 참이었다(`played >= 이전값`). 둘 다 10절의 검사로 바꿨다. **실제 폰의 앱 전환·화면 잠금 복귀는 여전히 미확인**이다.
 - ① 합성 페이지(같은 `pz-batter.js`): A→기록 없음→A, A→확인 중→A 재생 0 / A→B 1 / B→빈 줄→B 그대로 / B→A 2 / 좌우 바뀜 따라감.
 - ③ 목록 화면 요청에 `pz-batter.js`·`batter3d/`·three.js 없음, 목록→경기에서 `pz-batter.js` 1번·three 본체 받음, 외부 요청 0.
 - ④ 320·344·359·360·390·402, 좌우 둘 다: 상자가 화면 안, 크기 140×210 그대로, 존 z-index > 상자, 상자를 빨갛게 칠했을 때 겹치는 곳의 존 테두리 픽셀이 빨강이 아님.
@@ -147,22 +148,23 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 
 | 묶음 | 내용 | 파일 수(site) | ZIP 바이트 · SHA-256 |
 |---|---|---:|---|
-| `A-color-3d-batter-ctl` | 색 + 3D, `MODEL = "batter-ctl"`(사람형) | 20 | 662,619 · `b9f0dedc69e70b91550f333bb6e5b73e48f5c248efa1ab31e864e5179699b51e` |
-| `A-color-3d-batter-indexed` | 색 + 3D, `MODEL = "batter-indexed"`(마네킹) | 20 | 662,787 · `53e17f236ea87eb24c63169f85a9fa40c022889dea8789da358eea88b5fe27bd` |
-| `B-color-only` | 색만(물러설 자리, ②만 해당) | 11 | 178,117 · `511dc34c4dd32278cccab648079897bcfbd28efc3d75c2e73425b3790e4ed41b` |
+| `A-color-3d-batter-ctl` | 색 + 3D, `MODEL = "batter-ctl"`(사람형) | 21 | 663,423 · `f6f4d022d7c39d2103231b9df5ba7b6dd7d01b3c96e020988a399d953b305553` |
+| `A-color-3d-batter-indexed` | 색 + 3D, `MODEL = "batter-indexed"`(마네킹) | 21 | 663,599 · `6f15f94531e9c5a419589648ae725f05974681e8ecc255c3f5a605b476bab5f0` |
+| `B-color-only` | 색만(물러설 자리, ②만 해당) | 11 | 178,146 · `c1e89d03afe0ce0a33cacf24c4b2a42bc7e751f73c324c1434eb46e1e195bac5` |
 
 주요 파일(전체는 각 `MANIFEST.tsv`):
 
 | 파일 | A 사람형 | A 마네킹 | B |
 |---|---|---|---|
 | `index.html` | 925 B `f97e2dec…547976c` | 같음 | 712 B `b50993b5…50048b`(= 팀원 theme-only) |
-| `pz/pz-theme.css` | 6,833 B `6d9d3559…7eaa8b2` | 같음 | 5,096 B `156e4211…19ce570` |
-| `pz/pz-batter.js` | 13,005 B `dc3478b2…ce62e1826` | 13,009 B `0407ea98…a4cd2835` | 없음 |
-| `pz/pz-boot.js` | 1,284 B `54c38520…6b37437c` | 같음 | 없음 |
+| `pz/pz-theme.css` | 6,850 B `04244cc0…90ac1a` | 같음 | 5,113 B `be906c60…78d8a63` |
+| `pz/pz-batter.js` | 13,324 B `be61e409…c3db1f9` | 13,328 B `f9eae9f7…3486ce5b` | 없음 |
+| `pz/pz-boot.js` | 1,776 B `a06a01d9…2ce68f0` | 1,780 B `2184c195…1b34be` | 없음 |
+| `pz/batter3d/assets/README.txt` | 자리표시 한 줄(검토 P3-3, ZIP에 폴더가 남게) | 같은 내용(이름만 다름) | 없음 |
 | `assets/index-X1sSTTQ4.js`, `assets/index-ks_hu7Ji.css`, `favicon.svg` | c47과 같음 | 같음 | 같음 |
 
-- A 두 판은 `pz/pz-batter.js` 한 파일만 다르다(MANIFEST 비교). `site/pz/batter3d/assets/`는 비어 있다 — 모델·설명 파일은 받은 뒤 `MODEL-FILES.txt`대로 넣는다(팀원 표의 크기·해시를 적어 둠).
-- 만든 방법: `bin/make-bundles.sh`(작업 트리가 깨끗할 때만 돈다). 최종 묶음의 출처 커밋은 `d5776199`(각 `PROVENANCE.txt`). 같은 스크립트로 `54aa71c5`에서 만든 첫 묶음과 `site/` 파일이 바이트까지 같다(세 MANIFEST 일치). ZIP 해시는 `PROVENANCE.txt`(커밋·만든 시각)가 들어 있어 만들 때마다 바뀐다 — 비교는 MANIFEST로 한다. pz-skin-check는 첫 묶음(같은 `site/`)에서 돌렸다.
+- (위 값은 검토 반영 뒤 최종 묶음, 출처 커밋 `871b8644`.) A 두 판은 모델 이름이 들어가는 `pz/pz-batter.js`·`pz/pz-boot.js`·자리표시 README만 다르다. `site/pz/batter3d/assets/`는 비어 있다 — 모델·설명 파일은 받은 뒤 `MODEL-FILES.txt`대로 넣는다(팀원 표의 크기·해시를 적어 둠).
+- 만든 방법: `bin/make-bundles.sh`(작업 트리가 깨끗할 때만 돈다, 변수 `PZ_SKIN`·`PZ_BATTER_MODEL`을 명시). 최종 묶음의 출처 커밋은 `871b8644`(각 `PROVENANCE.txt`). ZIP 해시는 `PROVENANCE.txt`(커밋·만든 시각)가 들어 있어 만들 때마다 바뀐다 — 비교는 MANIFEST로 한다. 최종 묶음 세 개에 `pz-skin-check`를 돌렸다(10절).
 
 폰 확인 목록: `bundles/PHONE-CHECKLIST.txt`(아이폰 사파리·갤럭시 16항목).
 
@@ -188,6 +190,50 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 - 타격 주황은 `#c4500f`로 정했다(같은 계열 중 흰 번호 4.5:1을 넘는 가장 밝은 쪽 근처).
 
 ### Song이 정할 것
-1. 첫 화면 세로 스크롤(7절): c47부터 402×681·360×620에서 스크롤이 생기고 "이번 타석" 줄이 하단 바에 가린다. 데모 전에 우리 화면 배치를 고칠지(존 높이 등), 그대로 둘지.
+1. **첫 화면 세로 스크롤(7절, 검토 P2-5) — 조사만, 코드 변경 없음.** 측정: `bin/measure-vscroll.mjs`, 로그 `logs/vscroll-investigation.log`, 손대지 않은 빌드(`PZ_SKIN=off` = c47), 헤드리스 Chromium.
+   - **기존 검사가 재는 것:** `ws-launch-layout-check`는 320×568·375×667·390×844·1440×900에서 *가로* 넘침 0과, 390×844에서만 "이번 타석 줄 아래끝 ≤ 하단 바 위끝"을 본다. `static-publish-smoke`의 `keyOnFirstScreen`은 머리 1줄(`.sv-hd-1`)과 3줄(`.sv-mu`)이 하단 바 위에, 존 위끝이 하단 바 위에 있는지만 보고(이번 타석 줄은 화면 높이 800 이상일 때만), 세로 스크롤은 허용한다(파일 머리 주석 "vertical scroll allowed since 2026-10-13"). `docs/decisions.md` 2026-10-17 줄이 10/13 개편 뒤 검사를 "한 화면 안" → "핵심이 탭 막대 위"로 바꾸고 390×844의 3.5~20 px 가림을 "알려진 실패로 받아들인다"고 적었다. 즉 **세로 0 px를 재는 검사는 없고, 10/26 확정(D135 "스크롤 없이 한 화면")과 10/17 검사 기준이 서로 다르다.**
+   - **높이 구성(폭과 무관, 402·390·360 같은 값):** 머리 1·2줄 107 px(44+63) · [라이브만 3줄 타자·카운트·투수 76 px] · 바깥 여백 12+12 · 무대 위·아래 여백 14+4 · 존 행 **216 px 고정**(`--sv-zone-height: 216px`) · 간격 10×3 · 범례 38 · 추천 칸 151(끝난 경기: 머리 28 + 후보 52 + '실제 투구' 줄 40 + 여백) / 99(라이브: 줄 없음) · 이번 타석 55 · 하단 바 자리 64(`--sv-nav-space`, 바는 고정). 합계 **703 px(끝난 경기 849843) / 727 px(라이브 990003)**. 높이에 따라 줄어드는 요소가 없다(존 높이는 760 px 폭 이상에서만 330으로 바뀜).
+   - **0 px가 되는 화면 높이:** 끝난 경기 **706 px 이상**, 라이브 **728 px 이상**(402·390·360 폭 모두 같음, 2 px 간격으로 잼). 402×681은 22/46 px, 360×620은 83/107 px 넘친다.
+   - **실제 아이폰 사파리·갤럭시 브라우저의 보이는 영역 높이: 미측정.**
+   - **가장 작은 수정안(제안, 미적용):**
+     - (가) 화면 높이에 맞춰 존 높이만 줄이기: `.sv-page.sv-game { --sv-zone-height: clamp(150px, calc(100dvh - 487px), 216px); }`(487 = 703 − 216, 끝난 경기 기준; 라이브는 76 px 더 필요). 402×681에서 끝난 경기는 존 194 px로 0 px, 라이브는 24 px 남음(511+194−681, 계산값). 360×620은 150 px 바닥에서도 끝난 경기 17 px·라이브 41 px 남음(계산값, 미측정). 영향: `Zone.tsx`의 좌표·라벨 배치가 높이를 따라 바뀜 → `zone-geometry-check`(397)·`zone-label-clip-check`(160)·`ws-launch-layout-check` 다시 확인, 3D 상자(210 px)가 존보다 커져 위아래로 넘칠 수 있음(④ 다시 측정), 시안 그림과 비율이 달라짐.
+     - (나) 높이 700 px 미만에서 여백만 줄이기(바깥 12→6, 무대 14→8, 간격 10→6, 범례 줄 38→28 정도): 최대 약 40 px. 402×681 끝난 경기는 0 px가 되지만 라이브와 360×620은 남는다. 영향: `service-layout.css` 몇 줄, 레이아웃 검사 재확인, 보이는 정보는 그대로.
+     - 둘 다 우리 화면 소스(`src/service`) 변경이라 이번 범위 밖이다. 360×620까지 0 px를 원하면 (가)+(나)로도 모자라고(라이브), 정보 하나를 접는 결정(예: 범례를 시트로)이 필요하다 — 10/26 확정을 바꾸는 일이라 Song 결정.
 2. 모델 선택(사람형/마네킹)과 사람형 대기 움직임(인계 5절 7번).
 3. 타격 주황 `#c4500f`가 팀원 색 의도에 맞는지(눈으로).
+
+## 10. 독립 검토 반영 (2026-11-15 03:2x~04:06 KST)
+
+검토 원문 `pitcheezy-pm-jobs/20261115-front/REVIEW-FABLE.md`(Fable 5.2, 조건부 PASS, P1 0). 반영한 것:
+
+| 항목 | 한 것 | 커밋 |
+|---|---|---|
+| P2-4 `PZ_SKIN` 기본 `3d` | 기본을 `off`로. 변수 없이 빌드하면 c47 화면 파일 4개와 바이트 동일(index.html `85616c4b…`, JS `e46d431a…`, CSS `292dd392…`, favicon `bbfd72e5…` 다시 확인). 묶음·검사 실행 스크립트는 `PZ_SKIN=3d PZ_BATTER_MODEL=batter-ctl`(또는 묶음별 값)을 명시. P3-5: `theme-color` 메타를 못 찾으면 빌드 실패 | `d697cf04` |
+| P2-3 모델 없을 때 요청 | `pz-boot.js`도 모델 이름을 받는다. 이름이 없으면(자리표시 그대로) 3D 코드를 아예 부르지 않는다 — 검사: 3D·모델 요청 0, `skipped: 모델 이름 없음`, 실루엣. 이름이 있는데 파일이 없는 경우(묶음 A, 모델 넣기 전)는 여전히 경기 화면마다 three.js + 모델 요청 최대 3회(설명 파일 포함 6요청) 뒤 실루엣 — 모델 전에는 B를 쓴다(폰 목록 3번) | `d697cf04` |
+| P2-2 남는 구멍 | `mount()`가 붙는 순간의 줄을 "이미 본 공"으로 잡을 때, 결과 종류가 없는 줄('기록 없음'·'확인 중')이면 `null`로 둔다 → 같은 공이 돌아와도 기준만 잡고 재생하지 않음 | `3a35b856` |
+| P2-2 실화면 검증 | static-publish-smoke와 같은 방식: health에 이 경기의 검증 항목을 싣고, `online` 재확인의 응답(health·경기 파일)을 2.5초 늦춘다 → 화면이 '실제 투구' 줄을 "실제 투구 기록 없음"으로 가렸다가 같은 공으로 되돌린다(검사가 가림을 관찰해야 통과). 그 뒤 재생 수 그대로를 단언 | `a79cffec` |
+| P2-1 항상 참 단언 | 헛스윙 줄(2구)을 고르면 `played` 정확히 +1·`miss`, 파울팁 삼진 줄(3구)을 고르면 +1·`contact`. ④ 픽셀 검사의 건너뛰기는 실패로, ② 존 대비 건너뛰기는 `ok` 대신 `note`로 | `a79cffec` |
+| P3-2 대비 숫자 | 짙은 글자 대비를 3.57(`#0f2217`)·3.58(`#2b1a0d`)로 바로잡음(문서·CSS 주석) | `871b8644` |
+| P3-3 ZIP의 빈 폴더 | 묶음 A의 `site/pz/batter3d/assets/README.txt`(한 줄) | 묶음 스크립트 |
+| 폰 목록 | 5번 "탭 복귀 뒤 같은 공이 다시 재생되지 않는지"를 ★ 데모 전 필수로 | `bundles/PHONE-CHECKLIST.txt` |
+
+**변이 확인(기준선 통과 뒤, `logs/r2-*.log`):** 기준선(수정 반영 HEAD) 166 ok / 0 FAIL.
+- M1 수정 ① `tick()`을 원래 줄로 되돌림 → 157 ok / **9 FAIL**: 새 실화면 단언 `same pitch back after the masked re-read → no replay (played 2 → 3)` **실패** + 합성 8건.
+- M5 `mount()` 구멍 수정만 되돌림 → 163 ok / **3 FAIL**: 합성 "기록 없음에 붙은 뒤" 3건.
+
+**최종 검사(04:06 KST 끝, `logs/final2/`, 모두 `PZ_SKIN=3d PZ_BATTER_MODEL=batter-ctl`로 빌드한 통합 화면, static-publish의 자체 빌드도 같은 변수):**
+
+| 검사 | 결과 | 기준 |
+|---|---|---|
+| zone-geometry-check | 397 ok, 0 FAIL | 397 |
+| zone-label-clip-check | 160 ok, 0 FAIL | 160 |
+| notice-hide-smoke | 267 ok / 0 FAIL | 267 |
+| ws-launch-layout-check | 360 passed, 0 failed | 360 |
+| static-publish-smoke | 416 passed, 0 failed (inject 117 requests checked) | 416(11/13 기록 값) |
+| pz-skin-check · dist-public | 166 ok, 0 FAIL | 새 검사 |
+| pz-skin-check · 묶음 A 사람형 / A 마네킹 | 166 / 166 ok, 0 FAIL | 새 검사 |
+| pz-skin-check · 묶음 B 색만 | 56 ok, 0 FAIL(1차 57에서 ② 존 대비 건너뛰기를 `note`로 바꾼 1건 줄어듦) | 새 검사 |
+
+최종 소스 파일: `pz-batter.js` 13,323 B `d6338ada356147159b56168e0ee34b2146fbcdf9194e0d277efc8a838df0f359`, `pz-boot.js` 1,775 B `a6f9ab725339e99b3fd47c0ad058058ca06ab464f5687c4f2ec7dc7a43d9640d`, `pz-theme.css` 6,850 B `04244cc03bdbd60559aa5917e924dfebf80ffa08dd85b74990e3c9ada1f4ac1a`, `theme-only/pz-theme.css` 5,113 B `be906c60589e9abb0d6ab63881c3af6001c7aaf6584ee9ef0b8bf1a6d78d8a63`(4절 표는 1차 값).
+
+**반영하지 않은 것:** P2-6(라이브 최신 보기에서는 '실제 투구' 줄이 없어 3D가 반응하지 않음 — 설계 한계, 끝난 경기 데모는 해당 없음), P3-1(같은 타자 다른 타석의 같은 공 구별 — 우리 화면이 투구 식별자를 내줘야 함), P3-4(가려진 상자의 대기 반복 30fps — 실제 모델로 발열 확인), P3-6(감속 모션에서 공을 골라도 0인지), P3-7(③ 전용 변이 검출), P3-8(허용 목록이 `__MODEL__.glb`를 거부 — P2-3 뒤로는 그 요청 자체가 없음). 실제 폰의 앱 전환·화면 잠금 복귀는 여전히 미확인.
