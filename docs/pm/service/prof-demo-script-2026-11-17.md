@@ -2,7 +2,9 @@
 
 상위: [전시 런북](exhibition-runbook-2026-11-24.md) · 준비: [재생 입력](exhibition-replay-setup.md) · [발행기](exhibition-replay-publisher.md) · [화면·영상·폰](exhibition-displays.md) · [복구·리허설](exhibition-rehearsal.md)
 
-상태: **초안(2026-11-13, Claude PM 작성, Song 확인 전).** 실물로 돌려 본 적이 없다. 시간·속도·오프셋은 11/14 재생 연습과 11/16 연습에서 재고 이 문서에 적는다. 작업 기록: #37 `PROF-DEMO-PREP-20261113`.
+상태: **초안(2026-11-13, Claude PM 작성, Song 확인 전).** 2026-11-15 02:29~02:50 KST 맥미니에서 발행기 재생을 실제로 띄워 장면 A·B의 화면 넘김을 재고 반영했다(2.6절, 7절). 맥북 원격·폰·영상·말하기 시간은 아직 재지 않았다. 작업 기록: #37 `PROF-DEMO-PREP-20261113`, 재생 기록·캡처 `~/Projects/pitcheezy-pm-jobs/20261115-demo/`. 맥북에서 할 일은 [한 장](prof-demo-macbook-onepager-2026-11-16.md).
+
+> **새 화면이 나오면 고칠 곳** — 지금 이 문서의 화면 설명·캡처·잰 값은 **지금 화면(main = c47 소스, 색·3D 없음)** 기준이다. 차선 1(팀원 색 + 3D 타자, `pitcheezy-worktrees/front-3d-1115`)의 새 묶음이 나오면 아래 `[새 화면]` 표시가 있는 곳을 다시 재고 고친다.
 
 ## 0. 가정 (틀리면 고친다)
 
@@ -34,7 +36,7 @@
 | 7:00 | 수치와 한계 | 그대로 | — | — |
 | 8:30 | 질문 | — | — | — |
 
-재생 속도는 10/31 관찰에서 한 구에 약 10초였다. 새 회차에서 다시 잰 값이 아니다.
+재생 속도(11/15 측정, 지금 화면, 발행 파일 기준): 공 하나가 넘어가는 간격 **9.6~10.3초**(A·B 합 40여 구간, 한 번 6.0초). 화면만 넘긴 리허설(7절)에서 A의 3구 결과까지 **61초**, B는 시작 뒤 참고 카드까지 **51초**, King 복귀 추천까지 **131초**였다. 위 표의 "A 2분·B 2분 30초"는 이 화면 시간에 말하는 시간을 더한 것이고, 말하는 시간은 **미측정**이다.
 
 ## 2.5 모니터 1을 맥북에서 띄우기 (2026-11-13 Song 결정)
 
@@ -62,11 +64,55 @@ ssh -N -L 8876:127.0.0.1:8876 song@<맥미니의 Tailscale 이름>
 3. 화면이 공마다 넘어가는지, 맥미니에서 직접 볼 때보다 얼마나 늦는지.
 4. 터널이 끊겼을 때 다시 붙이는 데 걸리는 시간.
 
-예비(인터넷 없이 됨): 맥북 안에 [전달 묶음](exhibition-delivery-2026-11-01.md)을 미리 풀어 두고 로컬로 연다. 끝난 경기 화면만 되고 참고 카드는 나오지 않는다. 참고 카드 장면은 11/14 재생 연습에서 캡처해 둔다(아직 없음).
+예비(인터넷 없이 됨): 맥북 안에 [전달 묶음](exhibition-delivery-2026-11-01.md)을 미리 풀어 두고 로컬로 연다. 끝난 경기 화면만 되고 참고 카드는 나오지 않는다. 참고 카드 장면은 11/15 캡처(아래)로 대신한다.
 
 ```sh
 python3 -m http.server 8890 --bind 127.0.0.1 --directory <묶음을 푼 폴더>/site
 ```
+
+예비 캡처(11/15, 지금 화면, 헤드리스 Chromium, 배율 2): `~/Projects/pitcheezy-pm-jobs/20261115-demo/captures/` — `first-rec-*`(장면 A 1구 전 추천: 1 스위퍼 · 2 싱커 · 3 포심)와 `ref-card-*`(장면 B, Austin Hays 2-1, Rolison, 참고 카드 "커브 34% · 포심 32% …"), 각각 `phone402x681`·`monitor1920x1080`. 해시는 그 폴더의 `SHA256SUMS.txt`와 7절. `[새 화면]` 색·3D 판이 나오면 다시 찍는다.
+
+## 2.6 맥미니에서 재생 띄우기·내리기 (11/15 확인한 명령)
+
+재생 입력·스크립트는 `~/Projects/pitcheezy-pm-jobs/20261115-demo/`에 있다(스크립트 본문은 부록). 발행기 env는 [10/31 빌드 기록](exhibition-build-2026-10-31.md) 2·6절과 같고, 화면은 이 worktree의 `apps/observer/web/dist-public`(c47 묶음과 화면 파일 4개 해시가 같음, 11/15 재확인)이다. 발행기는 MPS·torch를 쓰지 않는다(발행기·`live_armb` 코드에 torch import 없음, 기록 장부 값으로 추천을 낸다).
+
+준비(한 번, 이미 해 둠). 장면마다 첫 스냅샷을 3장 더 복사해 **앞 대기**를 둔다. 앞 대기가 없으면 발행기의 첫 계산(약 7.5초) 동안 재생이 다음 공으로 넘어가 **첫 공 추천이 "기록된 추천이 없어요"로 비어 버린다**(11/15 확인: A의 1구, B의 136번 공). 앞 대기 3장이면 첫 공 추천이 10.7초에 뜨고 첫 공 화면이 약 40초 머문다.
+
+```sh
+cd ~/Projects/pitcheezy-worktrees/prof-demo-1117
+D=~/Projects/pitcheezy-pm-jobs/20261115-demo
+~/Projects/pitcheezy/.venv/bin/python scripts/demo_precompute.py live-replay --game-pk 849843 --start 0 --count 30 --output $D/rawA
+~/Projects/pitcheezy/.venv/bin/python scripts/demo_precompute.py live-replay --game-pk 849843 --start 136 --count 12 --output $D/rawB
+mkdir -p $D/rawA2 $D/rawB2 && cp $D/rawA/* $D/rawA2/ && cp $D/rawB/* $D/rawB2/
+for x in a b c; do cp $D/rawA/849843_00000.json.gz $D/rawA2/849843_00000$x.json.gz; cp $D/rawB/849843_00136.json.gz $D/rawB2/849843_00136$x.json.gz; done
+python3 ~/Projects/pitcheezy-pm-jobs/exhibition-849843-1031/stamp_snapshots.py $D/rawA2 $D/replayA2 25
+python3 ~/Projects/pitcheezy-pm-jobs/exhibition-849843-1031/stamp_snapshots.py $D/rawB2 $D/replayB2 25
+cd apps/observer/web && npm run build:public
+```
+
+데모 직전(맥미니, 또는 맥북에서 SSH로). 장면 A를 시작하고, A 설명이 끝날 무렵 장면 B를 시작한다(B는 시작 뒤 51초에 참고 카드가 뜬다). 둘을 동시에 켜 두어도 된다(11/15 확인, 아래 6절 4).
+
+```sh
+~/Projects/pitcheezy-pm-jobs/20261115-demo/run_scene.sh A2 8876
+```
+
+```sh
+~/Projects/pitcheezy-pm-jobs/20261115-demo/run_scene.sh B2 8875
+```
+
+각 명령은 회차 폴더(`.../20261115-demo/runA2-HHMMSS`)를 출력한다. 회차마다 새 out·store를 만들므로 되감기는 같은 명령을 다시 실행하면 된다(앞 회차는 먼저 내린다). 화면: `http://127.0.0.1:8876/?game=849843`(A), `http://127.0.0.1:8875/?game=849843`(B).
+
+내리기(자기 회차만, pid 파일 기준)와 포트 확인:
+
+```sh
+~/Projects/pitcheezy-pm-jobs/20261115-demo/stop_scene.sh <회차 폴더>
+```
+
+```sh
+lsof -nP -iTCP:8870-8876 -sTCP:LISTEN
+```
+
+`run_scene.sh`는 `~/Projects/pitcheezy-pm-jobs/20261115-night/TRAINING`이 있으면(MPS 학습 중) 띄우지 않고 멈춘다. 포트는 8876·8875만 쓴다(8787·8880~8889 금지).
 
 ## 3. 장면별 대본
 
@@ -74,7 +120,9 @@ python3 -m http.server 8890 --bind 127.0.0.1 --directory <묶음을 푼 폴더>/
 
 ### A. 첫 추천 — 1회 초, Michael King(우완) 대 Pete Crow-Armstrong(좌타)
 
-회차 A는 첫 공 전(`--start 0`)에서 시작한다. 지나간 공은 화면에서 다시 고를 수 있으므로, 시작이 조금 일러도 첫 공으로 돌아가 설명할 수 있다.
+회차 A는 첫 공 전(`--start 0`)에서 앞 대기 3장을 두고 시작한다(2.6절). 11/15 측정: 발행기 시작 0.5초에 "계산 중" 화면, **10.7초에 1구 추천**(1 스위퍼 · 2 싱커 · 3 포심, 아래 표와 같음), 40.7초에 1구, 50.8초에 2구, 61.0초에 3구(삼진) 결과가 화면에 붙는다. 지나간 공은 화면에서 다시 고를 수 있다. 다만 **앞 대기 없이 띄운 회차에서는 1구 추천이 비어 있으므로**(2.6절) 반드시 `A2` 입력으로 띄운다.
+
+화면 주의(11/15 캡처): 재생 중에는 오른쪽 위 상태 표시가 **"● 라이브"** 로 보인다. 여는 말의 "재생입니다, 생중계가 아닙니다"를 이 표시를 가리키며 한 번 더 말한다(6절 9). `[새 화면]`
 
 | 공 | 던지기 전 추천(1 / 2 / 3순위) | 실제 |
 |---|---|---|
@@ -101,11 +149,13 @@ python3 -m http.server 8890 --bind 127.0.0.1 --directory <묶음을 푼 폴더>/
 
 ### B. 추천하지 않는 투수 — 5회 말, Ryan Rolison(좌완)
 
-회차 B는 137번째 공 전에서 시작한다(`--start 136 --count 12`, 순번은 0부터). 시작 지점은 연습에서 실제 선수·이닝을 보고 확정한다. 10/31에 만든 Rolison 장면 입력(작업 폴더의 `replay-849843-rolison`)은 130번부터 50구였다. 그 폴더는 덮어쓰지 않고 새 회차 폴더에 새로 만든다.
+회차 B는 137번째 공 전에서 시작한다(`--start 136 --count 12`, 순번은 0부터, 앞 대기 3장 = `B2`). 10/31의 `replay-849843-rolison`(130번부터 50구)은 건드리지 않았고 11/15 새 폴더에 만들었다.
+
+11/15 측정(B 시작 기준): 10.7초 136번 추천, 41.1초 136번 던짐, **50.8초 참고 카드 첫 표시**(다음 공 = 138번, Merrill 첫 공), 50.8~120.7초 참고 카드 유지(138~145번 전 8구), **130.9초 146번(King) 추천 다시 표시**. 시작 순번 136은 화면에서 원하는 지점(Assad → Rolison 교체 → King 복귀)이 모두 들어온다. 앞 대기 없이 띄운 11/15 첫 회차에서는 136번 추천이 비었다(2.6절).
 
 | 순번(0부터) | 상황 | 화면 |
 |---|---|---|
-| 136~137 | Ty France 대 Javier Assad, 2구째 1루타 | 추천이 뜬다(1순위 싱커) |
+| 136~137 | Ty France 대 Javier Assad, 2구째 1루타 | 추천이 뜬다(1순위 싱커; 136번은 앞 대기 `B2`로 띄울 때만) |
 | 138~140 | 투수 교체. Jackson Merrill(좌타) 대 Rolison, 2사 만루. 3구째 1루타로 0 : 4 → 0 : 6 | 추천 없음 + **참고 카드** |
 | 141~145 | Austin Hays 대 Rolison, 5구 삼진. 타석 도중 1점 더(0 : 7) | 추천 없음 + 참고 카드 |
 | 146~147 | 6회 초, King이 다시 던진다 | 추천이 다시 뜬다 |
@@ -144,30 +194,94 @@ python3 -m http.server 8890 --bind 127.0.0.1 --directory <묶음을 푼 폴더>/
 
 | 증상 | 바로 할 일 | 말 |
 |---|---|---|
-| 모니터 1이 다음 공으로 안 넘어감 | 끝난 경기 화면(검증된 묶음을 새 폴더에 풀어 띄운 탭)으로 바꾸고 지난 공 고르기로 설명 | "재생이 멈춰서 저장된 경기 화면으로 보여 드리겠습니다." |
+| 모니터 1이 다음 공으로 안 넘어감 | 정상 간격은 약 10초(11/15). 20초 넘게 그대로면 끝난 경기 화면(검증된 묶음을 새 폴더에 풀어 띄운 탭)으로 바꾸고 지난 공 고르기로 설명. 뒤에서 `stop_scene.sh` → `run_scene.sh`로 새 회차(첫 추천까지 10.7초) | "재생이 멈춰서 저장된 경기 화면으로 보여 드리겠습니다." |
+| 첫 공 추천 칸이 비어 있음("기록된 추천이 없어요") | 앞 대기 없는 입력(`A`·`B`)으로 띄운 것이다. 내리고 `A2`·`B2`로 다시 띄운다. 시간이 없으면 2구부터 설명 | "첫 공은 계산이 끝나기 전에 지나갔습니다." |
+| 화면이 "계산 중"에서 멈춤 | 11/15에는 0.5~1초에 "계산 중", 10.7초에 추천. 30초 넘으면 회차 폴더의 `publisher.log` 끝을 본다 | — |
 | 맥북에서 맥미니 화면이 안 열리거나 끊김 | 터널 터미널을 다시 실행. 안 되면 폰 핫스팟으로 바꾸고, 그래도 안 되면 맥북 안의 끝난 경기 화면(2.5절 예비)과 참고 카드 캡처로 진행 | "재생 서버 연결이 끊겨 저장된 화면으로 보여 드리겠습니다." |
-| 참고 카드가 안 뜸 | 재생 탭이 맞는지 확인. 아니면 미표시 사실을 그대로 말함 | "이 화면에서는 카드가 실리지 않습니다." |
+| 참고 카드가 안 뜸 | 재생 탭(8875, B)이 맞는지, B 시작 뒤 51초가 지났는지 확인. 아니면 캡처 `ref-card-monitor1920x1080.png`를 띄우고 미표시 사실을 그대로 말함 | "이 화면에서는 카드가 실리지 않습니다." |
 | 영상이 어긋남 | 시간을 추측해 맞추지 않는다. 타석 첫 공으로 다시 맞추고 장면 단위로 설명 | "영상은 공 단위 클립이라 손으로 맞춥니다." |
 | 폰이 안 열림(호스트·네트워크·코드) | 폰 체험을 멈추고 모니터 1로 설명 | "폰 화면은 같은 경기의 고정 화면입니다." |
 | 3D 타자가 깨지거나 늦음 | 색만 넣은 판, 그다음 지금 화면(c47)으로 | 따로 말하지 않아도 된다 |
 | 로컬 포트가 쓰이는 중 | 빈 포트로 바꾼다. 남의 프로세스는 끄지 않는다 | — |
 
-중지는 내가 시작한 발행기·정적 서버 터미널에서만 Ctrl-C로 한다. 되감을 때는 새 폴더·새 store로 새 회차를 만든다.
+중지는 `stop_scene.sh <회차 폴더>`(그 회차의 pid만 끈다)로 한다. 되감을 때는 `run_scene.sh`를 다시 실행해 새 폴더·새 store로 새 회차를 만든다.
 
 ## 6. 아직 정하지 않았거나 재지 않은 것
 
-1. 모니터 1은 맥북 원격으로 정했다(2.5절). 맥북에서 실제로 붙는지, 데모 장소의 망에서 되는지는 **미확인**이다. 맥북에 넣어 둘 예비 화면과 참고 카드 캡처도 아직 없다.
+1. 모니터 1은 맥북 원격으로 정했다(2.5절). 맥북에서 실제로 붙는지, 데모 장소의 망에서 되는지, 원격 지연·재연결 시간은 **미측정**이다(맥북 [한 장](prof-demo-macbook-onepager-2026-11-16.md) 2·3절로 Song이 잰다). 참고 카드·첫 추천 캡처는 11/15에 만들었다(2.5절 끝). 맥북에 예비 묶음을 풀어 두는 일은 Song이 한다.
 2. 데모에 주어진 시간, 장소, 모니터 2대를 쓸 수 있는지.
-3. 발행기를 시작한 뒤 첫 화면이 뜨기까지 걸리는 시간: **미측정**.
-4. 회차 A와 B를 동시에 켜 둘 수 있는지(메모리): **미확인**. 안 되면 A가 끝난 뒤 B를 시작하고 그 사이에 자세히 시트를 설명한다.
-5. 한 구가 넘어가는 실제 간격, 두 모니터 사이 시간 차: **미측정**.
+3. 발행기 시작 → 첫 화면: **0.5~1.0초**에 "계산 중" 화면, **10.7~11.2초**에 첫 추천(11/15, 발행 파일 기준 5회: 10.7·11.2·10.7·10.7·10.7초).
+4. 회차 A와 B 동시: **된다**(11/15 02:30~02:32, 8876·8875 동시 실행, 발행기 RSS A 1.24 GB·B 1.82 GB, 시스템 메모리 여유 72~74%). 발행기 하나에 약 1.2~1.9 GB이므로 MPS 학습과 겹치면 띄우지 않는다.
+5. 한 구 간격: **9.6~10.3초**(발행 파일 기준, 한 번 6.0초). 두 모니터 사이 시간 차: **미측정**(영상 쪽을 아직 맞춰 보지 않음). 원격으로 볼 때 더해지는 지연: **미측정**.
 6. QR → 홈 → 코드 → 경기 전체 경로를 실제 폰으로 본 적: **없음**(11/15 현준 확인 예정).
-7. 장면 B 시작 순번(136)이 실제 화면에서 원하는 지점인지: 연습에서 확인.
+7. 장면 B 시작 순번 136: 11/15 확인, 원하는 지점(Assad → Rolison 참고 카드 8구 → King 복귀)이 모두 들어온다.
 8. 역할 분담과 강민의 발표 자료 상태.
+9. **재생 화면의 "● 라이브" 표시**(11/15 캡처): 끝난 경기 재생인데 상태 표시가 "라이브"로 보인다. 말로 보정할지(지금 대본), 화면을 고칠지 Song이 정한다. 화면 수정은 차선 1(웹 소스) 범위다.
+10. **폰 크기 첫 화면 세로 넘침**(11/15, 헤드리스 402×681, 지금 화면): 문서 높이가 첫 추천 장면 727px, 참고 카드 장면 759px로 화면 681px보다 46·78px 길다. "이번 타석" 줄이 하단 메뉴 밑에 반쯤 가린다(캡처 `first-rec-phone402x681.png`). 기존 검사의 "스크롤 0px"와 재는 방법이 다를 수 있다(이 값은 `documentElement.scrollHeight`). D204(안) "첫 화면 스크롤 없음"과 맞는지 차선 1에서 같은 크기로 다시 잰다. `[새 화면]`
+11. 모니터 1에서 1920×1080으로 열면 폰 배치가 가운데 넓게 펼쳐지고 아래쪽이 비어 보인다(캡처 `*-monitor1920x1080.png`). 브라우저 확대(⌘+)로 맞출지 연습 때 본다. `[새 화면]`
 
 ## 7. 연습 기록 (채울 것)
 
 회차마다 적는다: 날짜·운영자 / 코드 커밋 / 묶음 SHA / 회차 폴더·store / 시작 순번·count / poll·interval / 영상 시작 장면·잰 시간 차 / 폰 기기·브라우저 / 오류와 전환에 걸린 시간 / PASS·FAIL·미측정.
 
 - 11/14 재생 연습(Song): 미실시
+- **11/15 재생 확인·화면 넘김 리허설(Claude, 차선 3, 맥미니 단독)**
+  - 코드: worktree `prof-demo-1117` @ `0e9c955e`(웹 소스 = main `a7a13c9a` = c47). 화면: `npm run build:public`, 화면 파일 4개 SHA-256이 c47 묶음과 같음(재빌드 대조 문서 2절 값). 발행기 python: 본 체크아웃 `.venv-observer`, 재생 입력 python: 본 체크아웃 `.venv`.
+  - 재는 방법: 회차 폴더의 `out/v1/game/849843.json`을 0.5초마다 읽어 바뀔 때마다 한 줄(시각·sequence·던진 공 수·다음 공·상태·참고 카드 여부)을 적었다(`watch_game.py`). 시각 기준은 `run_scene.sh`가 발행기를 띄우기 직전에 남긴 시각. 브라우저에 실제로 그려진 시각이 아니라 **발행 파일이 바뀐 시각**이다.
+  - 회차 1(02:29, 앞 대기 없음): A(`--start 0 --count 30`, 8876)와 B(`--start 136 --count 12`, 8875)를 동시에. A 1구·B 136번 추천이 비었다(냉시동). 공 간격 9.6~10.3초, B에서 한 번 6.0초. 참고 카드는 다음 공 138번부터 145번까지.
+  - 회차 2(02:32, A2 앞 대기 3장): 1구 추천 10.7초, 1구 던짐 40.7초. 첫 추천 캡처.
+  - **리허설(02:33~02:36, 대본 순서, 화면 넘김만)**: A2 시작 0초 → 10.7초 1구 추천 → 61.2초 A 3구 결과(다음 공 2:1) → 그 즉시 B2 시작 → 112.1초(B 시작 뒤 50.9초) 참고 카드 → 192.4초(B 시작 뒤 130.9초) King 추천 복귀. 장면 C(폰)는 화면 넘김이 없어 재지 않았다. 말하는 시간·영상 맞춤·원격 지연: **미측정**. 결과: 화면 넘김 PASS(앞 대기 입력 기준), 앞 대기 없는 입력은 첫 공 FAIL.
+  - 캡처 4장(`20261115-demo/captures/`, PNG, 배율 2, 페이지 오류 0):
+    - `first-rec-phone402x681.png` 83,997 B `7838cc782bfee836483fa2f982aa4342432e67eee726dffc747d065d5bb3c73f`
+    - `first-rec-monitor1920x1080.png` 121,776 B `94ce24f69b072099aa34f30952f4e53318d9d3eaaa7ca42a8236a512c0875ac5`
+    - `ref-card-phone402x681.png` 91,250 B `93f527f8c6d9a65fa209606d59a838171ddfade8e8be1db75a2653a8e52433d7`
+    - `ref-card-monitor1920x1080.png` 133,701 B `398206c320f064fe642e7804f9eee78be1e6c440752b034d06f44685eefc19c9`
+  - 클립 폴더: `~/Downloads/pitcheezy-clips-20261103-144831` → T7 `mac-offload-20261113/Downloads/…` 링크가 열린다. 파일 271개(mp4 261개, `._*` 0개), 1.2 GB. 재생·복사는 하지 않았다.
+  - 끝: 발행기·정적 서버 모두 내림, `lsof -iTCP:8870-8876` 결과 없음.
 - 11/16 전체 연습(같이): 미실시
+
+## 부록. 재생 스크립트 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`)
+
+`run_scene.sh <A|B|A2|B2> <port>` — `replay<장면>` 폴더를 재생 입력으로, 새 회차 폴더에 화면(dist-public)을 복사하고 발행기와 127.0.0.1 정적 서버를 띄운다.
+
+```sh
+#!/bin/zsh
+set -eu
+S=$1; PORT=$2
+D=$HOME/Projects/pitcheezy-pm-jobs/20261115-demo
+WT=$HOME/Projects/pitcheezy-worktrees/prof-demo-1117
+J=$HOME/Projects/pitcheezy-pm-jobs/exhibition-849843-1031
+if [[ -e $HOME/Projects/pitcheezy-pm-jobs/20261115-night/TRAINING ]]; then echo "TRAINING 표시 있음 — 띄우지 않음"; exit 2; fi
+RUN=$D/run$S-$(date +%H%M%S); mkdir -p $RUN/out
+cp -R $WT/apps/observer/web/dist-public/. $RUN/out/
+cd $WT
+python3 -c 'import time;print(time.time())' > $RUN/t0.txt
+env -i HOME=$HOME USER=$USER LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  PYTHONPATH=apps/observer/backend PYTHONUNBUFFERED=1 \
+  PITCHEEZY_OBSERVER_LIVE_STORE=$RUN/store.sqlite3 PITCHEEZY_OBSERVER_LIVE_ARMB=1 PITCHEEZY_OBSERVER_LIVE_DELAY_S=0 \
+  PITCHEEZY_OBSERVER_REC_LEDGER=1 PITCHEEZY_OBSERVER_LEGACY=0 PITCHEEZY_OBSERVER_VIEWER_DELAY=0 PITCHEEZY_OBSERVER_STEP5_EXPECTATION=0 \
+  PITCHEEZY_FEED_DIR=$D/feeds-empty \
+  PITCHEEZY_WATCH_DIR="/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/watch" \
+  PITCHEEZY_INTENT_DIR="/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/intent" \
+  PITCHEEZY_DEMO_DIR=$D/empty/demo PITCHEEZY_RUNS_DIR=$HOME/Projects/pitcheezy/runs PITCHEEZY_DATA_DIR=$HOME/Projects/pitcheezy/data \
+  PITCHEEZY_PLAYER_SNAPSHOT_DIR=$HOME/Projects/pitcheezy-pm-jobs/20261020-ws-pregame-cache-001/cache \
+  PITCHEEZY_OBSERVER_PROFILE_SOURCES=$J/profiles/LATEST.json \
+  PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR=$D/replay$S PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=20 \
+  $HOME/Projects/pitcheezy/.venv-observer/bin/python -B -m observer_app.publisher --out $RUN/out --interval 10 --date 2026-09-30 \
+  --config apps/observer/publish_config.json > $RUN/publisher.log 2>&1 &
+echo $! > $RUN/publisher.pid
+python3 -m http.server $PORT --bind 127.0.0.1 --directory $RUN/out > $RUN/http.log 2>&1 &
+echo $! > $RUN/http.pid
+echo $RUN
+```
+
+(실제 파일의 `t0.txt` 줄은 `date` 한 줄을 더 쓴다. 동작은 같다.)
+
+`stop_scene.sh <회차 폴더>` — 그 회차의 pid가 발행기나 http.server일 때만 끈다.
+
+```sh
+#!/bin/zsh
+for f in $1/publisher.pid $1/http.pid; do p=$(cat $f); if ps -p $p -o command= | grep -q -E 'observer_app.publisher|http.server'; then kill $p; echo "stopped $p"; fi; done
+```
+
+같은 폴더의 `watch_game.py`(발행 파일 변화 기록), `rehearse.sh`(위 리허설 순서 자동 실행), `shot.mjs`(캡처, `apps/observer/web`의 playwright로 실행)는 측정용이다.
