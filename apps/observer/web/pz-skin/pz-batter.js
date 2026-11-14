@@ -19,7 +19,7 @@ const REACT_DELAY_MS = 250; // 안 치는 공: 이만큼 뒤에 반응 시작
 const HIT_FADE_FROM = 0.86; // hit 끝부분 투명 처리 시작 진행률
 const FALLBACK_PLAY = { contact: { clip: "contact_hit1", cue: 1.456042, end: 2.1 }, miss: { clip: "miss", cue: 1.198889, end: 2.45 } };
 
-const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null };
+const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null };
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function resolvePlay(meta) {
@@ -100,7 +100,7 @@ async function mount(row) {
   const st = b.getState(), play = resolvePlay(b.meta);
   if (!b.ok || b.mode !== "webgl" || !checkPlay(play, st.clips)) { try { b.dispose(); } catch (e) { /* 무시 */ } box.remove(); S.busy = false; S.fails++; S.last = `초기화 실패: ${st.mode}${st.error ? " " + st.error : ""}`; return; }
   if (!row.isConnected || !box.isConnected) { try { b.dispose(); } catch (e) { /* 무시 */ } box.remove(); S.busy = false; schedule(); return; } // 로딩 사이에 화면이 바뀜 → 다음 틱에서 지금 행에 다시(검토 지적: 재시도 예약 누락)
-  S.b = b; S.box = box; S.row = row; S.side = side; S.play = play; S.lastKey = keyOf(row.closest("main") ? row.closest("main").querySelector(".sv-actual-line") : null);
+  S.b = b; S.box = box; S.row = row; S.side = side; S.play = play; S.lastKey = keyOf(row.closest("main") ? row.closest("main").querySelector(".sv-actual-line") : null); S.playedKey = S.lastKey || null; // 수정 ①: 붙을 때 보이던 공은 이미 본 공으로 친다
   row.classList.add("pz-has3d"); hideSilhouette(row, true);
   S.ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => { if (S.b === b) b.resize(); }) : null; if (S.ro) S.ro.observe(box);
   const canvas = box.querySelector("canvas"); if (canvas) canvas.addEventListener("webglcontextlost", () => { if (S.b === b) { S.fails++; unmount("WebGL 문맥 상실"); } }, false); // 문맥 상실도 실패로 세어 무한 재시도(재다운로드) 방지(검토 지적)
@@ -117,7 +117,7 @@ function unmount(reason) {
   if (S.row) { S.row.classList.remove("pz-has3d"); hideSilhouette(S.row, false); }
   if (S.b) { try { S.b.dispose(); } catch (e) { /* 무시 */ } }
   if (S.box && S.box.parentNode) S.box.remove();
-  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.last = reason || "해제";
+  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.playedKey = null; S.last = reason || "해제";
 }
 
 let scheduled = 0;
@@ -137,7 +137,15 @@ function tick() {
   const side = row.classList.contains("bat-r") ? "R" : "L";
   if (side !== S.side) { S.side = side; S.box.classList.toggle("side-r", side === "R"); stopRaf(); S.b.setSide(side); S.b.reset(reduceMotion() ? { still: true } : undefined); }
   const line = document.querySelector(".sv-game .sv-actual-line"), key = keyOf(line);
-  if (key !== S.lastKey) { const first = S.lastKey === null; S.lastKey = key; if (!first && key) playKind(kindFromActual(line)); }
+  // 수정 ①(2026-11-15): Song 화면은 탭 복귀·재연결·새 발행 때 '실제 투구' 줄을 잠깐 결과 없는 줄(기록 없음·확인 중)로 바꿨다가 같은 공으로 되돌린다.
+  // 열쇠가 바뀌었다는 것만으로 재생하지 않고, 결과 종류가 있는 줄이면서 마지막으로 재생(또는 붙을 때 본) 공과 다를 때만 재생한다.
+  // 결과 없는 줄은 playedKey를 바꾸지 않으므로 A → (빈 줄) → A는 다시 재생하지 않고, A → B → A(관람자가 다시 고름)는 재생한다.
+  // 붙을 때 줄이 비어 있었다면(playedKey null) 처음 나타난 결과 줄은 재생하지 않고 기준으로만 삼는다(첫 화면에서 움직이지 않음).
+  if (key !== S.lastKey) {
+    S.lastKey = key;
+    const kind = key ? kindFromActual(line) : null;
+    if (kind && key !== S.playedKey) { const first = S.playedKey === null; S.playedKey = key; if (!first) playKind(kind); }
+  }
 }
 const schedule = () => { if (!scheduled) scheduled = requestAnimationFrame(tick); };
 const mo = new MutationObserver(schedule);
@@ -147,6 +155,6 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) { sto
 schedule();
 
 window.PZSongSkin = Object.freeze({
-  status: () => ({ attached: !!S.b, model: MODEL, side: S.side, last: S.last, played: S.played, lastKey: S.lastKey, play: S.play, fails: S.fails, state: S.b ? S.b.getState() : null }),
+  status: () => ({ attached: !!S.b, model: MODEL, side: S.side, last: S.last, played: S.played, lastKey: S.lastKey, playedKey: S.playedKey, play: S.play, fails: S.fails, state: S.b ? S.b.getState() : null }),
   kindFromActual,
 });
