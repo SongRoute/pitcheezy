@@ -147,9 +147,9 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 
 | 묶음 | 내용 | 파일 수(site) | ZIP 바이트 · SHA-256 |
 |---|---|---:|---|
-| `A-color-3d-batter-ctl` | 색 + 3D, `MODEL = "batter-ctl"`(사람형) | 20 | 662,621 · `8f926ae29799e2236889f5adc64d944e8b7c22ebb3cc3a71a058ff245849d3c4` |
-| `A-color-3d-batter-indexed` | 색 + 3D, `MODEL = "batter-indexed"`(마네킹) | 20 | 662,787 · `98735824a87f5670a4e6ebb41fc06583b1e6b823be9fe7f7ee605af9b44c87a0` |
-| `B-color-only` | 색만(물러설 자리, ②만 해당) | 11 | 178,118 · `3b1d5df3db97e461ec37ed56d9006c86ab608930c03caea04e14d54f9afc50b6` |
+| `A-color-3d-batter-ctl` | 색 + 3D, `MODEL = "batter-ctl"`(사람형) | 20 | 662,619 · `b9f0dedc69e70b91550f333bb6e5b73e48f5c248efa1ab31e864e5179699b51e` |
+| `A-color-3d-batter-indexed` | 색 + 3D, `MODEL = "batter-indexed"`(마네킹) | 20 | 662,787 · `53e17f236ea87eb24c63169f85a9fa40c022889dea8789da358eea88b5fe27bd` |
+| `B-color-only` | 색만(물러설 자리, ②만 해당) | 11 | 178,117 · `511dc34c4dd32278cccab648079897bcfbd28efc3d75c2e73425b3790e4ed41b` |
 
 주요 파일(전체는 각 `MANIFEST.tsv`):
 
@@ -162,7 +162,7 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 | `assets/index-X1sSTTQ4.js`, `assets/index-ks_hu7Ji.css`, `favicon.svg` | c47과 같음 | 같음 | 같음 |
 
 - A 두 판은 `pz/pz-batter.js` 한 파일만 다르다(MANIFEST 비교). `site/pz/batter3d/assets/`는 비어 있다 — 모델·설명 파일은 받은 뒤 `MODEL-FILES.txt`대로 넣는다(팀원 표의 크기·해시를 적어 둠).
-- 만든 방법: `bin/make-bundles.sh`(작업 트리가 깨끗할 때만 돈다). 출처 커밋은 각 `PROVENANCE.txt`.
+- 만든 방법: `bin/make-bundles.sh`(작업 트리가 깨끗할 때만 돈다). 최종 묶음의 출처 커밋은 `d5776199`(각 `PROVENANCE.txt`). 같은 스크립트로 `54aa71c5`에서 만든 첫 묶음과 `site/` 파일이 바이트까지 같다(세 MANIFEST 일치). ZIP 해시는 `PROVENANCE.txt`(커밋·만든 시각)가 들어 있어 만들 때마다 바뀐다 — 비교는 MANIFEST로 한다. pz-skin-check는 첫 묶음(같은 `site/`)에서 돌렸다.
 
 폰 확인 목록: `bundles/PHONE-CHECKLIST.txt`(아이폰 사파리·갤럭시 16항목).
 
