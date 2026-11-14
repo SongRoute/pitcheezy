@@ -11,10 +11,12 @@
 // replay; a new pitch does; ④ box inside 320/344/359/360 screens, zone painted above it; ② contrast; 10/26 show/hide rules.
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { skinConfig, skinHtml, skinFiles } from '../pz-skin/plugin.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.resolve(process.env.PZ_WEB_DIST_PUBLIC ?? path.join(here, '..', 'dist-public'));
@@ -107,8 +109,9 @@ const server = createServer((req, res) => {
 await new Promise((r, j) => { server.once('error', j); server.listen(PORT, '127.0.0.1', r); });
 const origin = `http://127.0.0.1:${PORT}`;
 
-for (const [out, env] of [[plainDist, { PZ_SKIN: 'off' }], [noModelDist, { PZ_SKIN: '3d', PZ_BATTER_MODEL: '' }]])
-  execFileSync(process.execPath, [path.join(here, '../node_modules/vite/bin/vite.js'), 'build', '--mode', 'public', '--outDir', out, '--logLevel', 'error'], { cwd: path.join(here, '..'), env: { ...process.env, ...env }, stdio: 'inherit' });
+const { PZ_SKIN: _s, PZ_BATTER_MODEL: _m, PZ_BATTER_ASSETS_DIR: _a, ...cleanEnv } = process.env;   // plain = NO skin variables at all (review P3-d: proves the default)
+for (const [out, env] of [[plainDist, {}], [noModelDist, { PZ_SKIN: '3d', PZ_BATTER_MODEL: '' }]])
+  execFileSync(process.execPath, [path.join(here, '../node_modules/vite/bin/vite.js'), 'build', '--mode', 'public', '--outDir', out, '--logLevel', 'error'], { cwd: path.join(here, '..'), env: { ...cleanEnv, ...env }, stdio: 'inherit' });
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 async function open(width, height, { reduceMotion = false } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, reducedMotion: reduceMotion ? 'reduce' : 'no-preference' });
@@ -126,6 +129,13 @@ const silhouette = (page) => page.evaluate(() => { const s = document.querySelec
 const sideScroll = (page) => page.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
 
 try {
+  // ---------- review P3-d: a build without variables is the plain screen (PZ_SKIN defaults to off) ----------
+  {
+    const cfg = skinConfig({}), page0 = '<!doctype html><html><head><meta name="theme-color" content="#f5f7f8" /><script type="module" src="./a.js"></script></head><body></body></html>';
+    ok(cfg.skin === 'off' && cfg.model === '' && skinFiles(cfg).length === 0 && skinHtml(page0, cfg) === page0, `P3-d no variables → PZ_SKIN off: no pz/ files, index.html untouched (skin ${cfg.skin})`);
+    const plainIndex = readFileSync(path.join(plainDist, 'index.html'));
+    ok(createHash('sha256').update(plainIndex).digest('hex') === '85616c4b2f49c5f9f0252bc9a687606fbbe6ce2e54253424bc956803db5a4289', 'P3-d the plain build index.html is the c47 bytes (85616c4b…)');
+  }
   // ---------- 0. build output (3D build: PZ_SKIN=3d; colour-only build: PZ_SKIN=theme, detected from index.html) ----------
   const html = readFileSync(path.join(dist, 'index.html'), 'utf8');
   const mode3d = html.includes('pz/pz-boot.js');
@@ -257,6 +267,8 @@ try {
         // and then shows the same pitch again. Health announces a check for this game; 'online' starts a re-read that answers 2.5 s late.
         host.checks = true; await page.waitForTimeout(11000);   // a health read with the check (10 s cadence)
         const before = await lineText(), s4 = await status(page);
+        console.log('note before the masked re-read:', JSON.stringify(before));
+        ok(/실제 투구 · \d+구/.test(before) && !/기록 없음/.test(before), `① real screen: before the re-read the line shows a pitch with a result (review P3-b guard: ${JSON.stringify(before.slice(0, 40))})`);
         host.slowGameMs = 2500;
         await page.evaluate(() => window.dispatchEvent(new Event('online')));
         const seen = []; for (let k = 0; k < 25; k++) { seen.push((await lineText()).slice(0, 30) + '/' + (await page.evaluate(() => document.querySelector('.sv-hd-status')?.innerText ?? '-'))); await page.waitForTimeout(100); }
@@ -317,6 +329,17 @@ try {
         ok(await played2() === 0, '① synthetic: … → 기록 없음 → same pitch → still no play');
         await set2(B); await page2.waitForTimeout(250);
         ok(await played2() === 1, '① synthetic: a different pitch then plays once');
+        // review P3-c: the last played pitch survives a re-attach (WebGL context loss / zone row replaced) while the line is blank
+        const reattach = async () => {
+          await page2.evaluate(() => { const r = document.querySelector('.sv-zrow'), n = r.cloneNode(true); n.querySelectorAll('.pz-bat3d').forEach((x) => x.remove()); n.classList.remove('pz-has3d'); n.querySelectorAll('svg').forEach((v) => { v.style.visibility = ''; }); r.replaceWith(n); });
+          return page2.waitForFunction(() => window.PZSongSkin?.status().attached === true && !!document.querySelector('.sv-zrow .pz-bat3d canvas'), null, { timeout: 20000 }).then(() => true, () => false);
+        };
+        await set2(EMPTY); await page2.waitForTimeout(250);
+        const re1 = await reattach(); await set2(B); await page2.waitForTimeout(250);
+        ok(re1 && await played2() === 1, '① synthetic P3-c: B → 기록 없음 → re-attach → B again → no replay');
+        await set2(EMPTY); await page2.waitForTimeout(250);
+        const re2 = await reattach(); await set2(A); await page2.waitForTimeout(250);
+        ok(re2 && await played2() === 2, '① synthetic P3-c: B → 기록 없음 → re-attach → A (a new pitch) → plays (missed before P3-c)');
       }
       ok(errors.length === 0, `① synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
       await context.close();
@@ -368,8 +391,13 @@ try {
       const s = getComputedStyle(i), out = { listBg: s.backgroundColor, listFg: s.color };
       const ring = document.createElement('i'); ring.className = 'sv-g1 ball ring'; g.append(ring); out.ring = getComputedStyle(ring).boxShadow;
       const k = document.querySelector('.sv-zone-legend .k.inplay'); out.legend = k ? getComputedStyle(k).backgroundColor : null;
-      const ac = document.querySelector('.sv-game .sv-actual.g1.inplay > circle:not(.sv-ring)'); out.zoneFill = ac ? getComputedStyle(ac).fill : null;
-      const an = document.querySelector('.sv-game .sv-actual.g1.inplay .sv-g1-num'); out.zoneNum = an ? getComputedStyle(an).fill : null;
+      // review P3-a: the fixture's shown pitch is not in play, so put an in-play mark with Zone.tsx's markup into the real zone svg and
+      // read what the page's CSS paints (selectors .sv-game .sv-actual.g1.inplay > circle / .sv-g1-num)
+      const svg = document.querySelector('.sv-game .sv-zone'), NS = 'http://www.w3.org/2000/svg';
+      const gm = document.createElementNS(NS, 'g'); gm.setAttribute('class', 'sv-actual g1 inplay latest');
+      const cc = document.createElementNS(NS, 'circle'); cc.setAttribute('cx', '10'); cc.setAttribute('cy', '10'); cc.setAttribute('r', '9');
+      const tt = document.createElementNS(NS, 'text'); tt.setAttribute('class', 'sv-g1-num'); tt.textContent = '7'; gm.append(cc, tt); svg?.append(gm);
+      out.zoneFill = svg ? getComputedStyle(cc).fill : null; out.zoneNum = svg ? getComputedStyle(tt).fill : null; gm.remove();
       i.remove(); ring.remove(); return out;
     });
     ok(cr(c.listBg, '#ffffff') >= 3, `② list in-play mark ${c.listBg} vs white ${cr(c.listBg, '#ffffff').toFixed(2)}:1 ≥ 3`);
@@ -377,8 +405,8 @@ try {
     const ringColor = (c.ring.match(/rgb\([^)]*\)/g) || []).pop();
     ok(ringColor && cr(ringColor, '#ffffff') >= 3, `② recent-pitch ring ${ringColor} vs white ${ringColor ? cr(ringColor, '#ffffff').toFixed(2) : '?'}:1 ≥ 3`);
     if (c.legend) ok(cr(c.legend, '#ffffff') >= 3, `② legend in-play dot ${c.legend} ${cr(c.legend, '#ffffff').toFixed(2)}:1 ≥ 3`); else ok(false, '② legend in-play dot present');
-    if (c.zoneFill) { ok(cr(c.zoneFill, '#ffffff') >= 3, `② zone in-play mark ${c.zoneFill} ${cr(c.zoneFill, '#ffffff').toFixed(2)}:1 ≥ 3`); ok(c.zoneNum && cr(c.zoneNum, c.zoneFill) >= 4.5, `② zone in-play number ${c.zoneNum} ${c.zoneNum ? cr(c.zoneNum, c.zoneFill).toFixed(2) : '?'}:1 ≥ 4.5`); }
-    else console.log('note ② zone in-play mark not on screen at this pitch — zone mark contrast not measured here (list / legend / token checks above)');
+    if (c.zoneFill && c.zoneFill !== 'none') { ok(cr(c.zoneFill, '#ffffff') >= 3, `② zone in-play mark ${c.zoneFill} ${cr(c.zoneFill, '#ffffff').toFixed(2)}:1 ≥ 3`); ok(c.zoneNum && cr(c.zoneNum, c.zoneFill) >= 4.5, `② zone in-play number ${c.zoneNum} ${c.zoneNum ? cr(c.zoneNum, c.zoneFill).toFixed(2) : '?'}:1 ≥ 4.5`); }
+    else ok(false, `② zone in-play mark could not be measured (fill ${c.zoneFill})`);
     await context.close();
   }
 

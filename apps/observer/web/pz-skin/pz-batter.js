@@ -11,7 +11,7 @@
  */
 import { createBatter3D } from "./batter3d/batter3d.js";
 
-const MODEL = "__MODEL__"; // build-songskin.mjs가 batter-ctl | batter-indexed 로 바꾼다
+const MODEL = "__MODEL__"; // 빌드(pz-skin/plugin.mjs, PZ_BATTER_MODEL)가 batter-ctl | batter-indexed 로 바꾼다(검토 P3-g; 팀원 원문은 build-songskin.mjs)
 const ASSETS = new URL("./batter3d/assets/", import.meta.url).href; // 문서 경로(/, /?game=…)와 무관하게 이 모듈 옆
 const VIEW = { zoom: 0.8 }; // relay 호스트와 같은 카메라 보정(140×210 틀)
 const LEAD_MS = 520; // 와인드업(공 비행 대신) 길이
@@ -101,9 +101,10 @@ async function mount(row) {
   if (!b.ok || b.mode !== "webgl" || !checkPlay(play, st.clips)) { try { b.dispose(); } catch (e) { /* 무시 */ } box.remove(); S.busy = false; S.fails++; S.last = `초기화 실패: ${st.mode}${st.error ? " " + st.error : ""}`; return; }
   if (!row.isConnected || !box.isConnected) { try { b.dispose(); } catch (e) { /* 무시 */ } box.remove(); S.busy = false; schedule(); return; } // 로딩 사이에 화면이 바뀜 → 다음 틱에서 지금 행에 다시(검토 지적: 재시도 예약 누락)
   S.b = b; S.box = box; S.row = row; S.side = side; S.play = play; const line0 = row.closest("main") ? row.closest("main").querySelector(".sv-actual-line") : null; S.lastKey = keyOf(line0);
-  // 수정 ①: 붙을 때 보이던 공은 이미 본 공으로 친다. 검토 P2-2(2026-11-15): 붙는 순간 줄이 결과 없는 줄('기록 없음'·'확인 중')이면
-  // 그 열쇠를 기준으로 삼지 않는다(null) — 그래야 같은 공이 돌아올 때 첫 결과 줄로 기준만 잡고 재생하지 않는다.
-  S.playedKey = S.lastKey && kindFromActual(line0) ? S.lastKey : null;
+  // 수정 ①: 붙을 때 보이던 공은 이미 본 공으로 친다. 검토 P2-2·P3-c(2026-11-15): 붙는 순간 줄이 결과 없는 줄('기록 없음'·'확인 중'·
+  // 접힘·unknown)이면 기준을 바꾸지 않는다 — playedKey는 unmount에서 지우지 않고 문서 수명 동안 들고 있으므로, 다시 붙은 뒤에도
+  // 같은 공이 돌아오면 재생하지 않고 다른 공이 오면 재생한다. 문서에서 처음 붙을 때만 기준이 없다(null → 첫 결과 줄은 기준으로만).
+  if (S.lastKey && kindFromActual(line0)) S.playedKey = S.lastKey;
   row.classList.add("pz-has3d"); hideSilhouette(row, true);
   S.ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => { if (S.b === b) b.resize(); }) : null; if (S.ro) S.ro.observe(box);
   const canvas = box.querySelector("canvas"); if (canvas) canvas.addEventListener("webglcontextlost", () => { if (S.b === b) { S.fails++; unmount("WebGL 문맥 상실"); } }, false); // 문맥 상실도 실패로 세어 무한 재시도(재다운로드) 방지(검토 지적)
@@ -120,7 +121,7 @@ function unmount(reason) {
   if (S.row) { S.row.classList.remove("pz-has3d"); hideSilhouette(S.row, false); }
   if (S.b) { try { S.b.dispose(); } catch (e) { /* 무시 */ } }
   if (S.box && S.box.parentNode) S.box.remove();
-  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.playedKey = null; S.last = reason || "해제";
+  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.last = reason || "해제"; // playedKey는 남긴다(P3-c)
 }
 
 let scheduled = 0;
