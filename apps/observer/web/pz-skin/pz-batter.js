@@ -104,6 +104,8 @@ async function mount(row) {
   // 수정 ①: 붙을 때 보이던 공은 이미 본 공으로 친다. 검토 P2-2·P3-c(2026-11-15): 붙는 순간 줄이 결과 없는 줄('기록 없음'·'확인 중'·
   // 접힘·unknown)이면 기준을 바꾸지 않는다 — playedKey는 unmount에서 지우지 않고 문서 수명 동안 들고 있으므로, 다시 붙은 뒤에도
   // 같은 공이 돌아오면 재생하지 않고 다른 공이 오면 재생한다. 문서에서 처음 붙을 때만 기준이 없다(null → 첫 결과 줄은 기준으로만).
+  // 전제(검토 R3 P3-1): 경기 이동 = 문서 로드(src/에 pushState·popstate 없음, 경기↔목록은 href). 문서 안 이동이 생기면 경기가 바뀔 때
+  // playedKey를 null로 돌려야 한다 — 아니면 다른 경기 첫 화면에서 이전 경기 열쇠와 달라 한 번 스윙한다.
   if (S.lastKey && kindFromActual(line0)) S.playedKey = S.lastKey;
   row.classList.add("pz-has3d"); hideSilhouette(row, true);
   S.ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => { if (S.b === b) b.resize(); }) : null; if (S.ro) S.ro.observe(box);
