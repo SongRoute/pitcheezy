@@ -100,7 +100,10 @@ async function mount(row) {
   const st = b.getState(), play = resolvePlay(b.meta);
   if (!b.ok || b.mode !== "webgl" || !checkPlay(play, st.clips)) { try { b.dispose(); } catch (e) { /* 무시 */ } box.remove(); S.busy = false; S.fails++; S.last = `초기화 실패: ${st.mode}${st.error ? " " + st.error : ""}`; return; }
   if (!row.isConnected || !box.isConnected) { try { b.dispose(); } catch (e) { /* 무시 */ } box.remove(); S.busy = false; schedule(); return; } // 로딩 사이에 화면이 바뀜 → 다음 틱에서 지금 행에 다시(검토 지적: 재시도 예약 누락)
-  S.b = b; S.box = box; S.row = row; S.side = side; S.play = play; S.lastKey = keyOf(row.closest("main") ? row.closest("main").querySelector(".sv-actual-line") : null); S.playedKey = S.lastKey || null; // 수정 ①: 붙을 때 보이던 공은 이미 본 공으로 친다
+  S.b = b; S.box = box; S.row = row; S.side = side; S.play = play; const line0 = row.closest("main") ? row.closest("main").querySelector(".sv-actual-line") : null; S.lastKey = keyOf(line0);
+  // 수정 ①: 붙을 때 보이던 공은 이미 본 공으로 친다. 검토 P2-2(2026-11-15): 붙는 순간 줄이 결과 없는 줄('기록 없음'·'확인 중')이면
+  // 그 열쇠를 기준으로 삼지 않는다(null) — 그래야 같은 공이 돌아올 때 첫 결과 줄로 기준만 잡고 재생하지 않는다.
+  S.playedKey = S.lastKey && kindFromActual(line0) ? S.lastKey : null;
   row.classList.add("pz-has3d"); hideSilhouette(row, true);
   S.ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => { if (S.b === b) b.resize(); }) : null; if (S.ro) S.ro.observe(box);
   const canvas = box.querySelector("canvas"); if (canvas) canvas.addEventListener("webglcontextlost", () => { if (S.b === b) { S.fails++; unmount("WebGL 문맥 상실"); } }, false); // 문맥 상실도 실패로 세어 무한 재시도(재다운로드) 방지(검토 지적)
