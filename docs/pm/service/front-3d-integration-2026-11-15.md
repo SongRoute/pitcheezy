@@ -268,3 +268,12 @@ MPS 학습이 끝난 뒤(TRAINING 표시 파일 없음) 브라우저 공용 lock
 이전 해시(`f6f4d022…`/`6f15f945…`/`c1e89d03…`)는 폐기. B의 사이트 파일은 P3 수정과 무관하나 PROVENANCE 시각·커밋이 바뀌어 ZIP 해시가 바뀐다. 폰 목록(`bundles/PHONE-CHECKLIST.txt`)에 새 해시를 적었다.
 
 최종 소스 파일(바뀐 것만): `pz-batter.js` 13,606 B `33292f0d8323909a215d653fee8cb9a93e172cc3eb7a4e06005ccd8f3783d698`. `pz-boot.js`·`pz-theme.css`·`theme-only/pz-theme.css`는 10절 값 그대로.
+
+### 11-1. 3차 독립 검토(R3, PASS) 반영 (2026-11-15 07:44~08:03 KST, `logs/r4/`)
+
+- **P3-1:** `pz-batter.js` `mount()` 주석에 전제 "경기 이동 = 문서 로드(src/에 pushState·popstate 없음)"와, 문서 안 이동이 생기면 경기가 바뀔 때 `playedKey`를 null로 돌려야 한다는 점을 적었다(`9fa321ab`, 주석 두 줄만).
+- **P3-2 변이 M6(P3-c 되돌리기, 저장소 밖 scratch 사본에서만, 가지에 남기지 않음):** `mount()`를 `S.playedKey = S.lastKey && kindFromActual(line0) ? S.lastKey : null`로, `unmount()`에서 `playedKey = null`로 되돌림.
+  - 기준선(HEAD `9fa321ab`, `PZ_SKIN=3d PZ_BATTER_MODEL=batter-ctl`): **173 ok, 0 FAIL**.
+  - M6: **172 ok, 1 FAIL** — 실패한 단언은 `① synthetic P3-c: B → 기록 없음 → re-attach → A (a new pitch) → plays` 하나(설계대로). 같은 공 재생 없음 단언은 수정 전에도 통과하는 회귀 방지용이라 통과.
+- **P3-3:** 조치 없음(9절 가정 "붙는 순간 보이는 공은 재생 안 함"에 포함).
+- **묶음 원천 커밋:** 묶음 A/B(11절 해시)는 `13fc880a`에서 만들었다. 지금 HEAD `9fa321ab`의 `pz-batter.js`는 주석 두 줄만 다르므로(동작 같음) 묶음 A의 `pz/pz-batter.js` 바이트는 HEAD로 다시 빌드한 것과 다르다. 지시대로 묶음은 다시 만들지 않았다(A/B 해시 유지).
