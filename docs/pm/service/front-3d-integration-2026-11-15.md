@@ -238,3 +238,33 @@ README 표(팀원 `relay/tools/songskin/README.md`)와 다시 계산한 SHA-256�
 최종 소스 파일: `pz-batter.js` 13,323 B `d6338ada356147159b56168e0ee34b2146fbcdf9194e0d277efc8a838df0f359`, `pz-boot.js` 1,775 B `a6f9ab725339e99b3fd47c0ad058058ca06ab464f5687c4f2ec7dc7a43d9640d`, `pz-theme.css` 6,850 B `04244cc03bdbd60559aa5917e924dfebf80ffa08dd85b74990e3c9ada1f4ac1a`, `theme-only/pz-theme.css` 5,113 B `be906c60589e9abb0d6ab63881c3af6001c7aaf6584ee9ef0b8bf1a6d78d8a63`(4절 표는 1차 값).
 
 **반영하지 않은 것:** P2-6(라이브 최신 보기에서는 '실제 투구' 줄이 없어 3D가 반응하지 않음 — 설계 한계, 끝난 경기 데모는 해당 없음), P3-1(같은 타자 다른 타석의 같은 공 구별 — 우리 화면이 투구 식별자를 내줘야 함), P3-4(가려진 상자의 대기 반복 30fps — 실제 모델로 발열 확인), P3-6(감속 모션에서 공을 골라도 0인지), P3-7(③ 전용 변이 검출), P3-8(허용 목록이 `__MODEL__.glb`를 거부 — P2-3 뒤로는 그 요청 자체가 없음). 실제 폰의 앱 전환·화면 잠금 복귀는 여전히 미확인.
+
+## 11. 델타 검토 P3 반영 뒤 재검사 (2026-11-15 06:57~07:16 KST, `logs/r3-front3d/`)
+
+MPS 학습이 끝난 뒤(TRAINING 표시 파일 없음) 브라우저 공용 lock 아래 실행. 원천 `13fc880a`(P3 수정 `22403eb1` + 문서 `13fc880a`), 빌드 변수 `PZ_SKIN=3d PZ_BATTER_MODEL=batter-ctl`(static-publish 자체 빌드도 같은 변수), 묶음은 변수를 명시해 `make-bundles.sh`로.
+
+| 검사 | 전(04:06, `final2`) | 후(이번) |
+|---|---|---|
+| zone-geometry-check | 397 | 397 ok, 0 FAIL |
+| zone-label-clip-check | 160 | 160 ok, 0 FAIL |
+| notice-hide-smoke | 267 | 267 ok / 0 FAIL |
+| ws-launch-layout-check | 360 | 360 passed, 0 failed |
+| static-publish-smoke | 416 | passed(678초) |
+| pz-skin-check · dist-public / A 사람형 / A 마네킹 | 166 / 166 / 166 | 173 / 173 / 173 ok, 0 FAIL |
+| pz-skin-check · B 색만 | 56 | 60 ok, 0 FAIL |
+
+**pz-skin-check 수가 늘어난 이유(단언 이름 대조, 빠진 단언 0):** 3D 빌드 +7 = P3-d 2건(변수 없이 빌드하면 off·`pz/` 없음, plain index.html이 c47 바이트 `85616c4b…`) + P3-b 1건(가린 재조회 전 줄이 결과 있는 공인지) + P3-c 2건(합성 재부착: 같은 공 재생 없음 / 새 공 재생) + P3-a 2건(존 안 타격 표식·번호 대비). 색만 +4 = P3-d 2건 + P3-a 2건.
+
+**P3-a 측정값:** 존 안 타격 표식 `rgb(196,80,15)` = `#c4500f` 4.67:1(기준 ≥3), 표식 번호 흰색 4.67:1(기준 ≥4.5). 3D·색만 같음.
+
+**묶음 재생성(07:1x, 원천 `13fc880a`):**
+
+| 묶음 | ZIP 크기 | ZIP sha256 |
+|---|---|---|
+| A-color-3d-batter-ctl | 663,554 B | `ebc1cc5cde93ecd9976a5f0aca85fb509d95f842f419c79d95e9fde694d59bc0` |
+| A-color-3d-batter-indexed | 663,732 B | `9667ca929f712902acabc22323f11dc8336e3d61f41fb2af0c57800e320bfe7e` |
+| B-color-only | 178,146 B | `8aa4592c3ce35b408d10c39a040fc97d2969ea26e49d1f4f548ef13d7a14b4d9` |
+
+이전 해시(`f6f4d022…`/`6f15f945…`/`c1e89d03…`)는 폐기. B의 사이트 파일은 P3 수정과 무관하나 PROVENANCE 시각·커밋이 바뀌어 ZIP 해시가 바뀐다. 폰 목록(`bundles/PHONE-CHECKLIST.txt`)에 새 해시를 적었다.
+
+최종 소스 파일(바뀐 것만): `pz-batter.js` 13,606 B `33292f0d8323909a215d653fee8cb9a93e172cc3eb7a4e06005ccd8f3783d698`. `pz-boot.js`·`pz-theme.css`·`theme-only/pz-theme.css`는 10절 값 그대로.
