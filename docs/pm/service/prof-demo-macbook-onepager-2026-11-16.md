@@ -11,17 +11,21 @@
    ```sh
    caffeinate -dis
    ```
-3. 예비 묶음 풀기(인터넷 없이 끝난 경기 화면을 띄우는 용도). 맥미니에서 받은 `bundle-849843-main-c47fe6cb-20261101.zip`(182,517바이트)을 새 폴더에 푼다.
+3. 예비 묶음 풀기(인터넷 없이 끝난 경기 화면을 띄우는 용도). 데모 판과 같은 묶음을 쓴다(11/15 갱신):
+   - 기본: **`B-color-only.zip`**(색만, 178,146바이트, SHA-256 `c1e89d03afe0ce0a33cacf24c4b2a42bc7e751f73c324c1434eb46e1e195bac5`). 맥미니 `~/Projects/pitcheezy-pm-jobs/20261115-front/bundles/`에 있다. 이 묶음에는 `verify_bundle.py`가 없으니 해시와 `MANIFEST.tsv`로 대조한다.
+   - A(3D)로 정해지면: 모델 파일을 넣은 A 묶음(모델을 받은 뒤 다시 만든 것).
+   - 물러설 자리: c47 묶음 `bundle-849843-main-c47fe6cb-20261101.zip`(182,517바이트, 아래 명령). 두 개를 다른 폴더에 풀어 둔다.
    ```sh
    mkdir -p ~/pz-demo-backup && cd ~/pz-demo-backup && unzip -q <받은 zip 경로>
    shasum -a 256 <받은 zip 경로>   # 3c3b8006b892872bfff3423e2bd6ba49ea3de17ee92fbecef07e0b076bc8da51 이어야 한다
    python3 -B verify_bundle.py
    ```
-4. 예비 캡처 폴더를 맥북에 복사해 둔다(맥미니 `~/Projects/pitcheezy-pm-jobs/20261115-demo/captures/`, 파일 목록·해시는 그 폴더의 `SHA256SUMS.txt`). 참고 카드 장면은 이 캡처로만 예비가 된다(묶음 화면에는 참고 카드가 없다).
+   B 묶음은 `mkdir -p ~/pz-demo-backup-B && cd ~/pz-demo-backup-B && unzip -q <받은 B zip>` 뒤 `shasum -a 256 <받은 B zip>`이 위 값인지 본다. ZIP 안에 `B-color-only/` 폴더가 하나 더 있다(화면은 `~/pz-demo-backup-B/B-color-only/site`).
+4. 예비 캡처 폴더를 맥북에 복사해 둔다(맥미니 `~/Projects/pitcheezy-pm-jobs/20261115-demo/captures/`, 파일 목록·해시는 그 폴더의 `SHA256SUMS.txt`). 참고 카드 장면은 이 캡처로만 예비가 된다(묶음 화면에는 참고 카드가 없다). 지금 캡처는 c47(색 없음) 화면이다. B 판 캡처는 학습이 끝난 뒤 다시 찍는다.
 
 ## 1. 원격 연결 (맥미니 재생 화면을 맥북에서 열기)
 
-맥미니 쪽 재생은 대본 2.6절 명령으로 띄운다(맥미니의 Claude 세션에 맡기거나, 2번 단계의 SSH 셸에서 직접).
+맥미니 쪽 재생은 대본 2.6절 명령으로 띄운다(맥미니의 Claude 세션에 맡기거나, 2번 단계의 SSH 셸에서 직접). 화면 판은 세 번째 인자로 고른다(기본 B: `…/bundles/B-color-only/site`).
 
 1. 맥북 터미널 1(데모 내내 켜 둔다. 아무것도 출력하지 않는 것이 정상):
    ```sh
@@ -31,6 +35,7 @@
 2. 맥북 터미널 2(발행기 시작·중지용): `ssh <사용자>@<맥미니 이름>`
 3. 맥북 브라우저 탭 두 개: `http://127.0.0.1:8876/?game=849843`(A), `http://127.0.0.1:8875/?game=849843`(B). 탭 세 번째: 예비(4절).
 4. 확인: 공이 넘어갈 때 화면이 바뀌는지(맥미니 재생 간격은 한 구 약 10.1초, 11/15 측정).
+5. 창 높이: 브라우저를 전체 화면(⌃⌘F)으로 연다. 보이는 영역 높이가 약 760px(계산값)보다 작으면 "이번 타석" 줄이 하단 메뉴에 가린다(대본 6절 10). 창 높이를 바꿀 수 없으면 확대 비율(⌘−)로 맞춘다.
 
 ## 2. 시험 순서 (11/16 연습 전에, 집)
 
@@ -61,8 +66,9 @@
 
 1. 맥북 터미널 3:
    ```sh
-   python3 -m http.server 8890 --bind 127.0.0.1 --directory ~/pz-demo-backup/site
+   python3 -m http.server 8890 --bind 127.0.0.1 --directory ~/pz-demo-backup-B/B-color-only/site
    ```
+   (c47로 물러설 때는 `~/pz-demo-backup/site`.)
 2. 브라우저: `http://127.0.0.1:8890/?game=849843` — 끝난 경기 화면(262구, 공 고르기 가능, **참고 카드 없음**, 움직이지 않음).
 3. 장면 A는 이 화면에서 1회 초 공을 차례로 고르며 설명한다(1구는 끝난 경기 화면에서는 추천이 보인다; 재생 화면에서는 1구 추천이 비는 문제가 있어 대본 2.6절의 앞 대기 3장으로 막았다).
 4. 장면 B는 캡처(`ref-card-*.png`)를 미리보기로 띄워 보여 준다.
