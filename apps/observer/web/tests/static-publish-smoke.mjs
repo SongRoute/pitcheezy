@@ -196,8 +196,11 @@ function variant(name, env) {
   execFileSync(process.execPath, [path.join(here, '../node_modules/vite/bin/vite.js'), 'build', '--mode', 'public', '--outDir', out, '--logLevel', 'error'], { cwd: path.join(here, '..'), env: { ...process.env, ...env }, stdio: 'inherit' });
   return out;
 }
-/** What a request may be in static mode: the page, its assets, or one of the published files — nothing else, and never with a query. */
-const ALLOWED = /^\/pub\/(?:(?:index\.html)?(?:\?.*)?|favicon\.svg|assets\/[\w.-]+|v1\/(?:dates|manifest|health)\.json|v1\/games\/\d{4}-\d{2}-\d{2}\.json|v1\/game\/\d+\.json)$/;
+/** What a request may be in static mode: the page, its assets, or one of the published files — nothing else, and never with a query.
+ *  2026-11-15 (pz-skin, FRONT-INTEG-20261115): the bundle now also carries the colour theme / 3D batter files under pz/ next to index.html
+ *  (pz-skin/plugin.mjs). Only those fixed names are added, again without a query; the model folder takes `<name>.glb` / `<name>.meta.json`. */
+const PZ_FILES = String.raw`pz\/(?:pz-theme\.css|pz-boot\.js|pz-batter\.js|batter3d\/(?:batter3d\.js|vendor\/(?:three\.module\.js|three\.core\.js|addons\/(?:loaders\/GLTFLoader|utils\/BufferGeometryUtils|utils\/SkeletonUtils)\.js)|assets\/[a-z0-9][a-z0-9-]*\.(?:glb|meta\.json)))`;
+const ALLOWED = new RegExp(String.raw`^\/pub\/(?:(?:index\.html)?(?:\?.*)?|favicon\.svg|assets\/[\w.-]+|v1\/(?:dates|manifest|health)\.json|v1\/games\/\d{4}-\d{2}-\d{2}\.json|v1\/game\/\d+\.json|${PZ_FILES})$`);
 /** A throwaway HTTP server on an OS-assigned loopback port (never a fixed one), for what route interception cannot do: an answer whose
  *  headers arrive and whose body does not. `handle(rel, res)` returns true when it answered; otherwise the bundle is served. */
 async function withServer(dist, handle, fn) {
