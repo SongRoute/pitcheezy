@@ -213,7 +213,8 @@ def test_blocked_prefix_cannot_starve_later_eligible_path(world, server, monkeyp
         sink.local.write(path,b'{}')
         publisher._queue_upload(sink.state,path,'put',hashlib.sha256(b'{}').hexdigest())
         sink.save();sink.retry(HEALTH)
-    until(lambda:path in server.objects)
+    # The server stores the object before the worker has read the child's answer and cleared it from pending.
+    until(lambda:path in server.objects and path not in sink.pending)
     assert len(sink.pending)==140 and sink.worker.peak_entries==1
 
 
