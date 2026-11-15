@@ -139,6 +139,46 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 
 **ssh localhost:** 다시 시도했다(11/15 17:52). 이 맥의 키가 자기 `authorized_keys`에 없어 거부된다. 키 등록은 보안 설정 변경이라 하지 않았다. **미측정**(파이프 대리 시험의 추정은 7절 그대로).
 
+## 4.3 발행 간격 5초에서 화면 — c47 화면과 묶음 D (2026-11-15 20:32~20:41)
+
+조건: 849843 시작 공 0, lead 30, lag 0, **간격 5초**, poll 2. 두 회차를 동시에 띄웠다. c47은 11/1 전달 묶음 `bundle-849843-main-c47fe6cb-20261101`의 `site/`(zip sha256 `3c3b8006…8da51`), 8876, `runRT-203241`. D는 4.2절과 같은 서빙 사본, 8875, `runRT-203242`. 헤드리스 Chromium 한 개에 393×659 페이지 두 개를 8분(480초) 열었다. 스크립트 `measure5.mjs`. 처음 띄운 `runRT-203221-collided`는 두 회차가 같은 폴더를 써서 버렸다. 그래서 스크립트 폴더 이름에 포트를 붙였다.
+
+| 간격 | 화면 | 파일→화면 중앙값 | 90% | 최대 | 오류 | 4xx·실패 요청 | "갱신 지연" |
+|---|---|---|---|---|---|---|---|
+| 2초 | D (4.2절, 4개 크기) | 0.72~0.87초 | 1.30~1.56초 | 1.43~1.91초 | 0 | 0 | 기록 안 함 |
+| 5초 | c47 | 4.05초 | 4.33초 | 4.67초 | 0 | 0 (응답 140개) | 0번 |
+| 5초 | D | 2.76초 | 3.12초 | 3.17초 | 0 | 0 (응답 152개) | 0번 |
+| 10초 | D | 미측정 | | | | | |
+
+- 파일 변화 17번 중 14번을 맞췄다. 나머지는 페이지를 닫은 뒤(480초 이후)의 변화다.
+- c47 화면도 진행 중 재생을 읽고 갱신한다(1회말 Machado까지, 캡처 `~/Projects/pitcheezy-pm-jobs/20261115-demo/runRT-203241/end5-c47-393x659.png`). 3D 대신 실루엣이고, 393×659에서는 "이번 타석" 줄이 하단 메뉴에 가린다(c47의 알려진 높이 문제).
+- 10초 간격의 화면 지연은 이번에 재지 않았다. 11/15 07시대 B 묶음에서 "0~10초"로 본 기록만 있다(5절).
+- 출처 로그: `~/Projects/pitcheezy-pm-jobs/20261115-demo/runRT-203241/dom5-c47.tsv`·`sum5-c47.json`·`watch_rt.tsv`, `~/Projects/pitcheezy-pm-jobs/20261115-demo/runRT-203242/dom5-D.tsv`·`sum5-D.json`·`watch_rt.tsv`.
+
+## 4.4 업로드 요청 수 — 계산과 로컬 가짜 수신기 실측 (2026-11-15 20:45~20:52)
+
+**계산(코드):** 진행 중 경기 하나, `--date` 하나일 때 한 주기마다 `games/<날짜>`·`dates`·`manifest`·`health`는 항상 쓴다(`publisher.py:1134, 1136-1140, 1198, 1259`). 각 파일에 순번·시각이 들어가 매번 바이트가 다르다(`publisher.py:1019`). `game/849843`은 내용이 바뀔 때만 쓴다(`publisher.py:1436-1439`). `setup/849843`은 끝난 경기만 쓴다(`publisher.py:1450, 1479`). 파일마다 HEAD 1번 + PUT 1번이다. ETag를 기억하지 않아 매번 HEAD를 보낸다(`publisher.py:618, 652-657`). 그래서 한 주기에 8~10회다.
+
+**실측:** `fake_receiver.py`(테스트의 CAS 모델 `Endpoint` 재사용, 127.0.0.1:8870~8872) + 간격별 회차 3개를 동시에 6분 돌렸다. 처음 1분을 뺀 5.5분 평균이다.
+
+| 간격 | 계산(분당) | 실측(분당) | 1분 칸별 | 호스트 한도 60 |
+|---|---|---|---|---|
+| 10초 | 48~60 | 49.4 (경기 파일 빠짐, 아래) | 48~49 | 한도 안(경기 파일 포함 시 약 55~56, 계산) |
+| 5초 | 96~120 | 103.6 | 96~110 | **넘음(약 1.7배)** |
+| 2초 | 240~300 | 246.5 | 236~252 | **넘음(약 4배)** |
+
+- 경로별(5초): manifest·health·dates·games 각 HEAD 12.1 + PUT 12.1회/분, game/849843 HEAD 3.2 + PUT 3.2회/분(1회초~1회말 구간).
+- 한도를 넘으면 호스트가 429를 줄 것으로 본다(호스트 동작은 미측정). 우리 발행기는 429를 `retry`로 두고 Retry-After(없으면 60초) 동안 그 경로를 보내지 않는다(`publisher.py:402-405, 582, 661-662`). 그 동안 폰의 그 파일은 멈춘다.
+- 출처: `~/Projects/pitcheezy-pm-jobs/20261115-demo/fakerx-8870.tsv`(5초), `fakerx-8871.tsv`(2초), `fakerx-8872.tsv`(10초), 회차 `runRT-204516-8873/-8874/-8875`, 설정 `pubconf-fake-887*.json`(가짜 토큰 0600 파일, 값은 합성).
+
+**같이 찾은 것 두 가지:**
+1. `run_realpace.sh`가 화면 파일을 `out/`에 미리 복사하던 탓에, 업로드를 켜도 **한 번도 올라가지 않았다**(`upload_recovery_blocked`, `publisher.py:929-930`. 상태 파일 없이 `out/`에 파일이 있으면 막는다). 첫 시도 회차는 `*-recoveryblocked`로 남겼다. 고침: 화면은 `site/`에 두고 `site/v1 → out/v1` 링크로 보여 준다. `out/`은 빈 채로 시작한다.
+2. 10초 회차에서 시작 직후 `game/849843.json`을 PUT(200)한 뒤 작업자 쪽 예외(`upload_failed`, `upload_worker.py:93`)가 나서 그 경로가 `inflight`로 남았다. 이후 6분 동안 경기 파일을 다시 보내지 않았다(`_eligible`이 `inflight`를 제외, `publisher.py:579-580`). 예외 내용은 로그에 남지 않아 원인은 미확인이다. 5초·2초 회차는 경기 파일이 계속 올라갔다(2초 회차도 시작 직후 `upload_failed` 3번이 있었으나 남은 `inflight` 없음). 한 번 본 일이라 빈도는 미측정이다.
+
+**`blocked`가 생기면:** 그 경로만 자동 재전송을 멈추고(`publisher.py:580`), 다른 파일의 로컬 발행·업로드는 계속된다(`publisher.py:1141-1142, 1484-1497`). health의 `upload.pending`과 `code: upload_failed`로 드러난다(`publisher.py:1195-1197`). 풀어 주는 명령은 없다(`ws-operations-runbook.md:139-147`).
+
+**`--check-remote`:** 인증 HEAD `v1/manifest.json` 1번, 쓰기 없음(`publisher.py:1560-1566`). 가짜 수신기로 실행해 HEAD 1번(404 → 통과)을 확인했다(`~/Projects/pitcheezy-pm-jobs/20261115-demo/fakerx-check.tsv`).
+
 ## 5. 화면 갱신 간격 — 발행 간격을 따른다
 
 공개 화면은 진행 중 경기를 **manifest의 `publish_interval_s`마다** 읽는다(`web/src/service/GameScreen.tsx:332`, `api.ts:163`). 없을 때만 10초(`livePollMs`)를 쓴다. 그래서 11/15 07시대의 "화면이 0~10초 늦다"는 발행 간격 10초 때문이었다.
@@ -208,8 +248,9 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 - ssh로 띄울 때 명령이 바로 돌아오는지: 실제 ssh는 못 했다(자기 키 미등록). 출력 파이프는 0.05초에 닫혔고 발행기는 계속 돌았다(11/15 16:27). 그래서 바로 돌아온다고 추정한다.
 - 화면 반영 지연과 맥북 반쪽 창 배치: 16시대에는 건너뛰었고, 17:51~18:05에 묶음 D로 쟀다(4.2절). 명령 → 화면 첫 추천은 여전히 미측정.
 - ssh 바로 돌아오기: 17:52 재시도도 키 미등록으로 거부. 미측정(추정만).
+- 10초 간격의 화면 지연(묶음 D), 실제 호스트의 429 동작, 10초 회차 경기 파일 `inflight` 고착의 원인·빈도: 미측정(4.3·4.4절).
 
-## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 16시대, `PUBCONF` 추가판)
+## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 20시대, `site/` 분리·폴더 이름에 포트)
 
 분석 스크립트: `20261115-realpace/timeline.py`(최종 피드 → 투구 시간표), `drift.py`(회차 폴더의 `watch_rt.tsv`와 시간표 비교). 발행 파일 감시는 `20261115-demo/watch_rt.py`.
 
@@ -247,8 +288,10 @@ fi
 PDATE=$(cat $SCHED/kst_date.txt)
 SCREEN=${5:-$D/bundles-0738/B-color-only/site}; INTERVAL=${6:-10}; POLL=${7:-2}
 [[ -f $SCREEN/index.html ]] || { echo "화면 폴더에 index.html 없음: $SCREEN"; exit 3; }
-RUN=$D/runRT-$(date +%H%M%S); mkdir -p $RUN/out
-rsync -a --exclude '/v1' $SCREEN/ $RUN/out/
+RUN=$D/runRT-$(date +%H%M%S)-$PORT; [[ -e $RUN ]] && { echo "회차 폴더가 이미 있음: $RUN"; exit 5; }; mkdir -p $RUN/out
+# Screen files go to site/, NOT out/: a non-empty out/ with no state makes the publisher set upload_recovery_blocked
+# (publisher.py:929-930) and then nothing is ever uploaded. site/v1 -> out/v1 so the local page reads the same files.
+mkdir -p $RUN/site; rsync -a --exclude '/v1' $SCREEN/ $RUN/site/; ln -s ../out/v1 $RUN/site/v1
 echo "$SCREEN" > $RUN/screen.txt; echo "${PUBCONF:-apps/observer/publish_config.json}" > $RUN/config.txt
 T0=$(python3 -c 'import time;print(round(time.time(),3))')
 print "T0 $T0 game $GAME start $START lead $LEAD lag $LAG interval $INTERVAL poll $POLL" > $RUN/t0.txt; echo $T0 >> $RUN/t0.txt
@@ -269,7 +312,7 @@ env -i HOME=$HOME USER=$USER LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 TMPDIR=$TMPDIR 
   $HOME/Projects/pitcheezy/.venv-observer/bin/python -B -m observer_app.publisher --out $RUN/out --interval $INTERVAL --date $PDATE \
   --config ${PUBCONF:-apps/observer/publish_config.json} > $RUN/publisher.log 2>&1 &
 echo $! > $RUN/publisher.pid
-python3 -m http.server $PORT --bind 127.0.0.1 --directory $RUN/out > $RUN/http.log 2>&1 &
+python3 -m http.server $PORT --bind 127.0.0.1 --directory $RUN/site > $RUN/http.log 2>&1 &
 echo $! > $RUN/http.pid
 echo $RUN
 ```

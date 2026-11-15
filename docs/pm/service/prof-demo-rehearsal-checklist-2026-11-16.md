@@ -6,6 +6,20 @@
 
 각 줄에서 □를 채운다. 못 하면 "미실시", 못 재면 "미측정".
 
+## 0. 11/16 시간표 (팀원 #38 댓글 6892291315 기준)
+
+| 시각 | 누가 | 할 일 |
+|---|---|---|
+| ~08:30 | 우리 → 팀원 | 묶음 D 전달 **마감**. 늦거나 문제가 있으면 호스트는 옛 화면(c47)으로 연습한다(11/15 확인: c47 화면도 실제 속도 재생을 읽는다, 기록 4.3절). |
+| 09:30 | 팀원 | 호스트 업로드 받기 켬 → "켰다" 연락. |
+| 09:30~ | 우리(맥미니) | 연락 받은 **뒤** B-2 `--check-remote`(HEAD 1번) → 통과하면 B-3 시작. |
+| 09:50 | Song | 두 아이폰(15, 17 프로)에서 **접근 코드 다시 입력 → 경기 849843 다시 열기**(쿠키 4시간). |
+| 10:00 | 모두 | 연습(C·D). 다시 띄우면 순번이 1로 돌아가니 **아이폰 새로고침**(탭을 닫고 새로 여는 것이 확실). |
+| 끝 | 우리 → 팀원 → 팀원 | **① 우리 발행기 먼저 멈춤 → ② 팀원에게 "멈췄다" 알림 → ③ 팀원이 업로드 받기 끔 → ④ 팀원이 11/1 파일 6개로 되돌림**(F). 반대 순서(받기 먼저 끔)면 우리 쪽 전송 중 파일이 `blocked`로 남는다. |
+| 언제든 | 우리 | 호스트가 안 되면 E(예비안, 맥북 반쪽 창 약 720×900). |
+
+**발행 간격:** Song 결정은 5초로 시작, 연습에서 보고 2초나 10초로 바꾼다. **그러나 호스트 한도(분당 60회, HEAD 포함)를 넘는다** — 5초는 실측 분당 약 104회, 2초는 약 247회, 10초는 약 49회(+경기 파일 약 6회)(기록 4.4절). 5초·2초에서는 429(재시도 대기 기본 60초)가 나올 수 있다. 결정 필요 항목으로 PM에게 올림.
+
 ## A. 연습 전 준비 (집, 약 30분)
 
 - □ 맥미니: `~/Projects/pitcheezy-pm-jobs/20261115-night/TRAINING` 표식이 없는지(있으면 재생을 띄우지 않는다).
@@ -13,24 +27,36 @@
 - □ 맥미니: 포트 8870~8876이 비었는지 — `lsof -nP -iTCP:8870-8876 -sTCP:LISTEN` 결과 없음.
 - □ 맥북: Tailscale 로그인(예비안의 SSH 터널용), `caffeinate -dis` 켜 두기.
 - □ 맥북: 영상에서 1회 초 첫 공 위치 V, 9회 초 첫 공 위치를 적는다. 차이가 2:30:00인지 본다(아니면 반이닝마다 다시 맞춤, 기록 2절 표). V = ______, 9초 = ______.
-- □ 아이폰: pitcheezy.com 접근 코드로 들어가 849843 끝난 경기 화면이 뜨는지. 이것이 예비안에서 쓸 화면이다. **업로드로 덮어쓰기 전에** 지금 화면을 캡처해 둔다(되돌린 뒤 비교용).
+- □ 아이폰(15, 17 프로): pitcheezy.com 접근 코드로 들어가 849843 끝난 경기 화면이 뜨는지. 이것이 예비안에서 쓸 화면이다. **업로드로 덮어쓰기 전에** 지금 화면을 캡처해 둔다(되돌린 뒤 비교용).
 - □ 팀원 준비 확인(Song이 메신저로 받은 답): 대상 호스트, 업로드 받기 켜는 시간, 토큰(6개 경로·만료), c47 덮어쓰기 허락과 되돌리는 법, 캐시 동작, 쿠키 수명. 하나라도 없으면 **주 방식은 미실시**로 두고 C(예비안)로 연습한다.
 
-## B. 주 방식 — 업로드 켜기 (팀원 준비·Song 승인 뒤에만)
+## B. 주 방식 — 업로드 켜기 (팀원 "켰다" 연락 + Song 승인 뒤에만)
 
-1. □ 맥미니에서 저장소 밖에 설정 사본을 만든다. 예: `~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json`. `apps/observer/publish_config.json`을 복사하고 아래만 바꾼다.
-   - `upload.enabled: true`
-   - `upload.base_url: "<호스트 업로드 주소>"`(HTTPS, `/_publish` 한 번 포함)
-   - `upload.token_file: "<토큰 파일>"`(저장소 밖, `chmod 600`. 저장소 안 파일은 발행기가 거부한다)
-2. □ (선택) 네트워크 없이 경로만 본다: 발행기 `--dry-run-upload`. 로컬 파일은 실제로 만든다. 이 점검은 아직 해 보지 않았다.
-3. □ 재생 시작(맥북 터미널 2의 SSH 셸에서):
+업로드는 `run_realpace.sh`가 띄우는 **발행기 자체**가 한다(`PUBCONF`의 `upload.enabled: true`). `ws_operate start --upload`는 실경기 수집용이라 이 재생에 쓰지 않는다. 그리고 지금 `ops/ws_ops_config.json`이 `upload.allowed: false`라서 `--upload`는 거부된다(`ops/ws_operate.py:395`).
+
+1. □ 저장소 밖 설정 사본(한 번만): `~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json` ← `apps/observer/publish_config.json` 복사 후 아래만 바꾼다.
+   - `upload.enabled: true`, `upload.base_url: "<호스트 업로드 주소>"`(HTTPS, `/_publish` 한 번)
+   - 토큰은 둘 중 하나만(`publisher.py:351`): `upload.token_file: "<토큰 파일>"`(절대 경로, 저장소 밖, `chmod 600`. 발행기는 상위 폴더에 `.git`이 있으면 거부, `publisher.py:354-360`. 0600 검사는 발행기가 하지 않으므로 직접 `ls -l`로 본다) **또는** `token_env: "PITCHEEZY_PUBLISH_TOKEN"`. 단 `run_realpace.sh`는 `env -i`로 환경을 비우므로 **token_file 쪽을 쓴다.** 토큰 값은 어디에도 적지 않는다.
+2. □ 팀원이 "켰다"고 한 **뒤** 원격 확인(쓰기 없음, `v1/manifest.json` HEAD 1번, `publisher.py:1560-1566`):
+   ```sh
+   cd ~/Projects/pitcheezy-worktrees/prof-demo-1117
+   env -i HOME=$HOME PATH=/usr/bin:/bin PYTHONPATH=apps/observer/backend \
+     ~/Projects/pitcheezy/.venv-observer/bin/python -B -m observer_app.publisher \
+     --config ~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json --check-remote
+   ```
+   "remote metadata check passed"가 나와야 한다(404도 통과로 친다). 11/15 로컬 가짜 수신기로 이 명령이 HEAD 1번만 보내는 것을 확인했다. 401·연결 실패면 시작하지 않고 팀원에게 묻는다.
+3. □ 재생 시작 — **실행마다 새 회차 폴더**(`runRT-<시각>-<포트>`, 같은 이름이면 스크립트가 멈춤). 폴더 안 `out/`과 `out.state.json`은 새것이어야 한다. 화면 파일은 `site/`에 따로 둔다(11/15 수정: `out/`에 화면 파일을 미리 넣으면 상태 파일이 없는 것으로 보고 `upload_recovery_blocked`가 켜져 **아무것도 올라가지 않았다**, `publisher.py:929-930`).
    ```sh
    PUBCONF=~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json \
-     ~/Projects/pitcheezy-pm-jobs/20261115-demo/run_realpace.sh 8876 0 20 <lag> "" 2
+     ~/Projects/pitcheezy-pm-jobs/20261115-demo/run_realpace.sh 8876 0 20 <lag> <화면 폴더> 5
    ```
-   출력된 회차 폴더를 적는다: ______. 같은 재생이 맥미니 127.0.0.1:8876에도 뜬다. 예비안이 이것을 그대로 쓴다.
-4. □ 업로드 상태: 회차 폴더 `out/v1/health.json`의 `upload.pending`이 쌓이지 않는지, 상태 파일(`out.state.json`)의 `upload_attempts`에 `blocked`·`rejected`가 없는지(런북 경보 표).
-5. □ 아이폰: pitcheezy.com 849843을 **새로고침**한다. 끝난 경기 화면을 본 탭은 새로고침 전까지 재생을 버린다(sequence가 낮다).
+   회차 폴더: ______.
+4. □ 1분 안에 업로드 확인: `out/v1/health.json`의 `upload.pending`이 쌓이지 않는지, `out.state.json`의 `upload_recovery_blocked`가 없고 `upload_attempts`에 `blocked`·`rejected`·**오래 남은 `inflight`**가 없는지.
+   - `blocked`가 생기면: 그 경로만 다시 안 보낸다(`publisher.py:580`). 다른 파일 발행은 계속된다. 풀어 주는 명령은 없다(런북 139-147행) → **멈추고 새 회차 폴더로 다시 시작**(순번 1부터 → 아이폰 새로고침).
+   - 11/15 로컬 시험에서 10초 간격 회차 하나가 시작 직후 경기 파일을 한 번 올린 뒤 `inflight`로 남아 6분 동안 경기 파일을 다시 보내지 않았다(원인 미확인, 기록 4.4절). 아이폰에서 공이 안 바뀌면 이것부터 본다.
+   - 429면 `retry`로 기다린다(Retry-After, 없으면 60초, `publisher.py:402-405`).
+5. □ 아이폰 두 대: 849843을 **탭을 닫고 새로 열기**. 호스트의 c47 파일은 순번이 다르므로 이미 연 탭은 재생 파일을 버릴 수 있다(sequence가 낮다, `api.ts:103-113`).
+6. □ 다시 띄울 때: ① `stop_scene.sh <회차>` ② 새 회차로 B-3 ③ 아이폰 탭 새로 열기. 순번이 1로 돌아가고, 업로더는 순번을 비교하지 않고 덮어쓴다(`publisher.py:618, 644`). 그래서 폰 쪽이 낮은 순번을 버린다.
 
 ## C. 맞추기 (기록 3절, 초안)
 
@@ -72,10 +98,11 @@
 
 ## F. 끝난 뒤 — 호스트 c47 되돌리기 (업로드를 켰을 때만)
 
-1. □ 맥미니: `stop_scene.sh <회차 폴더>`. 업로드는 끄는 것까지가 이번 회차의 일이다. 설정 사본은 남겨 두되 `upload.enabled: false`로 바꾼다.
+1. □ 맥미니: **먼저** `stop_scene.sh <회차 폴더>`. 발행기가 멈춘 것(포트·프로세스)을 본 뒤 설정 사본을 `upload.enabled: false`로 바꾼다.
+1-1. □ 팀원에게 "발행기 멈췄다" 알림 → 팀원이 업로드 받기를 끈다. 이 순서를 지킨다(받기를 먼저 끄면 전송 중 파일이 우리 상태에 `blocked`로 남는다).
 2. □ 팀원: c47 묶음(`bundle-849843-main-c47fe6cb-20261101.zip`, SHA-256 `3c3b8006…8da51`)의 `v1/` 파일을 호스트에 다시 올린다. 대상 경로는 manifest, health, dates, games/2026-09-30, game/849843, setup/849843이다.
    - 우리가 원본 바이트를 PUT하는 방법도 있지만 팀원 허락과 Song 승인이 필요하다. 이 표에는 넣지 않는다.
 3. □ 아이폰: 새로고침 → 849843이 끝난 경기(262구)로 보이는지, A의 캡처와 같은지. 되돌린 파일의 sequence가 재생 회차보다 낮으면, 재생을 본 탭은 c47 파일을 버린다. 그래서 **탭을 닫고 새로 연다.** 그래도 진행 중 화면이면 팀원에게 캐시 확인을 요청한다.
-4. □ 팀원: 업로드 받기 끄기, 토큰 회수(옛 토큰으로 401).
+4. □ 팀원: 토큰 회수(옛 토큰으로 401). 업로드 받기는 1-1에서 이미 껐다.
 5. □ 맥미니: 포트 8870~8876 비었는지, 발행기·정적 서버 0개.
 6. □ 이 표의 값을 대본 7절 "연습 기록"에 옮긴다.
