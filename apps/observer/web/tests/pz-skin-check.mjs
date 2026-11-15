@@ -346,6 +346,20 @@ try {
       await context.close();
     }
 
+    // ---------- ④ (review R4 P2-3): narrow widths on a tall screen — the zone stays 216 and the box keeps 140×210, inside the screen ----------
+    for (const w of [320, 344, 359]) {
+      const { context, page, errors } = await open(w, 900);
+      await page.goto(`${origin}/?game=${PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited(`④ ${w}x900: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        for (const side of ['R', 'L']) {
+          const r = await page.evaluate((side) => { const box = document.querySelector('.pz-bat3d'); box.classList.toggle('side-r', side === 'R'); const b = box.getBoundingClientRect();
+            return { l: b.left, r: b.right, w: b.width, h: b.height, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zone: document.querySelector('.sv-game .sv-zrow').getBoundingClientRect().height }; }, side);
+          ok(r.zone === 216 && r.w === 140 && r.h === 210 && r.l >= 0 && r.r <= r.vw && r.sw <= 0, `④ ${w}x900 side ${side}: zone 216, box 140×210 inside the screen (${r.w}×${r.h} at ${r.l.toFixed(1)}..${r.r.toFixed(1)} of ${r.vw}, zone ${r.zone})`);
+        }
+      }
+      ok(errors.length === 0, `④ ${w}x900: no page errors (${errors.length})`);
+      await context.close();
+    }
     // ---------- ④ box geometry (real attach with fake model at each width, both sides by class) + zone painted above ----------
     for (const w of [320, 344, 359, 360, 390, 402]) {
       const { context, page, errors } = await open(w, w < 360 ? 640 : 760);
@@ -459,13 +473,16 @@ try {
 
   if (mode3d) {
   // ---------- portrait fit (demo/front-fit-1115): zone = clamp(150, visible height − everything else, 216); scroll only below the floor ----------
+    // review R4 P2-3: fixed expectations (zone px, spacing trimmed?) measured 2026-11-15 on the fixtures — not "measured = measured"
+    const PIN = { [PK]: { '430x740': [216, false], '402x681': [216, true], '393x659': [216, true], '375x667': [216, true], '360x620': [188, true], '320x568': [150, true], '360x480': [150, true] },
+      [LIVE_PK]: { '430x740': [216, false], '402x681': [216, true], '393x659': [209, true], '375x667': [216, true], '360x620': [170, true], '320x568': [150, true], '360x480': [150, true] } };
     for (const pk of [PK, LIVE_PK]) for (const [w, h] of [[430, 740], [402, 681], [393, 659], [375, 667], [360, 620], [320, 568], [360, 480]]) {
-      const id = `fit ${pk} ${w}x${h}`;
+      const id = `fit ${pk} ${w}x${h}`, [pinZone, pinTight] = PIN[pk][`${w}x${h}`];
       const { context, page, errors } = await open(w, h);
       await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1200);
       const r = await page.evaluate(() => { const f = window.PZFit?.status(), z = document.querySelector('.sv-game .sv-zrow').getBoundingClientRect();
-        return { applied: f?.applied ?? null, rest: f?.rest ?? null, zone: z.height, scroll: document.scrollingElement.scrollHeight - innerHeight, side: document.scrollingElement.scrollWidth - innerWidth }; });
-      ok(r.applied !== null && Math.abs(r.zone - r.applied) < 0.5, `${id}: zone row is the fitted height (${r.zone} = ${r.applied}, rest ${r.rest})`);
+        return { applied: f?.applied ?? null, tight: f?.tight ?? null, rest: f?.rest ?? null, zone: z.height, scroll: document.scrollingElement.scrollHeight - innerHeight, side: document.scrollingElement.scrollWidth - innerWidth }; });
+      ok(r.applied === pinZone && Math.abs(r.zone - pinZone) < 0.5 && r.tight === pinTight, `${id}: zone ${pinZone}px, spacing ${pinTight ? 'trimmed' : 'as is'} (zone row ${r.zone}, applied ${r.applied}, trimmed ${r.tight}, rest ${r.rest})`);
       if (r.applied > 150) ok(r.scroll <= 0, `${id}: fits — no vertical scroll (${r.scroll}px, zone ${r.applied})`);
       else {
         await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight)); await page.waitForTimeout(200);
@@ -474,6 +491,42 @@ try {
       }
       ok(r.side <= 0 && errors.length === 0, `${id}: no side scroll (${r.side}), no page errors (${errors.length})`);
       if (shots && [[393, 659], [360, 480]].some(([a, b]) => a === w && b === h)) await page.screenshot({ path: path.join(shots, `fit-${pk}-${w}x${h}.png`) });
+      await context.close();
+    }
+    // review R4 P2-1: left alone, pz-fit does not run again (no re-measure loop) — attached, trimmed size, tall size, and with the batter band gone
+    for (const [pk, w, h] of [[LIVE_PK, 393, 659], [PK, 393, 659], [LIVE_PK, 402, 874]]) {
+      const id = `fit idle ${pk} ${w}x${h}`;
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      await waited(`${id}: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 })); await page.waitForTimeout(1500);
+      const runs = () => page.evaluate(() => window.PZFit.status().runs);
+      const a = await runs(); await page.waitForTimeout(5000); const b = await runs();
+      ok(b - a === 0, `${id}: 5 s idle after attach → pz-fit runs +${b - a} (want 0)`);
+      await page.evaluate(() => document.querySelectorAll('.sv-game .sv-batband').forEach((e) => e.remove())); await page.waitForTimeout(500);
+      const c = await runs(); await page.waitForTimeout(5000); const d = await runs();
+      ok(d - c === 0 && await page.evaluate(() => document.querySelector('.pz-bat3d')?.hidden === true), `${id}: batter side unknown (band gone), box hidden, 5 s → runs +${d - c} (want 0)`);
+      ok(errors.length === 0, `${id}: no page errors (${errors.length})`);
+      await context.close();
+    }
+    // review R4 P2-2 (PM decision): the opened "이번 타석" list is not part of the first screen — zone and 3D stay, the page scrolls like c47
+    for (const [pk, w, h] of [[PK, 393, 659], [PK, 360, 620]]) {
+      const id = `fit at-bat list ${pk} ${w}x${h}`;
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1200);
+      const st = () => page.evaluate(() => ({ zone: document.querySelector('.sv-game .sv-zrow').getBoundingClientRect().height, tight: window.PZFit.status().tight, rows: document.querySelectorAll('.sv-atbat-list .sv-pitch-row').length, scroll: document.scrollingElement.scrollHeight - innerHeight, box: (() => { const b = document.querySelector('.pz-bat3d')?.getBoundingClientRect(); return b ? +b.height.toFixed(1) : null; })() }));
+      const s0 = await st(); await page.locator('.sv-atbat-toggle').click(); await page.waitForTimeout(500); const s1 = await st();
+      if (shots) await page.screenshot({ path: path.join(shots, `fit-atbat-open-${pk}-${w}x${h}.png`), fullPage: true });
+      ok(s1.rows > 0 && s1.zone === s0.zone && s1.tight === s0.tight && s1.box === s0.box, `${id}: opened (${s1.rows} rows) → zone ${s0.zone} → ${s1.zone}, trimmed ${s0.tight} → ${s1.tight}, 3D box ${s0.box} → ${s1.box} (unchanged)`);
+      ok(s1.scroll > s0.scroll, `${id}: opened list lengthens the page instead (scroll ${s0.scroll} → ${s1.scroll})`);
+      await page.locator('.sv-atbat-toggle').click(); await page.waitForTimeout(500); const s2 = await st();
+      ok(s2.rows === 0 && s2.zone === s0.zone && s2.scroll === s0.scroll, `${id}: folded again → same as before (zone ${s2.zone}, scroll ${s2.scroll})`);
+      // an open sheet (추천 자세히) is position: fixed — the zone does not change either
+      const more = page.locator('.sv-state-more, .sv-reclist').first();
+      if (await more.count()) { await more.click(); await page.waitForTimeout(600); const s3 = await st(); const open = await page.locator('.sv-sheet').count();
+        ok(open > 0 && s3.zone === s0.zone && s3.tight === s0.tight, `${id}: open sheet → zone ${s3.zone}, trimmed ${s3.tight} (unchanged)`);
+        if (shots) await page.screenshot({ path: path.join(shots, `fit-sheet-open-${pk}-${w}x${h}.png`) });
+        const close = page.locator('.sv-sheet button', { hasText: '닫기' }); if (await close.count()) await close.first().click(); }
+      ok(errors.length === 0, `${id}: no page errors (${errors.length})`);
       await context.close();
     }
     for (const [w, h, zone] of [[1920, 1080, 330], [740, 360, 216]]) {   // wide (≥760) and a narrow landscape screen: untouched

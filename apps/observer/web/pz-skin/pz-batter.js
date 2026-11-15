@@ -134,7 +134,7 @@ function tick() {
   if (S.b && (S.row !== row || !S.box.isConnected)) unmount("존 행 교체");
   // Song이 타자 방향을 모를 때(경기 전·타자 교체 사이)는 실루엣 띠(.sv-batband) 자체를 그리지 않는다 → 우리도 3D를 숨기고 반응하지 않는다(검토 지적)
   const band = row.querySelector(".sv-batband");
-  if (!band) { if (S.box) S.box.hidden = true; return; }
+  if (!band) { if (S.box && !S.box.hidden) S.box.hidden = true; return; } // 값이 바뀔 때만 쓴다(검토 R4 P2-1: 같은 값 쓰기도 변경 기록을 남겨 pz-fit을 매 프레임 깨웠다)
   if (!S.b) { mount(row); return; }
   if (S.box.hidden) { S.box.hidden = false; S.b.resize(); }
   // React가 .sv-zrow의 className을 통째로 다시 쓰면(bat-l ↔ bat-r) 우리가 붙인 pz-has3d가 지워진다 → 틱마다 되살리고, 실루엣 svg는 인라인 style로도 숨긴다(11/9 확인: 우타자로 바뀐 뒤 실루엣이 비쳐 보였음)
