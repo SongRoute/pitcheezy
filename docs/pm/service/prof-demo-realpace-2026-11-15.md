@@ -167,9 +167,10 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 - 영상과 실제로 나란히 맞추기, 영상의 경기 시계 보존 여부(광고 편집): 영상이 없어서 미확인.
 - 호스트 업로드, 접근 코드 쿠키, 폰 장시간 폴링: Song 결정 범위라 실행 안 함. 미측정.
 - `fixed_delay_s`를 실제 속도 재생과 함께 쓰는 것: 시험 안 함.
-- ssh로 띄울 때 명령이 바로 돌아오는지: 시험 안 함.
+- ssh로 띄울 때 명령이 바로 돌아오는지: 실제 ssh는 못 했다(자기 키 미등록). 출력 파이프는 0.05초에 닫혔고 발행기는 계속 돌았다(11/15 16:27). 그래서 바로 돌아온다고 추정한다.
+- 화면 반영 지연(393×852·402×874)과 맥북 반쪽 창(960×1080·720×900) 배치: 16:14~16:29 브라우저 잠금이 차선 1에 있어 건너뜀. 미측정.
 
-## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 16시대)
+## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 16시대, `PUBCONF` 추가판)
 
 분석 스크립트: `20261115-realpace/timeline.py`(최종 피드 → 투구 시간표), `drift.py`(회차 폴더의 `watch_rt.tsv`와 시간표 비교). 발행 파일 감시는 `20261115-demo/watch_rt.py`.
 
@@ -179,6 +180,8 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 # 849843 at its REAL pitch times (PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE=game, demo only). Pitch <start> is released
 # <lead-s> after the moment this script runs (T0, recorded in t0.txt); every later pitch follows at the game's own spacing.
 # lag-s: each pitch becomes visible to the publisher that long after its release (feed lag rehearsal).
+# Publish config: PUBCONF=<file outside the repo> run_realpace.sh ... (default apps/observer/publish_config.json, upload OFF).
+#   Upload stays off unless that file says upload.enabled true; its token goes in a 0600 token_file outside the repo.
 # Another game: GAME=<gamePk> run_realpace.sh ... (needs DEMO-WS-2026/feeds/<gamePk>_final.json.gz; the schedule file
 # and the KST publish date are made from that feed on first use, in sched-<gamePk>/).
 set -eu
@@ -207,7 +210,7 @@ SCREEN=${5:-$D/bundles-0738/B-color-only/site}; INTERVAL=${6:-10}; POLL=${7:-2}
 [[ -f $SCREEN/index.html ]] || { echo "화면 폴더에 index.html 없음: $SCREEN"; exit 3; }
 RUN=$D/runRT-$(date +%H%M%S); mkdir -p $RUN/out
 rsync -a --exclude '/v1' $SCREEN/ $RUN/out/
-echo "$SCREEN" > $RUN/screen.txt
+echo "$SCREEN" > $RUN/screen.txt; echo "${PUBCONF:-apps/observer/publish_config.json}" > $RUN/config.txt
 T0=$(python3 -c 'import time;print(round(time.time(),3))')
 print "T0 $T0 game $GAME start $START lead $LEAD lag $LAG interval $INTERVAL poll $POLL" > $RUN/t0.txt; echo $T0 >> $RUN/t0.txt
 cd $WT
@@ -225,7 +228,7 @@ env -i HOME=$HOME USER=$USER LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 TMPDIR=$TMPDIR 
   PITCHEEZY_OBSERVER_LIVE_REPLAY_GAME=$GAME PITCHEEZY_OBSERVER_LIVE_REPLAY_START=$START PITCHEEZY_OBSERVER_LIVE_REPLAY_T0=$T0 \
   PITCHEEZY_OBSERVER_LIVE_REPLAY_LEAD_S=$LEAD PITCHEEZY_OBSERVER_LIVE_REPLAY_LAG_S=$LAG PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=$POLL \
   $HOME/Projects/pitcheezy/.venv-observer/bin/python -B -m observer_app.publisher --out $RUN/out --interval $INTERVAL --date $PDATE \
-  --config apps/observer/publish_config.json > $RUN/publisher.log 2>&1 &
+  --config ${PUBCONF:-apps/observer/publish_config.json} > $RUN/publisher.log 2>&1 &
 echo $! > $RUN/publisher.pid
 python3 -m http.server $PORT --bind 127.0.0.1 --directory $RUN/out > $RUN/http.log 2>&1 &
 echo $! > $RUN/http.pid
