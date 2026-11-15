@@ -299,7 +299,7 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 - ssh 바로 돌아오기: 17:52 재시도도 키 미등록으로 거부. 미측정(추정만).
 - 10초 간격의 화면 지연(묶음 D), 실제 호스트의 429 동작: 미측정(4.3·4.4절). 경기 파일 멈춤은 4.5절에서 원인을 찾고 고쳤다. 실제 호스트에서의 재발 여부는 미측정.
 
-## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 21시대, `site/` 분리·폴더 이름에 포트·`PZ_TRACE`)
+## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 22시대, `site/` 분리·폴더 이름에 포트·`PZ_TRACE`·`SPEED`)
 
 분석 스크립트: `20261115-realpace/timeline.py`(최종 피드 → 투구 시간표), `drift.py`(회차 폴더의 `watch_rt.tsv`와 시간표 비교). 발행 파일 감시는 `20261115-demo/watch_rt.py`.
 
@@ -312,6 +312,7 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 # Publish config: PUBCONF=<file outside the repo> run_realpace.sh ... (default apps/observer/publish_config.json, upload OFF).
 #   Upload stays off unless that file says upload.enabled true; its token goes in a 0600 token_file outside the repo.
 # PZ_TRACE=1: run through trace_publisher.py (debug only: upload_failed lines carry their traceback).
+# SPEED=<x> (default 1): replay x times faster (counting runs only, not for the demo).
 # Another game: GAME=<gamePk> run_realpace.sh ... (needs DEMO-WS-2026/feeds/<gamePk>_final.json.gz; the schedule file
 # and the KST publish date are made from that feed on first use, in sched-<gamePk>/).
 set -eu
@@ -344,7 +345,7 @@ RUN=$D/runRT-$(date +%H%M%S)-$PORT; [[ -e $RUN ]] && { echo "회차 폴더가 �
 mkdir -p $RUN/site; rsync -a --exclude '/v1' $SCREEN/ $RUN/site/; ln -s ../out/v1 $RUN/site/v1
 echo "$SCREEN" > $RUN/screen.txt; echo "${PUBCONF:-apps/observer/publish_config.json}" > $RUN/config.txt
 T0=$(python3 -c 'import time;print(round(time.time(),3))')
-print "T0 $T0 game $GAME start $START lead $LEAD lag $LAG interval $INTERVAL poll $POLL" > $RUN/t0.txt; echo $T0 >> $RUN/t0.txt
+print "T0 $T0 game $GAME start $START lead $LEAD lag $LAG interval $INTERVAL poll $POLL speed ${SPEED:-1}" > $RUN/t0.txt; echo $T0 >> $RUN/t0.txt
 cd $WT
 env -i HOME=$HOME USER=$USER LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 TMPDIR=$TMPDIR PATH=/usr/bin:/bin:/usr/sbin:/sbin \
   PYTHONPATH=apps/observer/backend PYTHONUNBUFFERED=1 \
@@ -358,7 +359,7 @@ env -i HOME=$HOME USER=$USER LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 TMPDIR=$TMPDIR 
   PITCHEEZY_OBSERVER_PROFILE_SOURCES=$J/profiles/LATEST.json \
   PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR=$SCHED PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE=game \
   PITCHEEZY_OBSERVER_LIVE_REPLAY_GAME=$GAME PITCHEEZY_OBSERVER_LIVE_REPLAY_START=$START PITCHEEZY_OBSERVER_LIVE_REPLAY_T0=$T0 \
-  PITCHEEZY_OBSERVER_LIVE_REPLAY_LEAD_S=$LEAD PITCHEEZY_OBSERVER_LIVE_REPLAY_LAG_S=$LAG PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=$POLL \
+  PITCHEEZY_OBSERVER_LIVE_REPLAY_SPEED=${SPEED:-1} PITCHEEZY_OBSERVER_LIVE_REPLAY_LEAD_S=$LEAD PITCHEEZY_OBSERVER_LIVE_REPLAY_LAG_S=$LAG PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=$POLL \
   $HOME/Projects/pitcheezy/.venv-observer/bin/python -B ${=${PZ_TRACE:+$D/trace_publisher.py}:--m observer_app.publisher} --out $RUN/out --interval $INTERVAL --date $PDATE \
   --config ${PUBCONF:-apps/observer/publish_config.json} > $RUN/publisher.log 2>&1 &
 echo $! > $RUN/publisher.pid
