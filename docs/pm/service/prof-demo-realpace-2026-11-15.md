@@ -173,11 +173,38 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 
 **같이 찾은 것 두 가지:**
 1. `run_realpace.sh`가 화면 파일을 `out/`에 미리 복사하던 탓에, 업로드를 켜도 **한 번도 올라가지 않았다**(`upload_recovery_blocked`, `publisher.py:929-930`. 상태 파일 없이 `out/`에 파일이 있으면 막는다). 첫 시도 회차는 `*-recoveryblocked`로 남겼다. 고침: 화면은 `site/`에 두고 `site/v1 → out/v1` 링크로 보여 준다. `out/`은 빈 채로 시작한다.
-2. 10초 회차에서 시작 직후 `game/849843.json`을 PUT(200)한 뒤 작업자 쪽 예외(`upload_failed`, `upload_worker.py:93`)가 나서 그 경로가 `inflight`로 남았다. 이후 6분 동안 경기 파일을 다시 보내지 않았다(`_eligible`이 `inflight`를 제외, `publisher.py:579-580`). 예외 내용은 로그에 남지 않아 원인은 미확인이다. 5초·2초 회차는 경기 파일이 계속 올라갔다(2초 회차도 시작 직후 `upload_failed` 3번이 있었으나 남은 `inflight` 없음). 한 번 본 일이라 빈도는 미측정이다.
+2. 10초 회차에서 시작 직후 `game/849843.json`을 PUT(200)한 뒤 작업자 쪽 예외(`upload_failed`, `upload_worker.py:93`)가 나서 그 경로가 `inflight`로 남았다. 이후 6분 동안 경기 파일을 다시 보내지 않았다(`_eligible`이 `inflight`를 제외, `publisher.py:579-580`). → 원인을 찾아 고쳤다(4.5절).
 
 **`blocked`가 생기면:** 그 경로만 자동 재전송을 멈추고(`publisher.py:580`), 다른 파일의 로컬 발행·업로드는 계속된다(`publisher.py:1141-1142, 1484-1497`). health의 `upload.pending`과 `code: upload_failed`로 드러난다(`publisher.py:1195-1197`). 풀어 주는 명령은 없다(`ws-operations-runbook.md:139-147`).
 
 **`--check-remote`:** 인증 HEAD `v1/manifest.json` 1번, 쓰기 없음(`publisher.py:1560-1566`). 가짜 수신기로 실행해 HEAD 1번(404 → 통과)을 확인했다(`~/Projects/pitcheezy-pm-jobs/20261115-demo/fakerx-check.tsv`).
+
+## 4.5 경기 파일 업로드 멈춤 — 원인과 수정 (2026-11-15 20:56~21:17)
+
+**원인 두 겹:**
+1. **응답을 놓치는 경합** — `upload_worker.py:146-153`(수정 전 152-153). 부모는 자식(HTTP 한 번)의 응답을 0.05초씩 `poll`하고, 없으면 `is_alive()`를 본다. 자식이 그 사이에 응답을 쓰고 끝나면 파이프에 응답이 있는데도 `break` → `upload_unknown`(blocked)이 된다. 시작 직후 본 스레드가 바빠(GIL) 이 틈이 넓어질 때 잘 난다. 확인: 자식 종료 코드를 찍어 보니 실패한 자식은 모두 **종료 코드 0**(정상 종료, 응답 보냄)이었다(`trace_publisher.py`의 `_reap` 기록).
+2. **그 오류를 못 잡음** — `python -m observer_app.publisher`(우리 스크립트와 `ws_operate.py:70` 모두)로 띄우면 publisher.py는 `__main__`으로 돈다. 그런데 `upload_worker.py:22, 57, 127`의 `from .publisher import UploadError`는 **두 번째 사본**을 불러온다. 그래서 작업자가 던진 `UploadError`가 `publisher.py:619`·`659`의 `except UploadError`에 걸리지 않는다. 이미 `inflight`로 저장된 시도(`publisher.py:648`)가 그대로 남고, `_eligible`이 `inflight`를 영영 제외한다(`publisher.py:579-580`). 429·412 같은 정상 오류도 같은 길로 새서 `retry`가 되지 않았다.
+
+**수정(최소):**
+- `upload_worker.py`: 자식이 죽은 것을 본 뒤 `receive.poll(0)`으로 한 번 더 보고 응답이 있으면 읽는다(2줄).
+- `publisher.py` 끝: `__main__`으로 돌 때 `sys.modules['observer_app.publisher']`를 자기 자신으로 둔다(`setdefault`, 2줄 + 주석).
+- 테스트 2개: `tests/test_upload_worker_race.py`(늦게 읽힌 응답) — 수정 전 실패·후 통과. `tests/test_publisher_main_module.py`(`-m` 실행에서 작업자가 같은 `UploadError`를 봄) — 수정 전 실패·후 통과.
+
+**재현 (가짜 수신기, 회차당 170초, 3개 동시, `repro_batch.sh`):**
+
+| | 주입 없음 | 첫 경기 PUT에 429 주입 | 계 |
+|---|---|---|---|
+| 수정 전 (`pre-A`, `pre-B`) | 10초 1·5초 1 → **멈춤 2/2** | 10초 2·5초 2 → **멈춤 4/4** | **6/6** |
+| 수정 후 (`post-A`, `post-B`) | 10초 1·5초 1 → 멈춤 0/2 (경기 PUT 16·19번) | 10초 2·5초 2 → 멈춤 0/4 (429 뒤 70초에 재전송, 경기 PUT 11~13번) | **0/6** |
+
+- 수정 전은 주입 없이도 매번 멈췄다(시작 직후 경합). 앞서 4.4절 5초·2초 회차가 멈추지 않은 것은 그 회차에서 경합이 경기 파일에 걸리지 않았기 때문으로 본다(추정).
+- 수정 후 남은 `upload_failed` 1번은 주입한 429다(`retry` → 60초 뒤 재전송, 의도대로).
+- 디버그 래퍼 `trace_publisher.py`(작업 폴더, 저장소 밖)는 `-m`과 같은 방식으로 돌리며 traceback과 자식 종료 코드만 더 찍는다. 처음 판은 `__main__` 보호가 없어 자식이 발행기를 하나 더 띄웠다 → 그 3개는 내가 멈췄고 래퍼를 고쳤다(`repro/b1`은 버림).
+- 로그: `~/Projects/pitcheezy-pm-jobs/20261115-demo/repro/{pre,post}-{A,B}.txt`(회차 목록), `repro/*-rx-887*.tsv`(수신 기록), 각 회차 `publisher.log`·`out.state.json`. 요약 스크립트 `repro_summary.py`.
+
+**테스트:** publisher 테스트 전체(`tests/test_publisher*.py`, `test_publish_reference.py`, 새 2개) **344 passed**. 백엔드 전체 1176 passed / 3 failed / 1 xfailed. 3개 중 2개는 전부터 있던 10/19 화면 핀 불일치(`test_public_viewer_e2e`, `test_public_viewer_gateway_e2e`)이다. 1개(`test_publisher_background.py::test_blocked_prefix_cannot_starve_later_eligible_path`, `141 == 140`)는 시간에 따라 흔들린다. 단독 10회 실행에서 수정 전 2/10, 수정 후 2/10 실패로 같아서, 이번 수정과 무관한 기존 흔들림으로 본다.
+
+**token_file 방식 끝까지 (가짜 수신기, 임시 가짜 토큰 0600 파일, 디버그 래퍼 없이 `-m`):** check-remote 통과(HEAD 1번) → 발행 100초(간격 5초) 요청 191번(PUT 95·HEAD 96, 오류 0, 경기 PUT 11번) → `stop_scene.sh`로 멈춤. 멈춘 뒤 `upload_attempts` 비어 있음, 대기 0, 프로세스·포트 0. **통과.** 로그 `~/Projects/pitcheezy-pm-jobs/20261115-demo/repro/e2e-token/`, 회차 `runRT-211521-8873`. 실제 토큰 파일과 실제 호스트는 쓰지 않았다.
 
 ## 5. 화면 갱신 간격 — 발행 간격을 따른다
 
@@ -248,9 +275,9 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 - ssh로 띄울 때 명령이 바로 돌아오는지: 실제 ssh는 못 했다(자기 키 미등록). 출력 파이프는 0.05초에 닫혔고 발행기는 계속 돌았다(11/15 16:27). 그래서 바로 돌아온다고 추정한다.
 - 화면 반영 지연과 맥북 반쪽 창 배치: 16시대에는 건너뛰었고, 17:51~18:05에 묶음 D로 쟀다(4.2절). 명령 → 화면 첫 추천은 여전히 미측정.
 - ssh 바로 돌아오기: 17:52 재시도도 키 미등록으로 거부. 미측정(추정만).
-- 10초 간격의 화면 지연(묶음 D), 실제 호스트의 429 동작, 10초 회차 경기 파일 `inflight` 고착의 원인·빈도: 미측정(4.3·4.4절).
+- 10초 간격의 화면 지연(묶음 D), 실제 호스트의 429 동작: 미측정(4.3·4.4절). 경기 파일 멈춤은 4.5절에서 원인을 찾고 고쳤다. 실제 호스트에서의 재발 여부는 미측정.
 
-## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 20시대, `site/` 분리·폴더 이름에 포트)
+## 부록. `run_realpace.sh` 본문 (`~/Projects/pitcheezy-pm-jobs/20261115-demo/`, 11/15 21시대, `site/` 분리·폴더 이름에 포트·`PZ_TRACE`)
 
 분석 스크립트: `20261115-realpace/timeline.py`(최종 피드 → 투구 시간표), `drift.py`(회차 폴더의 `watch_rt.tsv`와 시간표 비교). 발행 파일 감시는 `20261115-demo/watch_rt.py`.
 
@@ -262,6 +289,7 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 # lag-s: each pitch becomes visible to the publisher that long after its release (feed lag rehearsal).
 # Publish config: PUBCONF=<file outside the repo> run_realpace.sh ... (default apps/observer/publish_config.json, upload OFF).
 #   Upload stays off unless that file says upload.enabled true; its token goes in a 0600 token_file outside the repo.
+# PZ_TRACE=1: run through trace_publisher.py (debug only: upload_failed lines carry their traceback).
 # Another game: GAME=<gamePk> run_realpace.sh ... (needs DEMO-WS-2026/feeds/<gamePk>_final.json.gz; the schedule file
 # and the KST publish date are made from that feed on first use, in sched-<gamePk>/).
 set -eu
@@ -309,7 +337,7 @@ env -i HOME=$HOME USER=$USER LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 TMPDIR=$TMPDIR 
   PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR=$SCHED PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE=game \
   PITCHEEZY_OBSERVER_LIVE_REPLAY_GAME=$GAME PITCHEEZY_OBSERVER_LIVE_REPLAY_START=$START PITCHEEZY_OBSERVER_LIVE_REPLAY_T0=$T0 \
   PITCHEEZY_OBSERVER_LIVE_REPLAY_LEAD_S=$LEAD PITCHEEZY_OBSERVER_LIVE_REPLAY_LAG_S=$LAG PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=$POLL \
-  $HOME/Projects/pitcheezy/.venv-observer/bin/python -B -m observer_app.publisher --out $RUN/out --interval $INTERVAL --date $PDATE \
+  $HOME/Projects/pitcheezy/.venv-observer/bin/python -B ${=${PZ_TRACE:+$D/trace_publisher.py}:--m observer_app.publisher} --out $RUN/out --interval $INTERVAL --date $PDATE \
   --config ${PUBCONF:-apps/observer/publish_config.json} > $RUN/publisher.log 2>&1 &
 echo $! > $RUN/publisher.pid
 python3 -m http.server $PORT --bind 127.0.0.1 --directory $RUN/site > $RUN/http.log 2>&1 &

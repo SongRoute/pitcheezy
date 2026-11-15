@@ -12,13 +12,13 @@
 |---|---|---|
 | ~08:30 | 우리 → 팀원 | 묶음 D 전달 **마감**. 늦거나 문제가 있으면 호스트는 옛 화면(c47)으로 연습한다(11/15 확인: c47 화면도 실제 속도 재생을 읽는다, 기록 4.3절). |
 | 09:30 | 팀원 | 호스트 업로드 받기 켬 → "켰다" 연락. |
-| 09:30~ | 우리(맥미니) | 연락 받은 **뒤** B-2 `--check-remote`(HEAD 1번) → 통과하면 B-3 시작. |
+| 09:30~ | 우리(맥미니) | 연락 받은 **뒤** B-3 `--check-remote`(HEAD 1번) → 통과하면 B-4 시작. |
 | 09:50 | Song | 두 아이폰(15, 17 프로)에서 **접근 코드 다시 입력 → 경기 849843 다시 열기**(쿠키 4시간). |
 | 10:00 | 모두 | 연습(C·D). 다시 띄우면 순번이 1로 돌아가니 **아이폰 새로고침**(탭을 닫고 새로 여는 것이 확실). |
 | 끝 | 우리 → 팀원 → 팀원 | **① 우리 발행기 먼저 멈춤 → ② 팀원에게 "멈췄다" 알림 → ③ 팀원이 업로드 받기 끔 → ④ 팀원이 11/1 파일 6개로 되돌림**(F). 반대 순서(받기 먼저 끔)면 우리 쪽 전송 중 파일이 `blocked`로 남는다. |
 | 언제든 | 우리 | 호스트가 안 되면 E(예비안, 맥북 반쪽 창 약 720×900). |
 
-**발행 간격:** Song 결정은 5초로 시작, 연습에서 보고 2초나 10초로 바꾼다. **그러나 호스트 한도(분당 60회, HEAD 포함)를 넘는다** — 5초는 실측 분당 약 104회, 2초는 약 247회, 10초는 약 49회(+경기 파일 약 6회)(기록 4.4절). 5초·2초에서는 429(재시도 대기 기본 60초)가 나올 수 있다. 결정 필요 항목으로 PM에게 올림.
+**발행 간격:** Song 결정은 5초로 시작, 연습 중 2초 시도. 팀원이 업로드를 켠 동안 호스트 한도를 **분당 300회**로 올린다(끈 동안 60). 로컬 가짜 수신기 실측: 5초 분당 약 104회, 2초 약 247회(여유 약 18%), 10초 약 49회(+경기 파일)(기록 4.4절). 429가 나면 그 파일은 Retry-After(없으면 60초) 동안 멈춘다.
 
 ## A. 연습 전 준비 (집, 약 30분)
 
@@ -34,10 +34,25 @@
 
 업로드는 `run_realpace.sh`가 띄우는 **발행기 자체**가 한다(`PUBCONF`의 `upload.enabled: true`). `ws_operate start --upload`는 실경기 수집용이라 이 재생에 쓰지 않는다. 그리고 지금 `ops/ws_ops_config.json`이 `upload.allowed: false`라서 `--upload`는 거부된다(`ops/ws_operate.py:395`).
 
-1. □ 저장소 밖 설정 사본(한 번만): `~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json` ← `apps/observer/publish_config.json` 복사 후 아래만 바꾼다.
-   - `upload.enabled: true`, `upload.base_url: "<호스트 업로드 주소>"`(HTTPS, `/_publish` 한 번)
-   - 토큰은 둘 중 하나만(`publisher.py:351`): `upload.token_file: "<토큰 파일>"`(절대 경로, 저장소 밖, `chmod 600`. 발행기는 상위 폴더에 `.git`이 있으면 거부, `publisher.py:354-360`. 0600 검사는 발행기가 하지 않으므로 직접 `ls -l`로 본다) **또는** `token_env: "PITCHEEZY_PUBLISH_TOKEN"`. 단 `run_realpace.sh`는 `env -i`로 환경을 비우므로 **token_file 쪽을 쓴다.** 토큰 값은 어디에도 적지 않는다.
-2. □ 팀원이 "켰다"고 한 **뒤** 원격 확인(쓰기 없음, `v1/manifest.json` HEAD 1번, `publisher.py:1560-1566`):
+1. □ 토큰 파일 확인(값은 보지 않는다): `stat -f '%Lp %z' ~/.pitcheezy-secrets/publish-token` → `600 44`(43자+줄바꿈) 또는 `600 43`이어야 한다. `cat`·`echo`로 열지 않는다.
+2. □ 저장소 밖 설정 사본(한 번만). 업로드 주소는 **터미널에서만** 변수로 넣고 문서·명령 기록에 남기지 않는다:
+   ```sh
+   mkdir -p ~/Projects/pitcheezy-pm-jobs/20261116-rehearsal
+   read -s "PZ_UPLOAD_BASE?업로드 주소(/_publish 포함): "; export PZ_UPLOAD_BASE
+   ~/Projects/pitcheezy/.venv-observer/bin/python -I - <<'PY'
+   import json, os
+   src = os.path.expanduser('~/Projects/pitcheezy-worktrees/prof-demo-1117/apps/observer/publish_config.json')
+   dst = os.path.expanduser('~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json')
+   c = json.load(open(src)); u = c['upload']
+   u.update(enabled=True, base_url=os.environ['PZ_UPLOAD_BASE'], token_env=None,
+            token_file=os.path.realpath(os.path.expanduser('~/.pitcheezy-secrets/publish-token')))
+   json.dump(c, open(dst, 'w'), indent=1); os.chmod(dst, 0o600); print('ok', dst)
+   PY
+   unset PZ_UPLOAD_BASE
+   ```
+   - `token_file`은 절대·실제 경로여야 하고 상위 폴더에 `.git`이 있으면 거부된다(`publisher.py:351-364`). 발행기는 0600을 검사하지 않으므로 1번에서 직접 본다. `token_env`는 쓰지 않는다(`run_realpace.sh`가 `env -i`로 환경을 비운다). 설정 사본에는 주소가 들어가므로 0600으로 두고 공유하지 않는다.
+   - 11/15 가짜 수신기 시험(임시 가짜 토큰 파일)으로 이 방식이 check-remote → 발행 → 멈춤까지 통과했다(기록 4.5절).
+3. □ 팀원이 "켰다"고 한 **뒤** 원격 확인(쓰기 없음, `v1/manifest.json` HEAD 1번, `publisher.py:1560-1566`):
    ```sh
    cd ~/Projects/pitcheezy-worktrees/prof-demo-1117
    env -i HOME=$HOME PATH=/usr/bin:/bin PYTHONPATH=apps/observer/backend \
@@ -45,23 +60,25 @@
      --config ~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json --check-remote
    ```
    "remote metadata check passed"가 나와야 한다(404도 통과로 친다). 11/15 로컬 가짜 수신기로 이 명령이 HEAD 1번만 보내는 것을 확인했다. 401·연결 실패면 시작하지 않고 팀원에게 묻는다.
-3. □ 재생 시작 — **실행마다 새 회차 폴더**(`runRT-<시각>-<포트>`, 같은 이름이면 스크립트가 멈춤). 폴더 안 `out/`과 `out.state.json`은 새것이어야 한다. 화면 파일은 `site/`에 따로 둔다(11/15 수정: `out/`에 화면 파일을 미리 넣으면 상태 파일이 없는 것으로 보고 `upload_recovery_blocked`가 켜져 **아무것도 올라가지 않았다**, `publisher.py:929-930`).
+4. □ 재생 시작 — **실행마다 새 회차 폴더**(`runRT-<시각>-<포트>`, 같은 이름이면 스크립트가 멈춤). 폴더 안 `out/`과 `out.state.json`은 새것이어야 한다. 화면 파일은 `site/`에 따로 둔다(11/15 수정: `out/`에 화면 파일을 미리 넣으면 상태 파일이 없는 것으로 보고 `upload_recovery_blocked`가 켜져 **아무것도 올라가지 않았다**, `publisher.py:929-930`).
    ```sh
    PUBCONF=~/Projects/pitcheezy-pm-jobs/20261116-rehearsal/publish_config.upload.json \
      ~/Projects/pitcheezy-pm-jobs/20261115-demo/run_realpace.sh 8876 0 20 <lag> <화면 폴더> 5
    ```
    회차 폴더: ______.
-4. □ 1분 안에 업로드 확인: `out/v1/health.json`의 `upload.pending`이 쌓이지 않는지, `out.state.json`의 `upload_recovery_blocked`가 없고 `upload_attempts`에 `blocked`·`rejected`·**오래 남은 `inflight`**가 없는지.
+5. □ 1분 안에 업로드 확인: `out/v1/health.json`의 `upload.pending`이 쌓이지 않는지, `out.state.json`의 `upload_recovery_blocked`가 없고 `upload_attempts`에 `blocked`·`rejected`·**오래 남은 `inflight`**가 없는지.
    - `blocked`가 생기면: 그 경로만 다시 안 보낸다(`publisher.py:580`). 다른 파일 발행은 계속된다. 풀어 주는 명령은 없다(런북 139-147행) → **멈추고 새 회차 폴더로 다시 시작**(순번 1부터 → 아이폰 새로고침).
-   - 11/15 로컬 시험에서 10초 간격 회차 하나가 시작 직후 경기 파일을 한 번 올린 뒤 `inflight`로 남아 6분 동안 경기 파일을 다시 보내지 않았다(원인 미확인, 기록 4.4절). 아이폰에서 공이 안 바뀌면 이것부터 본다.
+   - **경기 파일 멈춤 알아채기:** `out.state.json`의 `upload_attempts["v1/game/849843.json"]`이 있고 `phase`가 `inflight`·`blocked`이면 멈춘 것이다. 아이폰에서 공이 안 바뀔 때 이것부터 본다. 명령: `python3 -c "import json;print(json.load(open('<회차>/out.state.json')).get('upload_attempts'))"`.
+   - **복구 순서:** ① `stop_scene.sh <회차>` ② 새 회차로 B-4 ③ 아이폰 탭 닫고 새로 열기.
+   - 원인(11/15 찾음·고침): 시작 직후 업로드 자식 프로세스의 응답을 놓치는 경합(`upload_worker.py:152`) + `-m` 실행에서 그 오류를 못 잡던 문제(`publisher.py` 끝). 가짜 수신기 재현 수정 전 6/6 → 수정 후 0/6(기록 4.5절). 연습은 **이 수정이 든 worktree**(`prof-demo-1117`)에서 띄운다 — `run_realpace.sh`가 그 코드를 쓴다.
    - 429면 `retry`로 기다린다(Retry-After, 없으면 60초, `publisher.py:402-405`).
-5. □ 아이폰 두 대: 849843을 **탭을 닫고 새로 열기**. 호스트의 c47 파일은 순번이 다르므로 이미 연 탭은 재생 파일을 버릴 수 있다(sequence가 낮다, `api.ts:103-113`).
-6. □ 다시 띄울 때: ① `stop_scene.sh <회차>` ② 새 회차로 B-3 ③ 아이폰 탭 새로 열기. 순번이 1로 돌아가고, 업로더는 순번을 비교하지 않고 덮어쓴다(`publisher.py:618, 644`). 그래서 폰 쪽이 낮은 순번을 버린다.
+6. □ 아이폰 두 대: 849843을 **탭을 닫고 새로 열기**. 호스트의 c47 파일은 순번이 다르므로 이미 연 탭은 재생 파일을 버릴 수 있다(sequence가 낮다, `api.ts:103-113`).
+7. □ 다시 띄울 때: ① `stop_scene.sh <회차>` ② 새 회차로 B-4 ③ 아이폰 탭 새로 열기. 순번이 1로 돌아가고, 업로더는 순번을 비교하지 않고 덮어쓴다(`publisher.py:618, 644`). 그래서 폰 쪽이 낮은 순번을 버린다.
 
 ## C. 맞추기 (기록 3절, 초안)
 
 1. □ 영상을 V − 10초에 두고 멈춘다.
-2. □ B-3의 명령을 실행한 뒤 **10 + B초**에 영상 재생을 누른다(B = 영상이 기록보다 늦는 초). 맥북 신호: `…; sleep <10+B−2>; say 재생`.
+2. □ B-4의 명령을 실행한 뒤 **10 + B초**에 영상 재생을 누른다(B = 영상이 기록보다 늦는 초). 맥북 신호: `…; sleep <10+B−2>; say 재생`.
    - 같이 가게: lag 0, B 10.
    - 실제 서비스처럼: lag 19, B 40.
 3. □ 영상에서 1구가 던져질 때 아이폰이 이미 1구 추천(1 스위퍼 · 2 싱커 · 3 포심)을 보이는지.
@@ -82,7 +99,7 @@
 ## E. 예비안으로 넘어가기
 
 **판단 기준(제안, Song이 정한다):**
-- 연습: B-3 실행 뒤 **3분 안에** 아이폰이 첫 추천을 보이지 않으면 예비안으로 넘어간다. 3분은 첫 추천 약 8초에 새로고침과 호스트 지연 여유를 둔 값이다(제안).
+- 연습: B-4 실행 뒤 **3분 안에** 아이폰이 첫 추천을 보이지 않으면 예비안으로 넘어간다. 3분은 첫 추천 약 8초에 새로고침과 호스트 지연 여유를 둔 값이다(제안).
 - 첫 추천은 떴지만 **공 두 개가 지나도** 아이폰이 바뀌지 않아도 넘어간다(1회 초 공 간격 중앙값 17.9초 → 약 40초).
 - 401·"새로고침해 다시 접속"이 새로고침 뒤에도 남아도 넘어간다.
 - 데모 당일: 시작 전 점검에서 위 기준에 하나라도 걸리면 **처음부터 예비안으로** 한다.
