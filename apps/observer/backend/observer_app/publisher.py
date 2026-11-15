@@ -1609,6 +1609,7 @@ if __name__ == '__main__':
     # `python -m observer_app.publisher` runs this file as __main__, but upload_worker imports `.publisher` by name.
     # Without this alias that import loads a second copy whose UploadError is another class, so `except UploadError`
     # in MirrorSink._transfer never catches a worker failure and the attempt stays 'inflight' (2026-11-15 rehearsal).
-    if __spec__ is not None:
-        sys.modules.setdefault(__spec__.name, sys.modules[__name__])
+    if __spec__ is not None and sys.modules.setdefault(__spec__.name, sys.modules[__name__]) is not sys.modules[__name__]:
+        # Something imported observer_app.publisher before this point, so two copies exist and uploads could stick.
+        sys.exit('publisher: observer_app.publisher was imported before it ran as __main__; refusing to start')
     sys.exit(main())

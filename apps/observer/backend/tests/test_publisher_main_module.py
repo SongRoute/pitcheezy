@@ -22,6 +22,20 @@ print(UploadError.__module__, MirrorSink.__module__)
 """
 
 
+TWICE = """
+import runpy, sys
+import observer_app.publisher  # a second copy already loaded: the alias cannot hold
+sys.argv = ['publisher', '--help']
+runpy.run_module('observer_app.publisher', run_name='__main__', alter_sys=True)
+"""
+
+
+def test_refuses_to_start_when_already_imported():
+    env = {k: v for k, v in os.environ.items() if not k.startswith('PITCHEEZY_')} | {'PYTHONPATH': str(BACKEND)}
+    out = subprocess.run([sys.executable, '-B', '-c', TWICE], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=120)
+    assert out.returncode != 0 and 'refusing to start' in out.stderr, (out.returncode, out.stderr[-500:])
+
+
 def test_worker_sees_the_running_main_module():
     env = {k: v for k, v in os.environ.items() if not k.startswith('PITCHEEZY_')} | {'PYTHONPATH': str(BACKEND)}
     out = subprocess.run([sys.executable, '-B', '-c', PROBE], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=120)
