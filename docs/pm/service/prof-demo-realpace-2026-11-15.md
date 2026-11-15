@@ -206,6 +206,28 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 
 **token_file 방식 끝까지 (가짜 수신기, 임시 가짜 토큰 0600 파일, 디버그 래퍼 없이 `-m`):** check-remote 통과(HEAD 1번) → 발행 100초(간격 5초) 요청 191번(PUT 95·HEAD 96, 오류 0, 경기 PUT 11번) → `stop_scene.sh`로 멈춤. 멈춘 뒤 `upload_attempts` 비어 있음, 대기 0, 프로세스·포트 0. **통과.** 로그 `~/Projects/pitcheezy-pm-jobs/20261115-demo/repro/e2e-token/`, 회차 `runRT-211521-8873`. 실제 토큰 파일과 실제 호스트는 쓰지 않았다.
 
+## 4.6 PUT 실패는 영구 `blocked` — 확인과 푸는 법 (2026-11-15 21:35~21:38, 독립 검토 P1 후속)
+
+코드: PUT/DELETE의 412·5xx·예상 밖 2xx·영수증 이상은 `blocked`(`publisher.py:400-401, 408, 425, 430`), 소켓 타임아웃(`timeout_s` 5초)·연결 끊김은 `upload_unknown` → `blocked`(`publisher.py:429-430`), 작업자 마감 15초도 `blocked`(`upload_worker.py:154`). `blocked`는 다시 보내지 않는다(`publisher.py:580`), 재시작해도 남은 `inflight`는 `blocked`로 바뀐다(`publisher.py:490-491`). HEAD 실패는 상태를 바꾸지 않고 다음 주기에 다시 보낸다(`publisher.py:619-621`).
+
+가짜 수신기 재현(각 1회, 간격 5초, `~/Projects/pitcheezy-pm-jobs/20261115-demo/repro/p1/`):
+
+| 장면 | 주입 | 결과 |
+|---|---|---|
+| S1 업로드 꺼짐 흉내 | HEAD 503 40번 + PUT 503 40번 | HEAD 503 동안은 PUT을 안 보내 막히지 않음. HEAD가 통과하기 시작한 뒤 PUT 503 → **5개 경로 전부 `blocked`**(health 포함) |
+| S2 | 경기 파일 PUT 503 1번 | 경기 파일 `blocked`, 나머지 정상 |
+| S3 | 경기 파일 PUT 8초 지연(서버는 저장함) | 클라이언트 5초 타임아웃 → 경기 파일 `blocked`(서버에는 이미 저장됨) |
+
+푸는 법 확인: 같은 수신기에 **새 회차(새 `out/`·상태 파일)** 로 다시 띄우면 S2·S3 모두 경기 파일이 바로 다시 올라갔다(HEAD로 현재 ETag를 받아 `If-Match` PUT, 각 16회 정상). S1은 수신기가 아직 PUT 503을 주는 상태라 새 회차도 다시 `blocked` — 호스트가 꺼진 채면 재시작해도 소용없다.
+
+**503·타임아웃을 429처럼 재시도로 바꾸는 수정 — 의견: 내일 전에는 바꾸지 않는다.** 타임아웃·5xx 뒤에는 서버가 이미 저장했는지 모른다(S3가 그 예). 같은 `expected` ETag로 다시 PUT하면 저장된 경우 412(→ 어차피 `blocked`), `If-None-Match: *`였다면 역시 412다. 안전한 재시도는 "HEAD로 현재 SHA를 보고, 같으면 성공 처리·다르면 새 ETag로 PUT"하는 대조(reconciliation)가 필요하다. 이것이 설정 주석의 "block until reviewed reconciliation"이고, 새 코드와 검토가 필요하다. 내일은 절차(새 회차 + 1분 안 확인, 체크리스트 맨 위)로 막는다. 대조 구현은 데모 뒤 후속으로 둔다.
+
+**함께 고친 것:**
+- `publisher.py` 끝의 별칭: `setdefault`가 다른 사본을 조용히 남기는 경우(먼저 import됨) **시작을 거부**하게 바꿨다(커밋 `3e40baa3`, 테스트 `test_refuses_to_start_when_already_imported`). 실제 `-m` 실행은 그대로 시작한다(`--help` 확인).
+- 흔들리던 `test_blocked_prefix_cannot_starve_later_eligible_path`: 실패 메시지 `assert 141 == 140`(`len(sink.pending)`)을 부하 중 20회 반복에서 1번 잡았다. 원인은 테스트가 "서버에 저장됨"만 기다리고 바로 `pending`을 세는 것 — `pending`은 작업자가 자식의 응답을 읽은 뒤에야 비워진다(`publisher.py:666-670`). 48eefe9f와 무관(수정 전 2/10, 수정 후 2/10, 같은 메시지). 테스트가 `pending`에서 빠질 때까지 기다리게 고쳤다(커밋 `c2b12fc7`): 부하 중 30회 0 실패.
+- publisher 테스트 전체 **345 passed**(새 테스트 포함).
+- `test_public_viewer_e2e`·`test_public_viewer_gateway_e2e` 실패는 환경 문제가 아니라 의도된 핀 거부다: 이 가지의 `apps/observer/web/src/preview/…` 파일이 10/19 핀(`dccde711748d`)과 달라 "source pin mismatch"로 멈춘다(브라우저 시작 전).
+
 ## 5. 화면 갱신 간격 — 발행 간격을 따른다
 
 공개 화면은 진행 중 경기를 **manifest의 `publish_interval_s`마다** 읽는다(`web/src/service/GameScreen.tsx:332`, `api.ts:163`). 없을 때만 10초(`livePollMs`)를 쓴다. 그래서 11/15 07시대의 "화면이 0~10초 늦다"는 발행 간격 10초 때문이었다.
