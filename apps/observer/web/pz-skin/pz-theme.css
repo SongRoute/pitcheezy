@@ -76,3 +76,18 @@
 @media (max-width: 359px) { .pz-bat3d { left: -16px; } .pz-bat3d.side-r { left: auto; right: -16px; } }
 .sv-zrow.pz-has3d > .sv-zone-wrap { z-index: 2; }
 .sv-zrow:has(> .pz-bat3d) > .sv-zone-wrap { z-index: 2; }
+/* ---- 세로 폰 화면 맞춤(2026-11-15, demo/front-fit-1115): pz-fit.js가 재서 <html>에 쓰는 --pz-zone-fit(150~216px)을 존 높이로 쓴다.
+   값이 없으면(스크립트 없음·경기 화면 아님·넓은/가로 화면) 216px = 지금 화면. 폭 760px 이상(330px)은 이 규칙 밖이라 그대로다. */
+@media (max-width: 759px) and (orientation: portrait) { .sv-page.sv-game { --sv-zone-height: var(--pz-zone-fit, 216px); } }
+/* 3D 상자는 존 높이를 넘지 않게 2:3 비율로 줄인다(존 216px 이상이면 min()이 210px → 지금과 같은 140×210) */
+.pz-bat3d { height: min(210px, var(--sv-zone-height, 216px)); width: calc(min(210px, var(--sv-zone-height, 216px)) * 2 / 3); }
+/* 여백 줄임 단계(pz-fit.js가 존 216px이 안 들어갈 때만 <html>에 .pz-fit-tight를 붙인다): 위·아래 여백과 줄 간격만 줄인다(약 70px).
+   글자 크기·줄 내용·순서·터치 영역(44px 버튼)은 그대로다. 존은 이 뒤에 남는 높이를 받는다. */
+@media (max-width: 759px) and (orientation: portrait) {
+  html.pz-fit-tight .sv-game .sv-hd-2 { min-height: 0; padding-top: 2px; padding-bottom: 2px; }
+  html.pz-fit-tight .sv-page.sv-game .sv-mu { padding-top: 4px; padding-bottom: 4px; }
+  html.pz-fit-tight .sv-game .sv-live-layout { padding-top: 6px; padding-bottom: 6px; }
+  html.pz-fit-tight .sv-game .sv-stage { padding-top: 6px; gap: 5px; }
+  html.pz-fit-tight .sv-game .sv-rec-sec { padding-top: 6px; }
+  html.pz-fit-tight .sv-game .sv-atbat { padding-top: 3px; padding-bottom: 2px; }
+}

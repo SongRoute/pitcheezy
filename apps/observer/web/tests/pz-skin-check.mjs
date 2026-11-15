@@ -8,7 +8,8 @@
 //                  attach / react / unmount paths run with real three.js + WebGL (SwiftShader). Meta files always 404.
 // What it checks: tags and pz/ files; ③ list screen downloads no 3D code, game screen does; 404 → silhouette stays, no errors,
 // bounded retries; fake model → attaches, silhouette hidden, first screen does not move; ① tab return / online re-read does not
-// replay; a new pitch does; ④ box inside 320/344/359/360 screens, zone painted above it; ② contrast; 10/26 show/hide rules.
+// replay; a new pitch does; ④ box inside 320/344/359/360 screens, zone painted above it; ② contrast; 10/26 show/hide rules;
+// portrait fit (demo/front-fit-1115): zone row = pz-fit.js height, no scroll while above the 150 px floor, wide / landscape untouched.
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -147,7 +148,7 @@ try {
     ok(/<script type="importmap">\{ "imports": \{ "three": "\.\/pz\/batter3d\/vendor\/three\.module\.js", "three\/addons\/": "\.\/pz\/batter3d\/vendor\/addons\/" \} \}<\/script>/.test(html), 'index.html: import map tag');
     ok(html.indexOf('type="importmap"') < html.indexOf('<script type="module"'), 'index.html: import map before the first module script');
     ok(html.includes('<script type="module" src="./pz/pz-boot.js"></script>') && !html.includes('pz-batter.js'), 'index.html: ③ only the small boot script is static (no pz-batter.js tag)');
-    for (const f of ['pz/pz-theme.css', 'pz/pz-boot.js', 'pz/pz-batter.js', 'pz/batter3d/batter3d.js', 'pz/batter3d/vendor/three.module.js', 'pz/batter3d/vendor/three.core.js',
+    for (const f of ['pz/pz-theme.css', 'pz/pz-fit.js', 'pz/pz-boot.js', 'pz/pz-batter.js', 'pz/batter3d/batter3d.js', 'pz/batter3d/vendor/three.module.js', 'pz/batter3d/vendor/three.core.js',
       'pz/batter3d/vendor/addons/loaders/GLTFLoader.js', 'pz/batter3d/vendor/addons/utils/BufferGeometryUtils.js', 'pz/batter3d/vendor/addons/utils/SkeletonUtils.js', 'pz/batter3d/vendor/LICENSE'])
       ok(existsSync(path.join(dist, f)), `dist: ${f}`);
     const assets = path.join(dist, 'pz', 'batter3d', 'assets');
@@ -155,7 +156,7 @@ try {
     ok(models.length === 0 || !!process.env.PZ_BATTER_ASSETS_DIR, `dist: no model / meta files in pz/batter3d/assets (${models.join(',') || 'none'})`);
   } else {
     ok(!html.includes('importmap') && (html.match(/<script /g) || []).length === 1, 'index.html (colour only): no import map, only the app script');
-    ok(!existsSync(path.join(dist, 'pz', 'batter3d')) && !existsSync(path.join(dist, 'pz', 'pz-batter.js')) && !existsSync(path.join(dist, 'pz', 'pz-boot.js')), 'dist (colour only): no 3D files');
+    ok(!existsSync(path.join(dist, 'pz', 'batter3d')) && !existsSync(path.join(dist, 'pz', 'pz-batter.js')) && !existsSync(path.join(dist, 'pz', 'pz-boot.js')) && !existsSync(path.join(dist, 'pz', 'pz-fit.js')), 'dist (colour only): no 3D / fit files');
   }
   const css = readFileSync(path.join(dist, 'pz', 'pz-theme.css'), 'utf8');
 
@@ -355,10 +356,14 @@ try {
         const r = await page.evaluate((side) => {
           const box = document.querySelector('.pz-bat3d'); box.classList.toggle('side-r', side === 'R');
           const b = box.getBoundingClientRect(), zw = document.querySelector('.sv-zrow .sv-zone-wrap');
-          return { l: b.left, r: b.right, w: b.width, h: b.height, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zBox: getComputedStyle(box).zIndex, zZone: getComputedStyle(zw).zIndex, posZone: getComputedStyle(zw).position };
+          const zr = document.querySelector('.sv-game .sv-zrow').getBoundingClientRect(), fit = window.PZFit ? window.PZFit.status() : null;
+          return { l: b.left, r: b.right, w: b.width, h: b.height, t: b.top, bt: b.bottom, zt: zr.top, zb: zr.bottom, zv: zr.height, fit: fit && fit.applied, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zBox: getComputedStyle(box).zIndex, zZone: getComputedStyle(zw).zIndex, posZone: getComputedStyle(zw).position };
         }, side);
         ok(r.l >= 0 && r.r <= r.vw && r.sw <= 0, `④ ${w} side ${side}: box inside the screen (${r.l.toFixed(1)}..${r.r.toFixed(1)} of ${r.vw}, side scroll ${r.sw})`);
-        ok(r.w === 140 && r.h === 210, `④ ${w} side ${side}: box size unchanged 140×210 (${r.w}×${r.h})`);
+        // fit (demo/front-fit-1115): the zone row is the fitted height (pz-fit.js, 150..216) and the box follows it at 2:3, never taller than the row
+        const zoneWant = r.fit ?? 216, boxH = Math.min(210, zoneWant), boxW = boxH * 2 / 3;
+        ok(Math.abs(r.zv - zoneWant) < 0.5 && zoneWant >= 150 && zoneWant <= 216, `④ ${w} side ${side}: zone row = fitted ${zoneWant}px (${r.zv})`);
+        ok(Math.abs(r.h - boxH) < 0.5 && Math.abs(r.w - boxW) < 0.5 && r.t >= r.zt - 0.5 && r.bt <= r.zb + 0.5, `④ ${w} side ${side}: box ${boxW.toFixed(1)}×${boxH} inside the zone row (${r.w.toFixed(1)}×${r.h.toFixed(1)})`);
         ok(Number(r.zZone) > Number(r.zBox) && r.posZone === 'relative', `④ ${w} side ${side}: zone (z ${r.zZone}) above the 3D box (z ${r.zBox})`);
       }
       // paint: fill the box red; the zone frame's right edge where it overlaps the box must still show the zone stroke, not red
@@ -372,7 +377,10 @@ try {
         const png = await page.screenshot({ clip: { x: probe.x - 1, y: probe.y - 1, width: 2, height: 2 } });   // 4×4 device px; (2,2) = the stroke centre (SVG bbox = geometry edge)
         const px = await page.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(2, 2, 1, 1).data]; }, png.toString('base64'));
         ok(!(px[0] > 200 && px[1] < 60 && px[2] < 60), `④ ${w}: zone frame painted over the box where they overlap (pixel ${px.slice(0, 3).join(',')})`);
-      } else ok(false, `④ ${w}: the box should reach the zone frame here (no overlap to paint-check)`);
+      } else {   // review R3 P2-3: a smaller (fitted) box may not reach the frame — then it must not cover it at all
+        const gap = await page.evaluate(() => { const z = document.querySelector('.sv-zrow .sv-zone-box').getBoundingClientRect(), b = document.querySelector('.pz-bat3d').getBoundingClientRect(); return b.left - z.right; });
+        ok(gap >= 0, `④ ${w}: box does not reach the zone frame, so nothing to cover (gap ${gap.toFixed(1)}px)`);
+      }
       await page.evaluate(() => document.getElementById('pz-red')?.remove());
       ok(errors.length === 0, `④ ${w}: no page errors (${errors.length})`, errors.slice(0, 3));
       if (shots) await page.screenshot({ path: path.join(shots, `fake-${w}.png`) });
@@ -448,6 +456,36 @@ try {
     ok(r.text === p.text, `${id}: same visible text as the plain c47 screen`);
   }
   for (const n of notes) console.log('note', n);
+
+  if (mode3d) {
+  // ---------- portrait fit (demo/front-fit-1115): zone = clamp(150, visible height − everything else, 216); scroll only below the floor ----------
+    for (const pk of [PK, LIVE_PK]) for (const [w, h] of [[430, 740], [402, 681], [393, 659], [375, 667], [360, 620], [320, 568], [360, 480]]) {
+      const id = `fit ${pk} ${w}x${h}`;
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => { const f = window.PZFit?.status(), z = document.querySelector('.sv-game .sv-zrow').getBoundingClientRect();
+        return { applied: f?.applied ?? null, rest: f?.rest ?? null, zone: z.height, scroll: document.scrollingElement.scrollHeight - innerHeight, side: document.scrollingElement.scrollWidth - innerWidth }; });
+      ok(r.applied !== null && Math.abs(r.zone - r.applied) < 0.5, `${id}: zone row is the fitted height (${r.zone} = ${r.applied}, rest ${r.rest})`);
+      if (r.applied > 150) ok(r.scroll <= 0, `${id}: fits — no vertical scroll (${r.scroll}px, zone ${r.applied})`);
+      else {
+        await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight)); await page.waitForTimeout(200);
+        const end = await page.evaluate(() => { const nav = document.querySelector('.sv-bottom-nav').getBoundingClientRect().top; const bs = [...document.querySelectorAll('.sv-stage > *')].map((e) => e.getBoundingClientRect().bottom); return { nav, last: Math.max(...bs) }; });
+        ok(r.scroll > 0 && end.last <= end.nav + 0.5, `${id}: below the floor (zone 150) it scrolls ${r.scroll}px and the last line ends above the bottom menu at the end (${end.last.toFixed(0)} ≤ ${end.nav.toFixed(0)})`);
+      }
+      ok(r.side <= 0 && errors.length === 0, `${id}: no side scroll (${r.side}), no page errors (${errors.length})`);
+      if (shots && [[393, 659], [360, 480]].some(([a, b]) => a === w && b === h)) await page.screenshot({ path: path.join(shots, `fit-${pk}-${w}x${h}.png`) });
+      await context.close();
+    }
+    for (const [w, h, zone] of [[1920, 1080, 330], [740, 360, 216]]) {   // wide (≥760) and a narrow landscape screen: untouched
+      const { context, page } = await open(w, h); await page.goto(`${origin}/?game=${PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(800);
+      const r = await page.evaluate(() => ({ applied: window.PZFit?.status().applied ?? null, zone: document.querySelector('.sv-game .sv-zrow').getBoundingClientRect().height, v: document.documentElement.style.getPropertyValue('--pz-zone-fit') }));
+      ok(r.applied === null && r.v === '' && Math.abs(r.zone - zone) < 0.5, `fit ${w}x${h}: not applied (zone ${r.zone}, expected ${zone})`);
+      await context.close();
+    }
+    // the list screen: nothing applied
+    { const { context, page } = await open(393, 659); await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 }); await page.waitForTimeout(500);
+      ok(await page.evaluate(() => document.documentElement.style.getPropertyValue('--pz-zone-fit') === ''), 'fit: list screen has no fitted height'); await context.close(); }
+  }
 
   if (mode3d) {
   // ---------- reduced motion: attaches but never plays ----------
