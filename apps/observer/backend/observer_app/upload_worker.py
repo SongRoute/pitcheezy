@@ -150,6 +150,8 @@ class UploadWorker:
                         return message['result']
                     raise UploadError(message['code'], outcome=message['outcome'], retry_after=message['retry_after'])
                 if not process.is_alive():
+                    if receive.poll(0):
+                        continue  # it answered and exited between our poll and this check: read that answer
                     break
             raise UploadError('upload_unknown', outcome='blocked')
         except UploadError:
