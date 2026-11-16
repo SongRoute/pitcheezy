@@ -8,8 +8,8 @@
 
 **일정(Song 결정 11/15 밤):** 11/16 10:00 연습은 **영상 없이** 서비스 경로만 시험한다(맥미니 재생 → 호스트 → 아이폰 2대; 849843으로 경로 확인 뒤 849799로 한 번 더). 영상(5차전 풀경기)과 맞추는 점검은 **11/17(화) 오전, 시각 미정**에 시연(16:30) 직전 점검으로 한다(G절). **11/17 데모 경기는 5차전 849799로 확정**(Song, 11/15 밤). 장면·경과 시간은 [대본](prof-demo-script-2026-11-17.md) 0.0절.
 
-> **화면이 멈추면 (먼저 볼 것) — 2026-11-16 갱신: 끊김 대조 재시도(`demo/publish-retry-1116`) 기준.** 이 동작은 `run_realpace.sh`를 `WT=~/Projects/pitcheezy-worktrees/publish-retry-1116`로 띄울 때만 적용된다(PM이 독립 검토 뒤 정함). 옛 코드(`prof-demo-1117`)로 띄우면 끊김 한 번에 그 파일이 회차 내내 `blocked`다(11/16 연습 실측: 27분·요청 약 2,500건 중 PUT 2건).
-> 0. 시작은 **`run_realpace_guard.sh`**(인자·env는 `run_realpace.sh`와 같음)로 한다: 시작 15초 뒤 `blocked`·`inflight`가 있으면 그 회차를 끄고 새 회차로 다시 띄운다(최대 3회, 마지막 줄 = 남은 회차 폴더). 다시 띄울 때마다 경기 시계가 약 16초 밀리고, 아이폰 탭은 닫고 새로 연다.
+> **화면이 멈추면 (먼저 볼 것) — 2026-11-16 갱신: 끊김 대조 재시도(`demo/publish-retry-1116`) 기준.** 이 동작은 `run_realpace_guard.sh`(기본으로 그 worktree)나 `WT=~/Projects/pitcheezy-worktrees/publish-retry-1116 run_realpace.sh`로 띄울 때만 적용된다(PM이 독립 검토 뒤 정함). 옛 코드(`prof-demo-1117`)로 띄우면 끊김 한 번에 그 파일이 회차 내내 `blocked`다(11/16 연습 실측: 27분·요청 약 2,500건 중 PUT 2건).
+> 0. 시작은 **`run_realpace_guard.sh`**(인자·env는 `run_realpace.sh`와 같음)로 한다: 재시도 수정 worktree(`publish-retry-1116`)를 자동으로 쓰고 첫 줄에 그 HEAD와 `retry fix … included: yes`를 찍는다(수정 없는 checkout은 거부). 시작 15초 뒤 `blocked`가 있거나 같은 요청이 2초 넘게 `inflight`면 그 회차를 끄고 새 회차로 다시 띄운다(최대 3회, 마지막 줄 = 남은 회차 폴더). 회차 중간에 생긴 `blocked`(예: 늦게 저장된 PUT 뒤 412)는 손으로 3을 한다. 다시 띄울 때마다 경기 시계가 약 16초 밀리고, 아이폰 탭은 닫고 새로 연다.
 > 1. 맥미니: `python3 -c "import json;print(json.load(open('<회차>/out.state.json')).get('upload_attempts'))"`.
 >    - `phase` **`retry`** + `reason` `upload_unknown` = **끊김 뒤 자동 대조 대기**(2·4·8초 뒤 HEAD로 확인 → 같은 내용이면 끝, 다르면 새 ETag로 다시 보냄). **기다린다.** `detail`에 예외 이름이나 `http_<상태>`가 남는다(주소·토큰 없음) — 기록해 둔다.
 >    - `phase` **`blocked`** = 이 회차에서는 다시 안 올라간다(`publisher.py:580`). 연속 4번째 끊김(`reason` `upload_unknown`, `unknown_count` 4), 412 충돌, 영수증 불량, 재시작 때 진행 중이던 요청(`interrupted_unknown`)일 때 생긴다. 풀어 주는 명령은 없다 → 3으로.

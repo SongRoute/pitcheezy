@@ -250,9 +250,13 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 **수정(`publisher.py`·`upload_worker.py`):** PUT/DELETE 결과를 모를 때(`upload_unknown`: 연결 끊김·소켓 시간 초과·5xx·자식 비정상 종료·작업자 마감) 영구 `blocked` 대신 `retry`(`reason` `upload_unknown`, `unknown_count` n)로 두고 2·4·8초 뒤 다음 전송이 HEAD로 대조한다.
 - HEAD의 `X-Content-SHA256`이 지금 의도와 같으면 **성공으로 확정**(다시 보내지 않음, 로그 `upload_reconciled`). DELETE는 HEAD가 404·삭제 표시면 확정.
 - 다르면 그 HEAD의 ETag로 `If-Match`, 없던 파일이면 `If-None-Match: *`로 **지금 의도(최신 바이트)** 를 다시 PUT. CAS라 늦게 도착한 옛 요청이 새 것을 덮을 수 없다(먼저 적용된 쪽 외에는 412).
-- 경로당 연속 4번째 미확정이면 예전처럼 `blocked`. 확정된 성공이 횟수를 0으로 돌린다. 재시작 뒤에도 `retry`는 그대로 이어진다(재시작 때 `inflight`였던 것은 예전처럼 `interrupted_unknown` → `blocked`).
+- 경로당 4번째 미확정이면 예전처럼 `blocked`. 확정된 성공만 횟수를 0으로 돌린다(사이에 429가 와도 이어 센다, 검토 P3 반영 `e5fd3bce`). 재시작 뒤에도 `retry`는 그대로 이어진다(재시작 때 `inflight`였던 것은 예전처럼 `interrupted_unknown` → `blocked`).
 - 바꾸지 않은 것: 412 충돌·4xx `rejected`·영수증 불량(`upload_receipt_invalid`; 200인데 영수증 JSON을 못 읽는 경우도 이제 명시적으로 여기에 넣음)·429(Retry-After 대기).
-- 설계 변경 기록: `docs/decisions.md` 끝줄 D(안). 옛 원칙 "같은 SHA는 소유 영수증이 아니다"를 이 범위에서 뒤집는다(이 호스트 경로에 쓰는 것은 우리 발행기 하나).
+- 설계 변경 기록: `docs/decisions.md` 끝줄 D(안) — **번호 없는 초안**이고 Song 확정은 PM이 받는다.
+- **반전한 것(독립 검토 P2-4):** 옛 원칙 **"같은 SHA는 소유 영수증이 아니다"를 이 범위(결과 미확정 뒤 대조)에서 뒤집었다.** 이제 HEAD의 SHA가 같으면 우리 요청이 저장된 것으로 본다(이 호스트 경로에 쓰는 것은 우리 발행기 하나라는 가정). 그래서 다음 단언을 지우거나 반대로 바꿨다:
+  - `test_publisher_cas.py` `test_lost_response_is_blocked_with_or_without_remote_commit` → `test_lost_response_is_reconciled_by_head_with_or_without_remote_commit`. 지운 단언: 재시작 뒤 `endpoint.requests == []  # matching remote SHA is not an ownership receipt`, 시도 기록이 옛 SHA로 남음. 새 단언: 저장됐으면 HEAD 하나로 확정(PUT 없음), 안 됐으면 HEAD 404 → `If-None-Match: *` PUT.
+  - `test_publisher_background.py` `test_timeout_restart_preserves_uncertain_attempt_and_never_resends_old_bytes`: `blocked`를 기다리던 것을 `retry`로 바꿨다. "옛 바이트를 다시 보내지 않음"은 "같은 바이트 PUT이 정확히 1번"으로 유지.
+  - `test_publisher_upload.py` `test_withdrawal_replaces_pending_put_and_retries_delete[503]`: DELETE 503 → `blocked`였던 것을 `retry` → HEAD → DELETE 성공으로 바꿨다(412는 그대로 `blocked`).
 - 요청 수: 재시도는 끊김이 있을 때만 경로당 최대 HEAD 3 + PUT 3 더. 한도 분당 300, 11/16 5초 간격 실측 최대 114.
 
 **가짜 수신기 재현(127.0.0.1, 가짜 토큰, `repro/drop2/`, 같은 849799 시작·같은 주입):** `PUT dates.json` 연결 끊김(저장 안 함) + `PUT games/2026-10-29.json` 저장 뒤 응답 끊김 + `HEAD manifest.json` 끊김.
@@ -265,7 +269,17 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 
 `games` 파일은 저장된 뒤 응답만 끊겼지만, 대조 시점에는 다음 주기의 새 내용이 의도라 SHA가 달라 새 ETag로 다시 보냈다(정상). "같은 바이트면 다시 안 보냄"은 시험 `test_put_stored_but_answer_lost_is_confirmed_by_head_without_resending`이 확인한다.
 
-**재시작 감싸개 `run_realpace_guard.sh`(job 폴더):** 인자·env는 `run_realpace.sh`와 같다. 시작 15초 뒤 `blocked`·`inflight`·`upload_recovery_blocked`가 있으면 그 회차만 끄고 새 회차로 다시 띄운다(최대 3회, 마지막 줄 = 남은 회차). 확인(`repro/guard1/`, 옛 코드 + `PUT dates.json` 끊김 1번): 1회차 `v1/dates.json:blocked:upload_unknown` → 끔 → 2회차 통과, 종료 코드 0. `run_realpace.sh`는 `WT=<worktree>`로 다른 checkout을 띄울 수 있게만 바꿨다(기본값은 `prof-demo-1117` 그대로).
+**시험 수(2026-11-16 재실행, 코드 `e5fd3bce`, `cd apps/observer/backend`, `PY=~/Projects/pitcheezy/.venv-observer/bin/python`):**
+- 가: `$PY -B -m pytest -q -p no:cacheprovider tests/test_publisher*.py tests/test_upload_worker_race.py` → **338 passed**. 기준선 `c9d57256`에서 같은 명령 322 passed. 앞서 보고한 "337 passed"는 이 명령으로 `e2365cb9`에서 낸 값이다(그 뒤 P3 시험 1개 추가).
+- 나(검토자 선택): `$PY -B -m pytest -q -p no:cacheprovider tests -k "publisher or public_viewer"` → **347 passed, 3 failed**(검토자 `e2365cb9`에서 346 passed / 3 failed와 P3 시험 1개 차이).
+- 다(전체): `$PY -B -m pytest -q -p no:cacheprovider tests` → **1193 passed, 3 failed, 1 xfailed**. 기준선 `c9d57256`(같은 명령, `prof-demo-1117`에서): 1178 passed, 2 failed.
+- 실패 3개는 모두 e2e이고 이번 수정과 무관하다: `test_public_viewer_e2e::test_public_viewer_consumes_synthetic_publisher_bytes`·`test_public_viewer_gateway_e2e::test_publisher_upload_gateway_and_viewer_bytes`(기준선에도 있는 소스 핀 거부), `test_public_viewer_e2e::test_smoke_refuses_without_or_with_wrong_candidate`(이 새 worktree에 `apps/observer/web/node_modules`가 없어 node가 모듈을 못 찾음. 기준선은 `node_modules`가 있는 `prof-demo-1117`에서 돌려 통과). 고쳐서 통과하게 된 시험은 없다.
+- 수정 뒤 첫 전체 실행(`a83a3f7e`와 같은 코드, 커밋 직전)에서는 `test_ws_operate.py` 5개가 10초 subprocess 시간 초과로 실패했고, 따로 돌리면 통과, 다음 두 번의 전체 실행에서는 다시 나오지 않았다(부하 의존, 업로드 코드와 무관한 가짜 발행기 시험).
+- 감싸개 오탐 시험(`repro/guardfp-clean`·`guardfp-slow`, `repro_guard.sh`): 정상 시작 12회 + 모든 PUT을 1초 붙잡은 시작 6회 = **18회 모두 1회차 통과, 오탐 0**. 첫 읽기에서 정상 `inflight`를 본 경우가 7회(12회 중 2, 6회 중 5)였고, 옛 한 번 읽기 판정이었다면 이 7회를 다시 띄웠을 것이다. 실제 불량은 잡는다: `PUT dates.json` 412 한 번 → 1회차 `blocked upload_conflict` → 다시 띄움 → 2회차 통과(`repro/guard2`). 수정 없는 checkout(`WT=prof-demo-1117`)은 종료 8로 거부.
+
+**남은 위험(독립 검토 P2-3):** 소켓 시간 초과(5초)로 끊은 PUT이 서버에 **늦게** 저장되는 경우, 그 저장이 우리의 대조 HEAD(2초 뒤) **뒤, 다시 보내는 PUT 앞**에 끼면 다시 보내는 PUT의 `If-Match`가 옛 ETag라 **412 → `blocked`**다(예전과 같은 결과, 덮어쓰기는 없음 — CAS가 막는다). 대조 HEAD가 늦은 저장보다 먼저 오면 같은 문제가 다음 대조로 미뤄질 뿐이다. 대응은 새 회차(점검표 "화면이 멈추면" 3). 감싸개는 **시작 15초 안에만** 본다: 이 경우가 시작 직후에 생기면 감싸개가 다시 띄우고, 회차 중간이면 손으로 `stop_scene.sh` → 감싸개로 다시 띄운다. 11/16 실측 3건은 모두 호스트에 도착하지 않은 빠른 실패라 이 경우가 아니었다.
+
+**재시작 감싸개 `run_realpace_guard.sh`(job 폴더):** 인자·env는 `run_realpace.sh`와 같다. 시작 15초 뒤 `blocked`·`upload_recovery_blocked`가 있거나, **같은 경로가 같은 revision으로 2초 간격 두 번 모두 `inflight`**이면(정상 PUT도 자식이 도는 동안 잠깐 `inflight`라 한 번 읽기로는 불량으로 치지 않는다, 검토 P2-1) 그 회차만 끄고 새 회차로 다시 띄운다(최대 3회, 마지막 줄 = 남은 회차). **코드는 `WT`를 재시도 수정 worktree(`publish-retry-1116`)로 정해 넘기고**, 시작 때 `guard: code <WT> HEAD <커밋> — retry fix a83a3f7e included: yes`를 한 줄 찍는다. 수정 커밋이 없는 checkout(예: `prof-demo-1117`)은 **거부**한다(종료 8, 확인함) — 감싸개로는 옛 코드가 돌 수 없다(검토 P2-2). `run_realpace.sh` 원본의 기본값은 프론트 세션도 쓰므로 그대로다. 회차 폴더에 `guard.txt`(WT·HEAD·판정)가 남는다. 확인(`repro/guard1/`, 옛 코드 + `PUT dates.json` 끊김 1번): 1회차 `v1/dates.json:blocked:upload_unknown` → 끔 → 2회차 통과, 종료 코드 0. `run_realpace.sh`는 `WT=<worktree>`로 다른 checkout을 띄울 수 있게만 바꿨다(기본값은 `prof-demo-1117` 그대로).
 
 ## 5. 화면 갱신 간격 — 발행 간격을 따른다
 
