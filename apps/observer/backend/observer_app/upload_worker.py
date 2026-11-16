@@ -35,9 +35,12 @@ def _transport(connection, lifetime, config, job):
             result = remote.write(job['path'], data, expected=job['expected'], final=job['final'])
         message = {'ok': True, 'result': result}
     except UploadError as error:
-        message = {'ok': False, 'code': str(error), 'outcome': error.outcome, 'retry_after': error.retry_after}
-    except BaseException:
-        message = {'ok': False, 'code': 'upload_unknown', 'outcome': 'blocked', 'retry_after': 0}
+        message = {'ok': False, 'code': str(error), 'outcome': error.outcome, 'retry_after': error.retry_after,
+                   'detail': error.detail}
+    except BaseException as error:
+        # Only the class name crosses back (e.g. FileNotFoundError vs ConnectionResetError), never its text.
+        message = {'ok': False, 'code': 'upload_unknown', 'outcome': 'blocked', 'retry_after': 0,
+                   'detail': 'child_' + type(error).__name__}
     raw = json.dumps(message).encode()
     if len(raw) < MAX_IPC-4:  # one small pipe frame; parent also limits allocation before receiving it
         connection.send_bytes(raw)
@@ -148,16 +151,17 @@ class UploadWorker:
                     message = json.loads(receive.recv_bytes(MAX_IPC))
                     if message['ok']:
                         return message['result']
-                    raise UploadError(message['code'], outcome=message['outcome'], retry_after=message['retry_after'])
+                    raise UploadError(message['code'], outcome=message['outcome'], retry_after=message['retry_after'],
+                                      detail=message.get('detail'))
                 if not process.is_alive():
                     if receive.poll(0):
                         continue  # it answered and exited between our poll and this check: read that answer
-                    break
-            raise UploadError('upload_unknown', outcome='blocked')
+                    raise UploadError('upload_unknown', outcome='blocked', detail=f'child_exit_{process.exitcode}'.replace('-', 'm'))
+            raise UploadError('upload_unknown', outcome='blocked', detail='stopping' if self.stop.is_set() else 'deadline')
         except UploadError:
             raise
-        except (OSError, EOFError, ValueError, RuntimeError, KeyError):
-            raise UploadError('upload_unknown', outcome='blocked') from None
+        except (OSError, EOFError, ValueError, RuntimeError, KeyError) as error:
+            raise UploadError('upload_unknown', outcome='blocked', detail='parent_' + type(error).__name__) from None
         finally:
             try:
                 self._reap()
