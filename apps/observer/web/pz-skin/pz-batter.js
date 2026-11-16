@@ -1,12 +1,10 @@
 /* pz-batter.js — Song 고정 빌드(c47fe6cb)의 경기 화면에 우리 3D 타자(batter3d 모듈)를 "덧붙이는" 호스트(2026-11-09, V3).
- * Song 코드는 한 줄도 바꾸지 않는다. 이 모듈은 Song React 앱이 그린 DOM을 관찰해서
+ * Song 화면은 덧붙이기만 한다(예외 하나: 실시간 속성 data-pz-last-*를 GameScreen.tsx가 단다, 2026-11-16 §18). 이 모듈은 Song React 앱이 그린 DOM을 관찰해서
  *   (1) 경기 화면의 존 행(.sv-zrow)이 나타나면 그 안에 상자(.pz-bat3d)를 넣고 3D 타자를 띄운다(실루엣은 CSS로 숨김, 틀 불변),
  *   (2) 타석 방향은 .sv-zrow의 bat-l / bat-r 클래스로 따라가고,
  *   (3) '실제 투구' 줄(.sv-actual-line)의 글이 바뀌면(다음 공으로 넘어가면) 결과 글에 따라 반응을 재생한다:
  *       볼·루킹 스트라이크·몸에 맞는 공 → take(한 발 물러남), 헛스윙 → miss, 파울·파울팁·아웃·실책 → contact, 1루타·2루타·3루타·홈런(Song 표기; '안타'도 받음) → hit(치고 달려 나감).
  *       Song 화면에는 공 비행 연출이 없으므로 고정 길이(LEAD_MS)의 와인드업 뒤 접촉 시점이 온다. 끝나면 대기 동작으로 섞여 돌아간다.
- *   (3b) 실시간 화면(다음 공 추천)에는 그 줄이 없다(Song 화면은 지난 공을 볼 때만 줄을 그린다). 그때는 존 행의 data-pz-last-key·kind·side
- *       (GameScreen이 실시간에만 다는 속성, 화면에 보이지 않음)를 읽어 새 공마다 같은 규칙으로 반응한다(2026-11-16, demo/front-liveswing-1116).
  *   (4) 존 행이 사라지면(목록 화면 등) 3D를 해제한다. 로딩·WebGL 실패 시에는 아무것도 바꾸지 않는다(실루엣 그대로).
  * 결과 판정은 Song이 이미 화면에 쓴 글을 읽을 뿐이고(자료·추천·위치는 건드리지 않음), 감속 모션 설정이면 정지 자세만 보여 준다.
  * 검증용: window.PZSongSkin.status()
@@ -21,7 +19,7 @@ const REACT_DELAY_MS = 250; // 안 치는 공: 이만큼 뒤에 반응 시작
 const HIT_FADE_FROM = 0.86; // hit 끝부분 투명 처리 시작 진행률
 const FALLBACK_PLAY = { contact: { clip: "contact_hit1", cue: 1.456042, end: 2.1 }, miss: { clip: "miss", cue: 1.198889, end: 2.45 } };
 
-const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null, liveLast: null, livePlayed: null, liveCont: false, liveFlip: 0, hold: false };
+const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null, liveLast: null, livePlayed: null, liveSeen: new Set(), liveCont: false, liveFlip: 0, hold: false };
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function resolvePlay(meta) {
@@ -126,7 +124,7 @@ function unmount(reason) {
   if (S.row) { S.row.classList.remove("pz-has3d"); hideSilhouette(S.row, false); }
   if (S.b) { try { S.b.dispose(); } catch (e) { /* 무시 */ } }
   if (S.box && S.box.parentNode) S.box.remove();
-  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.liveCont = false; S.last = reason || "해제"; // playedKey·livePlayed는 남긴다(P3-c)
+  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.liveCont = false; S.last = reason || "해제"; // playedKey·liveSeen은 남긴다(P3-c)
 }
 
 let scheduled = 0;
@@ -157,9 +155,12 @@ function tick() {
   }
   if (line) S.liveCont = false; else live(row, side); // 지난 공을 보는 동안은 실시간 추적을 쉰다 → (e) 실시간으로 돌아오면 그때 공은 기준으로만
 }
-/* 실시간 반응(3b). 열쇠는 투구 식별자(lastPitch.key)다. 규칙:
+/* 실시간 반응(3b): 실시간 화면(다음 공 추천)에는 그 줄이 없다(Song 화면은 지난 공을 볼 때만 줄을 그린다). 그때는 존 행의 data-pz-last-key·kind·side
+ *       (GameScreen이 실시간에만 다는 속성, 화면에 보이지 않음)를 읽어 새 공마다 같은 규칙으로 반응한다(2026-11-16, demo/front-liveswing-1116).
+ *  열쇠는 투구 식별자(lastPitch.key)다. 규칙:
+ *  검토 P2-1(11/16): 처음 보는 순간 속성이 비어 있으면(공개 모드 탭 복귀의 "확인 중" 가림 등) 기준을 정하지 않고 다음 틱에서 다시 잡는다.
  *  (a) 처음 보는 순간(붙을 때·지난 공에서 돌아올 때·탭 복귀·이닝 사이 뒤)의 마지막 공은 결과가 있든 없든 기준으로만 삼는다(liveCont=false).
- *  (b) 같은 식별자는 문서 수명 동안 한 번만 재생한다(livePlayed) — 탭 복귀·재연결·같은 내용 재발행·확인 중 가림 뒤 같은 공은 재생하지 않는다.
+ *  (b) 본(기준으로 삼았거나 재생한) 식별자는 문서 수명 동안 모두 기억해(liveSeen, Set) 다시 재생하지 않는다(A→B→A도 A를 다시 재생하지 않음) — 탭 복귀·재연결·같은 내용 재발행·확인 중 가림 뒤 같은 공은 재생하지 않는다.
  *  (c) 정정: 같은 공의 결과가 바뀌어도(예: 파울 → 헛스윙) 다시 재생하지 않는다(이미 반응한 공). 결과 없이 먼저 온 공(확인 중)은
  *      이어 보는 중에 결과가 붙으면 그때 한 번 재생한다.
  *  (d) 공의 타자 방향(data-pz-last-side)이 지금 존 행 방향과 다르면(앞 타자의 타석을 끝낸 공인데 Song 화면은 같은 발행에서 이미 다음 타자로
@@ -167,15 +168,16 @@ function tick() {
  *      끝나면 지금 타자 방향으로 돌아간다. 지금 타자 방향에서 앞 타자의 스윙을 재생하지 않는다. 반응 중 새 공이 오면 먼저 끊고 지금 방향으로.
  *  (f) 동작 줄이기면 playKind가 정지 자세만 둔다. */
 function liveAttrs(row) { return { k: row.getAttribute("data-pz-last-key") || "", kind: row.getAttribute("data-pz-last-kind") || "", side: row.getAttribute("data-pz-last-side") || "" }; }
-function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = a.k + "|" + a.kind; if (on && a.k) S.livePlayed = a.k; S.liveCont = on; }
+function seen(k) { S.liveSeen.add(k); S.livePlayed = k; }
+function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = a.k + "|" + a.kind; if (on && a.k) seen(a.k); S.liveCont = on && !!a.k; } // 가림 중에 붙으면 기준 미정(P2-1)
 function syncSide(side) { S.side = side; S.box.classList.toggle("side-r", side === "R"); S.b.setSide(side); S.b.reset(reduceMotion() ? { still: true } : undefined); }
 function live(row, side) {
   const a = liveAttrs(row), id = a.k + "|" + a.kind;
   if (id === S.liveLast && S.liveCont) return;
   const cont = S.liveCont; S.liveLast = id; S.liveCont = true;
-  if (!cont) { if (a.k) S.livePlayed = a.k; return; }
-  if (!a.k || !a.kind || a.k === S.livePlayed) return;
-  S.livePlayed = a.k;
+  if (!cont) { if (a.k) seen(a.k); else S.liveCont = false; return; } // 빈 속성으로는 기준을 확정하지 않는다(P2-1)
+  if (!a.k || !a.kind || S.liveSeen.has(a.k)) return;
+  seen(a.k);
   if (S.hold) stopRaf(); // 앞 타자 반응 중에 새 공: 끊는다(hold 해제)
   if (S.side !== side) syncSide(side);
   if (a.side && a.side !== side && !reduceMotion()) { syncSide(a.side); playKind(a.kind); if (S.raf) { S.hold = true; S.liveFlip++; } else syncSide(side); return; }

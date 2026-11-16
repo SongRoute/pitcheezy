@@ -64,7 +64,8 @@ function fakeGlb() {
 const GLB = fakeGlb();
 
 // ---------- fake static host ----------
-const GAME_SEQ = JSON.parse(readFileSync(path.join(v1, 'game', `${PK}.json`), 'utf8')).publish.sequence;   // the fixture file's own sequence (freshen adds the same step)
+const GAME_SEQ = JSON.parse(readFileSync(path.join(v1, 'game', `${PK}.json`), 'utf8')).publish.sequence;
+const LIVE_SEQ = JSON.parse(readFileSync(path.join(v1, 'game', '990003.json'), 'utf8')).publish.sequence;   // the fixture file's own sequence (freshen adds the same step)
 const host = { model: '404', asks: [], synthetic: null, checks: false, slowGameMs: 0, liveDrop: 0, liveBump: 0 };   // liveDrop: serve the live fixture without its newest N pitches
 const started = Date.now();
 const isoNow = () => new Date(Date.now() - 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -77,7 +78,8 @@ function freshen(body) {
     if (typeof c.checked_at === 'string') c.checked_at = at;
     for (const k of ['sequence_checked', 'file_sequence']) if (Number.isSafeInteger(c[k])) c[k] += add;
   }
-  if (host.checks && body.schema?.includes('health')) body.game_checks = { [PK]: { checked_at: at, sequence_checked: Math.max(body.sequence, GAME_SEQ + add), file_sequence: GAME_SEQ + add, feed_ok: true } };   // ① masked re-read scene
+  if (host.checks && body.schema?.includes('health')) { const pk = host.checks === true ? PK : host.checks, fs = (pk === PK ? GAME_SEQ : LIVE_SEQ + host.liveBump) + add;   // ① masked re-read scene (checks = true → PK, or a game number)
+    body.game_checks = { [pk]: { checked_at: at, sequence_checked: Math.max(body.sequence, fs), file_sequence: fs, feed_ok: true } }; }
   return body;
 }
 const server = createServer((req, res) => {
@@ -393,8 +395,27 @@ try {
         await hide(true); await step('p9', 'contact'); await hide(false); await page.waitForTimeout(250);
         ok((await st()).played === 7 && await step('p10', 'miss') === 8, 'live: tab hidden → pitch arrives → back: that pitch is the baseline, the next one plays');
         const s9 = await st(); ok(s9.livePlayed === 'p10' && s9.liveCont === true, `live: status exposes livePlayed / liveCont (${s9.livePlayed}, ${s9.liveCont})`);
+        ok(await step('p8', 'miss') === 8, 'live review P2-3: an earlier pitch coming back (p10 → p8, A→B→A) does not replay');
+        await hide(true); await step(null); await hide(false); await page.waitForTimeout(250);
+        const sm = await st();
+        ok(sm.liveCont === false && await step('p11', 'contact') === 8 && await step('p12', 'miss') === 9, `live review P2-1: tab back while the attributes are masked → no baseline yet (cont ${sm.liveCont}); the re-read pitch is the baseline, the next one plays`);
       }
       ok(errors.length === 0, `live synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
+    }
+    // review P2-1: 3D attaches while the live attributes are masked → the first pitch after the mask is only the baseline
+    {
+      const { context, page, errors } = await open(390, 844);
+      host.synthetic = host.synthetic.replace(/ data-pz-last-key="p1" data-pz-last-kind="miss" data-pz-last-side="R"/, '');
+      await page.goto(`${origin}/__synthetic__.html`);
+      if (await waited('live masked attach: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        const put = (k, kind) => page.evaluate(([k, kind]) => { const r = document.getElementById('zr'); r.dataset.pzLastKey = k; r.dataset.pzLastKind = kind; r.dataset.pzLastSide = 'R'; }, [k, kind]);
+        const c0 = (await status(page)).liveCont; await put('m1', 'miss'); await page.waitForTimeout(250); const a1 = (await status(page)).played;
+        await put('m2', 'contact'); await page.waitForTimeout(250); const a2 = (await status(page)).played;
+        ok(c0 === false && a1 === 0 && a2 === 1, `live review P2-1: attached on masked attributes (cont ${c0}) → first pitch is the baseline (played ${a1}), the next plays (${a2})`);
+      }
+      ok(errors.length === 0, `live masked attach: no page errors (${errors.length})`);
+      host.synthetic = host.synthetic.replace('id="zr"', 'id="zr" data-pz-last-key="p1" data-pz-last-kind="miss" data-pz-last-side="R"');
       await context.close();
     }
     // live (f): reduced motion → still pose, a new pitch never animates
@@ -441,6 +462,25 @@ try {
       }
       ok(errors.length === 0, `live real: no page errors (${errors.length})`, errors.slice(0, 3));
       host.liveDrop = 0; host.liveBump = 0;
+      await context.close();
+    }
+    // review P2-1 on the real screen (static mode): tab back → 확인 중 mask drops the attributes → the re-read brings a new pitch → no swing
+    {
+      host.liveDrop = 1; host.liveBump = 0; host.checks = LIVE_PK; host.slowGameMs = 0;
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('live real mask: 3D attached', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true && document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:3', null, { timeout: 20000 }))) {
+        const vis = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        const s0 = await status(page);
+        await vis(true); host.liveDrop = 0; host.liveBump = 1; host.slowGameMs = 1500; await page.waitForTimeout(300);
+        await vis(false);
+        const masked = await page.waitForFunction(() => !document.querySelector('.sv-game .sv-zrow')?.hasAttribute('data-pz-last-key'), null, { timeout: 3000, polling: 50 }).then(() => true, () => false);
+        const got = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 15000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s1 = await status(page);
+        ok(masked && got && s0.played === 0 && s1.played === 0 && s1.livePlayed === '849843:11:1', `live real review P2-1: tab back → masked (${masked}) → re-read brings 11:1 (${got}) → baseline only, no swing (played ${s0.played} → ${s1.played}, livePlayed ${s1.livePlayed})`);
+      }
+      ok(errors.length === 0, `live real mask: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
       await context.close();
     }
     // finished game: never live attributes
