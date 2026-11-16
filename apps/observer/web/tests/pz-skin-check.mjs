@@ -390,15 +390,16 @@ try {
         await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; });
         ok(pe === 6 && await step('p6', 'miss') === 6, 'live (e): past pitch viewed, back to live on the same pitch → no replay');
         await page.evaluate(() => { document.getElementById('slot').innerHTML = '<p class="sv-actual-line"><span class="sv-al-label">실제 투구 · 2구 · Kim</span><i class="sv-g1 strike">2</i><b class="sv-actual-name">포심</b><span>파울</span></p>'; });
-        await step(null); await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; });
+        await step(null); await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; }); await page.waitForTimeout(250);   // the line goes first, then (next frame) the pitch: deterministic
         ok(await step('p7', 'contact') === 6 && await step('p8', 'miss') === 7, 'live (e): a pitch that came while viewing a past pitch is only the baseline on return; the next one plays');
-        await hide(true); await step('p9', 'contact'); await hide(false); await page.waitForTimeout(250);
+        await hide(true); await step('p9', 'contact'); await hide(false); await page.waitForTimeout(4300);   // past the 4 s re-read window
         ok((await st()).played === 7 && await step('p10', 'miss') === 8, 'live: tab hidden → pitch arrives → back: that pitch is the baseline, the next one plays');
         const s9 = await st(); ok(s9.livePlayed === 'p10' && s9.liveCont === true, `live: status exposes livePlayed / liveCont (${s9.livePlayed}, ${s9.liveCont})`);
         ok(await step('p8', 'miss') === 8, 'live review P2-3: an earlier pitch coming back (p10 → p8, A→B→A) does not replay');
         await hide(true); await step(null); await hide(false); await page.waitForTimeout(250);
         const sm = await st();
-        ok(sm.liveCont === false && await step('p11', 'contact') === 8 && await step('p12', 'miss') === 9, `live review P2-1: tab back while the attributes are masked → no baseline yet (cont ${sm.liveCont}); the re-read pitch is the baseline, the next one plays`);
+        const p11 = await step('p11', 'contact'); await page.waitForTimeout(4300);
+        ok(sm.liveCont === false && p11 === 8 && await step('p12', 'miss') === 9, `live review P2-1: tab back while the attributes are masked → no baseline yet (cont ${sm.liveCont}); the re-read pitch is the baseline, the next one plays`);
       }
       ok(errors.length === 0, `live synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
       await context.close();
@@ -416,11 +417,20 @@ try {
         // the race seen on the real screen: the return tick runs before the mask is drawn (old pitch still there), then the mask, then a new pitch
         await page.evaluate(() => { const r = document.getElementById('zr'); for (const x of ['key', 'kind', 'side']) r.removeAttribute('data-pz-last-' + x); }); await page.waitForTimeout(250);
         await put('m3', 'miss'); await page.waitForTimeout(250); const a3 = (await status(page)).played;
-        ok(a3 === 1, `live review P2-1: m2 → attributes removed (mask) → m3 → baseline only, even though m2 was already the baseline (played ${a3})`);
+        ok(a3 === 2, `live R5 re-review P1-1: continuous watching, m2 → attributes gone (new-file wait mask) → m3 → plays (played ${a3})`);
         // live with no pitch thrown yet = an empty key (not a mask): the game's first pitch plays
         await page.evaluate(() => { const r = document.getElementById('zr'); r.removeAttribute('data-pz-last-kind'); r.removeAttribute('data-pz-last-side'); r.dataset.pzLastKey = ''; }); await page.waitForTimeout(250);
         await put('m4', 'contact'); await page.waitForTimeout(250); const a4 = (await status(page)).played;
-        ok(a4 === 2, `live: empty key (no pitch yet) keeps watching — the first pitch after it plays (played ${a4})`);
+        ok(a4 === 3, `live: empty key (no pitch yet) keeps watching — the first pitch after it plays (played ${a4})`);
+        // the P2-1 race with explicit events: tab back → the return tick sees the old pitch → mask → the re-read pitch → baseline only; later pitches play
+        const vis = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        await vis(true); await page.waitForTimeout(100); await vis(false); await page.waitForTimeout(250);
+        await page.evaluate(() => { const r = document.getElementById('zr'); for (const x of ['key', 'kind', 'side']) r.removeAttribute('data-pz-last-' + x); }); await page.waitForTimeout(250);
+        await put('m5', 'miss'); await page.waitForTimeout(250); const a5 = (await status(page)).played;
+        await page.waitForTimeout(4300); await put('m6', 'contact'); await page.waitForTimeout(250); const a6 = (await status(page)).played;
+        ok(a5 === 3 && a6 === 4, `live R5 re-review: tab back → old pitch → mask → re-read pitch m5 is the baseline (played ${a5}); after the window m6 plays (${a6})`);
+        await page.evaluate(() => dispatchEvent(new Event('online'))); await page.waitForTimeout(100); await put('m7', 'miss'); await page.waitForTimeout(250); const a7 = (await status(page)).played;
+        ok(a7 === 4, `live R5 re-review: online (reconnect) → the re-read pitch is the baseline (played ${a7})`);
       }
       ok(errors.length === 0, `live masked attach: no page errors (${errors.length})`);
       host.synthetic = host.synthetic.replace('id="zr"', 'id="zr" data-pz-last-key="p1" data-pz-last-kind="miss" data-pz-last-side="R"');
@@ -488,6 +498,28 @@ try {
         ok(masked && got && s0.played === 0 && s1.played === 0 && s1.livePlayed === '849843:11:1', `live real review P2-1: tab back → masked (${masked}) → re-read brings 11:1 (${got}) → baseline only, no swing (played ${s0.played} → ${s1.played}, livePlayed ${s1.livePlayed})`);
       }
       ok(errors.length === 0, `live real mask: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
+      await context.close();
+    }
+    // R5 re-review P1-1 on the real screen: game_checks on + slow game file, NO tab change — every new pitch passes through the new-file mask and must swing
+    {
+      host.liveDrop = 2; host.liveBump = 0; host.checks = LIVE_PK; host.slowGameMs = 1500;
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('live real continuous: 3D attached', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true && document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:2', null, { timeout: 25000 }))) {
+        await page.evaluate(() => { window.__masks = 0; new MutationObserver((rs) => { for (const r of rs) if (r.attributeName === 'data-pz-last-key' && !r.target.hasAttribute('data-pz-last-key')) window.__masks++; })
+          .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-pz-last-key'] }); });
+        const s0 = await status(page);
+        host.liveDrop = 1; host.liveBump = 1;
+        const g1 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:3', null, { timeout: 20000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s1 = await status(page), m1 = await page.evaluate(() => window.__masks);
+        await page.waitForTimeout(2500);
+        host.liveDrop = 0; host.liveBump = 2;
+        const g2 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 20000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s2 = await status(page), m2 = await page.evaluate(() => window.__masks);
+        ok(g1 && g2 && m2 >= 1 && s0.played === 0 && s1.played === 1 && s2.played === 2, `live real R5 re-review P1-1: continuous watching with game_checks + slow file (masks seen ${m1} → ${m2}): 10:3 swings (played ${s1.played}), 11:1 swings (played ${s2.played})`);
+      }
+      ok(errors.length === 0, `live real continuous: no page errors (${errors.length})`, errors.slice(0, 3));
       host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
       await context.close();
     }
