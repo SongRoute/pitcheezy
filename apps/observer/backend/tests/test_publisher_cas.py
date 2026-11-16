@@ -296,3 +296,24 @@ def test_malformed_attempt_metadata_is_not_silently_reset(mirror, damage):
     state['upload_attempts'][GAME] = damage
     saved.write_text(json.dumps(state))
     with pytest.raises(publisher.UploadError, match='upload_state_invalid'): restart(sink, saved)
+
+
+def test_unknown_count_survives_interleaved_429(mirror, endpoint, monkeypatch):
+    sink, state, saved = mirror
+    clock = [1000.0]
+    monkeypatch.setattr(publisher.time, 'time', lambda: clock[0])
+    from collections import deque
+    endpoint.statuses['PUT', GAME] = deque([503, 429, 503, 429, 503, 503])
+    sink.write(GAME, b'{"attempt":1}')
+    seen = []
+    for _ in range(8):
+        attempt = state['upload_attempts'].get(GAME)
+        if attempt is None or attempt['phase'] != 'retry':
+            break
+        seen.append((attempt['reason'], attempt.get('unknown_count')))
+        clock[0] = attempt['not_before']+.01
+        sink.attempted.clear(); sink.retry('v1/health.json')
+    assert seen == [('upload_unknown', 1), ('upload_rate_limited', 1), ('upload_unknown', 2), ('upload_rate_limited', 2),
+                    ('upload_unknown', 3)]
+    attempt = state['upload_attempts'][GAME]  # 4th unknown, with two 429s in between: blocked
+    assert (attempt['phase'], attempt['unknown_count']) == ('blocked', publisher.UNKNOWN_RETRIES+1)

@@ -644,8 +644,9 @@ class MirrorSink(Sink):
                     attempts[path] = {'phase': 'blocked', 'reason': 'local_intent_mismatch'}
                     self.save()
                     return
-        # Consecutive unknown outcomes so far for this path (0 unless the previous attempt is an unknown-retry).
-        unknown = attempt.get('unknown_count', 0) if attempt and attempt.get('reason') == 'upload_unknown' else 0
+        # Unknown outcomes so far for this path since its last confirmed success. A 429 in between keeps the count
+        # (it says nothing about the earlier unknown), so unknown/429 alternation cannot reset it; success pops it.
+        unknown = attempt.get('unknown_count', 0) if attempt and attempt.get('phase') == 'retry' else 0
         try:
             meta = self.worker.request('HEAD', path) if self.worker else self.remote.head(path)
         except UploadError as error:
@@ -686,6 +687,8 @@ class MirrorSink(Sink):
                 os.link(target, snapshot, follow_symlinks=False)  # our writer only replaces inodes atomically
             attempt = attempts[path] = intent | {'expected': meta['etag'], 'phase': 'inflight'} | (
                 {'reason': 'upload_unknown', 'unknown_count': unknown} if unknown else {})
+            # unknown may be > 0 after a 429 too; the reconcile check above only runs for unknown > 0, which is safe
+            # either way (it confirms only when the server already holds exactly this intent).
             try:
                 self.save()  # immutable body/condition durably prepared before spawning the mutating child
             except BaseException:
