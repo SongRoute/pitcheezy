@@ -33,6 +33,14 @@ const PUBLISH_LATE = { state: 'disconnected' as DisplayStateName, label: '갱신
 /** Static mode: back in view (or back online / awake) and the first read is still on its way: neutral, never "late" from old data. */
 const PUBLISH_CHECKING = { state: 'unconfirmed' as DisplayStateName, label: '확인 중', message: '새 내용을 확인하고 있어요.' };
 const unconfirmed = (p: PitchRow | null | undefined) => p?.receipt?.status === 'unconfirmed';
+/** Live view only (nextPhase): the newest pitch's reaction kind for the optional 3D batter skin (pz-skin/pz-batter.js), read from
+ *  data attributes on .sv-zrow — nothing is drawn. take = no swing, miss = swing and miss, contact = foul / batted out, hit = base hit. */
+const HITS = new Set(['single', 'double', 'triple', 'home_run']);
+const pzKind = (a: Actual | null | undefined): string => {
+  const code = a?.description?.trim().toLowerCase().replaceAll(' ', '_') ?? '', k = resultKind(code);
+  return k === 'ball' ? 'take' : k === 'strike' ? (/swinging|missed_bunt/.test(code) ? 'miss' : /foul/.test(code) ? 'contact' : 'take')
+    : k === 'inplay' ? (HITS.has(a?.event ?? '') ? 'hit' : 'contact') : '';
+};
 const pickText = (pitch: string, zone: string | null | undefined) => zone ? `${pitch} · ${zone}` : pitch;
 const previousText = (p: PreviousPick | null) => p ? pickText(pitchName(p.pitch_label, p.pitch_type), p.zone_label ? plainZone(p.zone_label) : null) : '';
 /** D1 client guard: what was last drawn for the pending pitch slot, so a list that changes without a server note is still announced. */
@@ -577,6 +585,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <G1Dot kind={resultKind(actual.description)} n={shownPitch.pitch_number} /><b className="sv-actual-name">{actual.pitch_label}</b>
       {actual.speed_mph !== null && <small>{speedText(actual.speed_mph, unit)}</small>}<span>· {ending ?? actual.result_label}</span>
       {settledCorrection(shownPitch.receipt) && <span className="sv-tag" role="note" aria-label="기록이 정정된 공">정정됨</span>}</>;
+  // live and not masked: the newest pitch, or an empty key when no pitch is thrown yet; masked (확인 중) or not live: no attributes at all
+  const pzLast = !nextPhase || maskPublished ? {} : !lastPitch ? { 'data-pz-last-key': '' } : { 'data-pz-last-key': lastPitch.key, 'data-pz-last-kind': unconfirmed(lastPitch) ? '' : pzKind(lastPitch.actual),
+    'data-pz-last-side': lastPitch.batter?.side === 'R' || lastPitch.batter?.side === 'L' ? lastPitch.batter.side : '' };
   const top1 = !nextPhase && !pastUnconfirmed && rec?.status === 'ready' ? rec.candidates[0] ?? null : null;
   const pairText = top1 && actual && !fold ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
   // New as-of player context is optional; absent fields stay unknown rather than guessed from an incomplete pitch list.
@@ -666,7 +677,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
       <h2 className="sr-only">{stateSlot && !shownRec ? `다음 공: ${eff!.label}` : held ? '마지막으로 받은 추천' : '추천'}</h2>
       {/* Pitcher's view, with the batter on the correct screen side; the zone owns the centre. */}
-      <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}${held ? ' held' : ''}`}>
+      <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}${held ? ' held' : ''}`} {...pzLast}>
         {side && <div className={`sv-batband ${side === 'R' ? 'at-right' : 'at-left'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
           <Zone bounds={detail.zone_bounds} candidates={cands} actuals={thrown}

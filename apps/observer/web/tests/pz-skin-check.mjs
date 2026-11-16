@@ -1,0 +1,776 @@
+// PZ-SKIN check (2026-11-15): the teammate colour theme + 3D batter (pz-skin/) on the public game screen, and fixes ①~④.
+//   PZ_SKIN=3d PZ_BATTER_MODEL=batter-ctl npm run build:public && node tests/pz-skin-check.mjs [shotDir]   (PZ_SKIN defaults to off since review P2-4)
+//   PZ_WEB_DIST_PUBLIC=<dir>  test another public build (default dist-public; built with PZ_SKIN=3d)
+//   PZ_CHECK_PORT=<8880-8889> loopback port of the fake static host (default 8884)
+// Synthetic loopback only: tests/fixtures/publish/v1 (stamps moved to "now"), every other origin aborted. No real 3D model exists yet:
+//   model '404'  → every pz/batter3d/assets/* request answers 404 (today's state)
+//   model 'fake' → any *.glb request gets a tiny generated glTF (one triangle, clips idle/contact_hit1/miss/take/hit) so the
+//                  attach / react / unmount paths run with real three.js + WebGL (SwiftShader). Meta files always 404.
+// What it checks: tags and pz/ files; ③ list screen downloads no 3D code, game screen does; 404 → silhouette stays, no errors,
+// bounded retries; fake model → attaches, silhouette hidden, first screen does not move; ① tab return / online re-read does not
+// replay; a new pitch does; ④ box inside 320/344/359/360 screens, zone painted above it; ② contrast; 10/26 show/hide rules;
+// portrait fit (demo/front-fit-1115): zone row = pz-fit.js height, no scroll while above the 150 px floor, wide / landscape untouched.
+import { chromium } from 'playwright';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { skinConfig, skinHtml, skinFiles } from '../pz-skin/plugin.mjs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const dist = path.resolve(process.env.PZ_WEB_DIST_PUBLIC ?? path.join(here, '..', 'dist-public'));
+const v1 = path.join(here, 'fixtures', 'publish', 'v1');
+const PK = 849843, LIVE_PK = 990003;
+const plainDist = path.join(here, '..', 'dist-public-plain');   // same source, PZ_SKIN=off (= the c47 screen), built below
+const noModelDist = path.join(here, '..', 'dist-public-nomodel');   // PZ_SKIN=3d without PZ_BATTER_MODEL (review P2-3), built below
+const PORT = Number(process.env.PZ_CHECK_PORT ?? 8884);
+if (!(PORT >= 8880 && PORT <= 8889)) throw Error('PZ_CHECK_PORT must be 8880-8889');
+const shots = process.argv[2]; if (shots) mkdirSync(shots, { recursive: true });
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.glb': 'model/gltf-binary' };
+let failures = 0, passes = 0;
+const ok = (cond, message, extra) => { if (cond) { passes++; console.log('ok  ', message); } else { failures++; console.error('FAIL', message, extra !== undefined ? JSON.stringify(extra) : ''); } };
+async function waited(message, wait) { try { await wait(); ok(true, message); return true; } catch (e) { ok(false, `${message} — ${String(e).split('\n')[0].slice(0, 160)}`); return false; } }
+
+// ---------- contrast (WCAG 2.x relative luminance) ----------
+const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const rgb = (s) => { if (s.startsWith('#')) { const n = parseInt(s.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; } return s.match(/[\d.]+/g).slice(0, 3).map(Number); };
+const L = (s) => { const [r, g, b] = rgb(s); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); };
+const cr = (a, b) => { const x = L(a), y = L(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+
+// ---------- a tiny valid glb: one triangle node + rotation clips (no skin; batter3d.js falls back to whole-model bounds) ----------
+function fakeGlb() {
+  const clips = [['idle', 1.0], ['contact_hit1', 2.4], ['miss', 2.6], ['take', 1.6], ['hit', 2.4]];
+  const parts = [], views = [], accessors = [];
+  let off = 0;
+  const push = (f32, extra) => { const b = Buffer.from(f32.buffer); views.push({ buffer: 0, byteOffset: off, byteLength: b.length }); accessors.push({ bufferView: views.length - 1, componentType: 5126, ...extra }); parts.push(b); off += b.length; return accessors.length - 1; };
+  const pos = push(new Float32Array([-0.3, 0, 0, 0.3, 0, 0, 0, 1.8, 0]), { count: 3, type: 'VEC3', min: [-0.3, 0, 0], max: [0.3, 1.8, 0] });
+  const animations = clips.map(([name, d]) => {
+    const t = push(new Float32Array([0, d]), { count: 2, type: 'SCALAR', min: [0], max: [d] });
+    const q = push(new Float32Array([0, 0, 0, 1, 0, 0.7071068, 0, 0.7071068]), { count: 2, type: 'VEC4' });
+    return { name, samplers: [{ input: t, output: q, interpolation: 'LINEAR' }], channels: [{ sampler: 0, target: { node: 0, path: 'rotation' } }] };
+  });
+  const bin = Buffer.concat(parts);
+  const json = { asset: { version: '2.0', generator: 'pz-skin-check fake' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name: 'Body', mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: pos }, material: 0 }] }], materials: [{ pbrMetallicRoughness: { baseColorFactor: [0.85, 0.1, 0.1, 1] } }],
+    buffers: [{ byteLength: bin.length }], bufferViews: views, accessors, animations };
+  let js = Buffer.from(JSON.stringify(json)); if (js.length % 4) js = Buffer.concat([js, Buffer.alloc(4 - js.length % 4, 0x20)]);
+  const binP = bin.length % 4 ? Buffer.concat([bin, Buffer.alloc(4 - bin.length % 4)]) : bin;
+  const head = Buffer.alloc(12); head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + js.length + 8 + binP.length, 8);
+  const ch = (len, type) => { const b = Buffer.alloc(8); b.writeUInt32LE(len, 0); b.writeUInt32LE(type, 4); return b; };
+  return Buffer.concat([head, ch(js.length, 0x4e4f534a), js, ch(binP.length, 0x004e4942), binP]);
+}
+const GLB = fakeGlb();
+
+// ---------- fake static host ----------
+const GAME_SEQ = JSON.parse(readFileSync(path.join(v1, 'game', `${PK}.json`), 'utf8')).publish.sequence;
+const LIVE_SEQ = JSON.parse(readFileSync(path.join(v1, 'game', '990003.json'), 'utf8')).publish.sequence;   // the fixture file's own sequence (freshen adds the same step)
+const host = { model: '404', asks: [], synthetic: null, checks: false, slowGameMs: 0, liveDrop: 0, liveBump: 0 };   // liveDrop: serve the live fixture without its newest N pitches
+const started = Date.now();
+const isoNow = () => new Date(Date.now() - 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+function freshen(body) {
+  const at = isoNow(), add = Math.floor((Date.now() - started) / 10000);
+  const stamp = (o) => { if (!o || typeof o !== 'object') return; if (typeof o.published_at === 'string') o.published_at = at; if (Number.isSafeInteger(o.sequence)) o.sequence += add; };
+  stamp(body); stamp(body.publish);
+  if (body.schema?.includes('health') && body.game_checks && typeof body.game_checks === 'object') for (const c of Object.values(body.game_checks)) {
+    if (!c || typeof c !== 'object') continue;
+    if (typeof c.checked_at === 'string') c.checked_at = at;
+    for (const k of ['sequence_checked', 'file_sequence']) if (Number.isSafeInteger(c[k])) c[k] += add;
+  }
+  if (host.checks && body.schema?.includes('health')) { const pk = host.checks === true ? PK : host.checks, fs = (pk === PK ? GAME_SEQ : LIVE_SEQ + host.liveBump) + add;   // ① masked re-read scene (checks = true → PK, or a game number)
+    body.game_checks = { [pk]: { checked_at: at, sequence_checked: Math.max(body.sequence, fs), file_sequence: fs, feed_ok: true } }; }
+  return body;
+}
+const server = createServer((req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const u = new URL(req.url, 'http://x');
+  host.asks.push(u.pathname);
+  const m = u.pathname.match(/\/v1(\/.*)$/);
+  if (m) {
+    const disk = path.resolve(v1, '.' + m[1]);
+    if (!disk.startsWith(v1 + path.sep) || !existsSync(disk) || !statSync(disk).isFile()) { res.writeHead(404); return res.end('not found'); }
+    const send = () => {
+      const body = freshen(JSON.parse(readFileSync(disk, 'utf8')));
+      if (m[1] === `/game/${LIVE_PK}.json`) { if (host.liveDrop > 0) body.pitches = body.pitches.slice(0, -host.liveDrop); if (body.publish) body.publish.sequence += host.liveBump; }   // live swing: the newest pitch "arrives"
+      res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(body));
+    };
+    if (host.slowGameMs && (m[1].startsWith('/game/') || m[1] === '/health.json')) { setTimeout(send, host.slowGameMs); return; }   // the re-read after 'online' takes a while → the screen masks (확인 중)
+    return send();
+  }
+  if (u.pathname.includes('/pz/batter3d/assets/')) {
+    if (host.model === 'fake' && u.pathname.endsWith('.glb')) { res.writeHead(200, { 'content-type': TYPES['.glb'] }); return res.end(GLB); }
+    res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found');
+  }
+  for (const [pre, root] of [['/__plain__/', plainDist], ['/__nomodel__/', noModelDist]]) if (u.pathname.startsWith(pre)) {
+    const f = path.resolve(root, '.' + u.pathname.slice(pre.length - 1));
+    const t = f.startsWith(root + path.sep) && existsSync(f) && statSync(f).isFile() ? f : path.join(root, 'index.html');
+    res.writeHead(200, { 'content-type': TYPES[path.extname(t)] ?? 'application/octet-stream' }); return res.end(readFileSync(t));
+  }
+  const file = path.resolve(dist, '.' + u.pathname);
+  if (file.startsWith(dist + path.sep) && existsSync(file) && statSync(file).isFile()) { res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' }); return res.end(readFileSync(file)); }
+  if (u.pathname === '/__synthetic__.html' && host.synthetic) { res.writeHead(200, { 'content-type': TYPES['.html'] }); return res.end(host.synthetic); }
+  if (path.extname(u.pathname)) { res.writeHead(404); return res.end('not found'); }   // missing files are 404 (a static host), pages fall back to index.html
+  res.writeHead(200, { 'content-type': TYPES['.html'] }); res.end(readFileSync(path.join(dist, 'index.html')));
+});
+await new Promise((r, j) => { server.once('error', j); server.listen(PORT, '127.0.0.1', r); });
+const origin = `http://127.0.0.1:${PORT}`;
+
+const { PZ_SKIN: _s, PZ_BATTER_MODEL: _m, PZ_BATTER_ASSETS_DIR: _a, ...cleanEnv } = process.env;   // plain = NO skin variables at all (review P3-d: proves the default)
+for (const [out, env] of [[plainDist, {}], [noModelDist, { PZ_SKIN: '3d', PZ_BATTER_MODEL: '' }]])
+  execFileSync(process.execPath, [path.join(here, '../node_modules/vite/bin/vite.js'), 'build', '--mode', 'public', '--outDir', out, '--logLevel', 'error'], { cwd: path.join(here, '..'), env: { ...cleanEnv, ...env }, stdio: 'inherit' });
+const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+async function open(width, height, { reduceMotion = false } = {}) {
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, reducedMotion: reduceMotion ? 'reduce' : 'no-preference' });
+  const page = await context.newPage();
+  const errors = [], external = [], requests = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('console', (m) => { if (m.type() === 'error' && !/404|Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
+  page.on('request', (r) => requests.push(new URL(r.url()).pathname));
+  await context.route('**/*', (route) => { const u = new URL(route.request().url()); if (u.origin !== origin) { external.push(u.href); return route.abort('blockedbyclient'); } return route.continue(); });
+  return { context, page, errors, external, requests };
+}
+const IS3D = /\/pz\/(pz-batter\.js|batter3d\/)/;
+const status = (page) => page.evaluate(() => window.PZSongSkin ? window.PZSongSkin.status() : null);
+const silhouette = (page) => page.evaluate(() => { const s = document.querySelector('.sv-game .sv-batband svg'); return s ? getComputedStyle(s).visibility : 'none'; });
+const sideScroll = (page) => page.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
+
+try {
+  // ---------- review P3-d: a build without variables is the plain screen (PZ_SKIN defaults to off) ----------
+  {
+    const cfg = skinConfig({}), page0 = '<!doctype html><html><head><meta name="theme-color" content="#f5f7f8" /><script type="module" src="./a.js"></script></head><body></body></html>';
+    ok(cfg.skin === 'off' && cfg.model === '' && skinFiles(cfg).length === 0 && skinHtml(page0, cfg) === page0, `P3-d no variables → PZ_SKIN off: no pz/ files, index.html untouched (skin ${cfg.skin})`);
+    const plainIndex = readFileSync(path.join(plainDist, 'index.html'));
+    // demo/front-liveswing-1116: GameScreen.tsx now adds data-pz-last-* to the live zone row, so the plain build is c47 + those attributes:
+    // index.html differs from c47 (85616c4b…) only by the JS file name, the CSS file is the same bytes, the JS is +502 B. Pinned anew (review R5: empty key when no pitch yet).
+    ok(createHash('sha256').update(plainIndex).digest('hex') === '16002ccd0058d1af84bee9e230dae2813477840cfaba0b1593f4617d46ebf228', 'P3-d the plain build index.html is the pinned plain bytes (c47 + live attributes, 16002ccd…)');
+  }
+  // ---------- 0. build output (3D build: PZ_SKIN=3d; colour-only build: PZ_SKIN=theme, detected from index.html) ----------
+  const html = readFileSync(path.join(dist, 'index.html'), 'utf8');
+  const mode3d = html.includes('pz/pz-boot.js');
+  console.log(`mode: ${mode3d ? '3d (colour + 3D batter)' : 'theme (colour only)'} — ${dist}`);
+  const cssApp = html.lastIndexOf('<link rel="stylesheet" crossorigin href="./assets/'), cssPz = html.indexOf('<link rel="stylesheet" href="./pz/pz-theme.css">');
+  ok(cssPz > 0 && cssApp >= 0 && cssApp < cssPz, 'index.html: pz-theme.css linked after the app CSS', { cssApp, cssPz });
+  ok(html.includes('<meta name="theme-color" content="#091811" />'), 'index.html: theme-color #091811');
+  if (mode3d) {
+    ok(/<script type="importmap">\{ "imports": \{ "three": "\.\/pz\/batter3d\/vendor\/three\.module\.js", "three\/addons\/": "\.\/pz\/batter3d\/vendor\/addons\/" \} \}<\/script>/.test(html), 'index.html: import map tag');
+    ok(html.indexOf('type="importmap"') < html.indexOf('<script type="module"'), 'index.html: import map before the first module script');
+    ok(html.includes('<script type="module" src="./pz/pz-boot.js"></script>') && !html.includes('pz-batter.js'), 'index.html: ③ only the small boot script is static (no pz-batter.js tag)');
+    for (const f of ['pz/pz-theme.css', 'pz/pz-fit.js', 'pz/pz-boot.js', 'pz/pz-batter.js', 'pz/batter3d/batter3d.js', 'pz/batter3d/vendor/three.module.js', 'pz/batter3d/vendor/three.core.js',
+      'pz/batter3d/vendor/addons/loaders/GLTFLoader.js', 'pz/batter3d/vendor/addons/utils/BufferGeometryUtils.js', 'pz/batter3d/vendor/addons/utils/SkeletonUtils.js', 'pz/batter3d/vendor/LICENSE'])
+      ok(existsSync(path.join(dist, f)), `dist: ${f}`);
+    const assets = path.join(dist, 'pz', 'batter3d', 'assets');
+    const models = existsSync(assets) ? readdirSync(assets).filter((f) => /\.(glb|meta\.json)$/.test(f)) : [];
+    ok(models.length === 0 || !!process.env.PZ_BATTER_ASSETS_DIR, `dist: no model / meta files in pz/batter3d/assets (${models.join(',') || 'none'})`);
+  } else {
+    ok(!html.includes('importmap') && (html.match(/<script /g) || []).length === 1, 'index.html (colour only): no import map, only the app script');
+    ok(!existsSync(path.join(dist, 'pz', 'batter3d')) && !existsSync(path.join(dist, 'pz', 'pz-batter.js')) && !existsSync(path.join(dist, 'pz', 'pz-boot.js')) && !existsSync(path.join(dist, 'pz', 'pz-fit.js')), 'dist (colour only): no 3D / fit files');
+  }
+  const css = readFileSync(path.join(dist, 'pz', 'pz-theme.css'), 'utf8');
+
+  // ---------- ② contrast (tokens in pz-theme.css, then what the page computes) ----------
+  const play = [...css.matchAll(/--sv-g1-play:\s*(#[0-9a-f]{6})/gi)].map((m) => m[1].toLowerCase());
+  ok(play.length === 2 && play.every((c) => c === play[0]), `② --sv-g1-play set the same in game and sheet tokens (${play.join(',')})`);
+  for (const [bg, name] of [['#ffffff', 'paper'], ['#eef8dc', 'selected row'], ['#eef3e8', 'page background']])
+    ok(cr(play[0], bg) >= 3, `② in-play mark vs ${name} ${bg}: ${cr(play[0], bg).toFixed(2)}:1 ≥ 3:1`);
+  ok(!/ffb782/i.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), '② the old #ffb782 is no longer used by any rule (comments aside)');
+
+  if (!mode3d) {   // colour only: neither screen asks for anything under pz/ but the theme
+    const { context, page, errors, requests } = await open(390, 844);
+    await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 });
+    const card = page.locator(`a.sv-card[href*="${PK}"]`).first(); await card.click(); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1500);
+    const pz = [...new Set(requests.filter((p) => p.includes('/pz/')))];
+    ok(pz.length === 1 && pz[0].endsWith('/pz/pz-theme.css'), `colour only: list → game asks only pz/pz-theme.css under pz/ (${pz.join(',')})`);
+    ok(await silhouette(page) === 'visible' && await page.locator('.pz-bat3d').count() === 0, 'colour only: silhouette visible, no 3D box');
+    ok(errors.length === 0, `colour only: no page errors (${errors.length})`, errors.slice(0, 3));
+    await context.close();
+  }
+  if (mode3d) {
+  // ---------- ③ list screen downloads no 3D code; the game screen does ----------
+    host.model = '404';
+    {
+      const { context, page, errors, external, requests } = await open(390, 844);
+      await page.goto(origin + '/');
+      await page.locator('.sv-list').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(1500);
+      ok(requests.some((p) => p.endsWith('/pz/pz-boot.js')) && requests.some((p) => p.endsWith('/pz/pz-theme.css')), '③ list: boot script and theme are loaded');
+      ok(!requests.some((p) => IS3D.test(p)), '③ list: no pz-batter.js / batter3d / three.js request', requests.filter((p) => IS3D.test(p)));
+      ok(await page.evaluate(() => window.PZSongSkinBoot?.status().requested === false), '③ list: boot has not requested the 3D code');
+      const card = page.locator(`a.sv-card[href*="${PK}"]`).first();
+      if (await card.count()) {
+        await card.click();
+        await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+        await waited('③ list → game: 3D code requested once the zone row exists', () => page.waitForFunction(() => window.PZSongSkinBoot?.status().loaded === true, null, { timeout: 15000 }));
+        ok(requests.filter((p) => p.endsWith('/pz/pz-batter.js')).length === 1 && requests.some((p) => p.endsWith('/vendor/three.module.js')) && requests.some((p) => p.endsWith('/vendor/three.core.js')), '③ list → game: pz-batter.js once, three.js module + core fetched');
+      } else ok(false, '③ list shows the fixture game card');
+      ok(errors.length === 0, `③ list/game: no page errors (${errors.length})`, errors.slice(0, 3));
+      ok(external.length === 0, '③ no request leaves the loopback host', external.slice(0, 3));
+      await context.close();
+    }
+
+    // ---------- review P2-3: a 3D build without a model name loads no 3D code at all (0 requests), silhouette stays ----------
+    {
+      const { context, page, errors, requests } = await open(390, 844);
+      await page.goto(`${origin}/__nomodel__/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(2500);
+      for (let i = 0; i < 2; i++) { await page.evaluate(() => window.dispatchEvent(new Event('online'))); await page.waitForTimeout(600); }
+      const boot = await page.evaluate(() => window.PZSongSkinBoot?.status() ?? null);
+      const bad = requests.filter((p) => IS3D.test(p) || p.endsWith('.glb') || p.endsWith('.meta.json'));
+      ok(boot && boot.skipped && !boot.requested && bad.length === 0, `P2-3 no model name: boot skipped (${boot?.skipped}), 3D / model requests ${bad.length}`, bad.slice(0, 3));
+      ok(requests.some((p) => p.endsWith('/pz/pz-theme.css')) && await silhouette(page) === 'visible' && await page.locator('.pz-bat3d').count() === 0, 'P2-3 no model name: theme on, silhouette visible, no 3D box');
+      ok(errors.length === 0, `P2-3 no model name: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
+    }
+
+    // ---------- model 404 (today): silhouette stays, nothing breaks, retries bounded ----------
+    for (const [w, h] of [[390, 844], [320, 568]]) {
+      const { context, page, errors, requests } = await open(w, h);
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      await page.waitForFunction(() => window.PZSongSkinBoot?.status().loaded === true, null, { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(4000);
+      const glb1 = requests.filter((p) => p.endsWith('.glb')).length;
+      for (let i = 0; i < 3; i++) { await page.evaluate(() => window.dispatchEvent(new Event('online'))); await page.waitForTimeout(800); }
+      await page.waitForTimeout(3000);
+      const glb2 = requests.filter((p) => p.endsWith('.glb')).length, st = await status(page);
+      const id = `404 ${w}x${h}`;
+      ok(st && st.attached === false && st.fails >= 1 && st.fails <= 3, `${id}: not attached, fails counted ${st?.fails} (≤ 3)`, st && { last: st.last });
+      ok(glb2 <= 3 && glb2 === glb1, `${id}: model asked ${glb1} → ${glb2} times (≤ 3, no new asks after re-reads)`);
+      ok(await silhouette(page) === 'visible', `${id}: silhouette stays visible`);
+      ok(await page.locator('.pz-bat3d').count() === 0 && await page.locator('.sv-zrow.pz-has3d').count() === 0, `${id}: no 3D box, no pz-has3d left behind`);
+      ok(await sideScroll(page) <= 0, `${id}: no side scroll`);
+      ok(errors.length === 0, `${id}: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, `404-${w}.png`) });
+      await context.close();
+    }
+
+    // ---------- fake model: attach, first screen still, ① no replay on re-read / tab return, new pitch plays ----------
+    host.model = 'fake';
+    {
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      const attached = await waited('fake: 3D attaches with a valid glb (real three.js + WebGL)', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }));
+      if (attached) {
+        ok(await silhouette(page) === 'hidden' && await page.locator('.sv-zrow.pz-has3d .pz-bat3d canvas').count() === 1, 'fake: silhouette hidden, one canvas in the box');
+        await page.waitForTimeout(1200);
+        const s0 = await status(page);
+        ok(s0.played === 0, `fake: first screen does not play a reaction (played ${s0.played})`);
+        // P2-1 (review): picking a swinging-strike row, then a foul row, each plays exactly one reaction (the fake model has miss and contact)
+        const lineText = () => page.evaluate(() => document.querySelector('.sv-game .sv-actual-line')?.innerText ?? '');
+        const pick = async (re) => {
+          if ((await page.locator('.sv-atbat-toggle').getAttribute('aria-expanded')) !== 'true') await page.locator('.sv-atbat-toggle').click();
+          const labels = await page.locator('.sv-pitch-row').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') || ''));
+          const i = labels.findIndex((l) => re.test(l)); if (i < 0) { console.log('note at-bat rows:', labels.join(' | ')); return null; }
+          await page.locator('.sv-pitch-row').nth(i).click(); await page.waitForTimeout(400);
+          const close = page.locator('.sv-sheet button', { hasText: '닫기' }); if (await close.count()) await close.first().click();
+          await page.waitForTimeout(900); return labels[i];
+        };
+        const s1 = await status(page);
+        const missRow = await pick(/헛스윙/), s2 = await status(page);
+        ok(missRow && s2.played === s1.played + 1 && s2.last === 'miss', `P2-1 picking "${missRow}" plays exactly one miss (played ${s1.played} → ${s2.played}, last ${s2.last})`);
+        const foulRow = await pick(/파울|삼진/), s3 = await status(page);
+        ok(foulRow && s3.played === s2.played + 1 && s3.last === 'contact', `P2-1 picking "${foulRow}" plays exactly one contact (played ${s2.played} → ${s3.played}, last ${s3.last})`);
+        // P2-2 (review): the real screen blanks the actual-pitch line while a re-read is masked (확인 중: maskPublished → "실제 투구 기록 없음")
+        // and then shows the same pitch again. Health announces a check for this game; 'online' starts a re-read that answers 2.5 s late.
+        host.checks = true; await page.waitForTimeout(11000);   // a health read with the check (10 s cadence)
+        const before = await lineText(), s4 = await status(page);
+        console.log('note before the masked re-read:', JSON.stringify(before));
+        ok(/실제 투구 · \d+구/.test(before) && !/기록 없음/.test(before), `① real screen: before the re-read the line shows a pitch with a result (review P3-b guard: ${JSON.stringify(before.slice(0, 40))})`);
+        host.slowGameMs = 2500;
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+        const seen = []; for (let k = 0; k < 25; k++) { seen.push((await lineText()).slice(0, 30) + '/' + (await page.evaluate(() => document.querySelector('.sv-hd-status')?.innerText ?? '-'))); await page.waitForTimeout(100); }
+        console.log('note line during re-read:', [...new Set(seen)].join(' | '), '| asks:', host.asks.slice(-6).join(' '));
+        const blanked = await page.waitForFunction(() => /실제 투구 기록 없음/.test(document.querySelector('.sv-game .sv-actual-line')?.innerText ?? ''), null, { timeout: 3000 }).then(() => true, () => false);
+        ok(blanked, '① real screen: the re-read masks the line ("실제 투구 기록 없음") — the scene that replayed before the fix');
+        const back = await page.waitForFunction((t) => (document.querySelector('.sv-game .sv-actual-line')?.innerText ?? '') === t, before, { timeout: 8000 }).then(() => true, () => false);
+        host.slowGameMs = 0; host.checks = false;
+        await page.waitForTimeout(1200);
+        const s5 = await status(page);
+        ok(back && s5.played === s4.played, `① real screen: same pitch back after the masked re-read → no replay (back ${back}, played ${s4.played} → ${s5.played})`);
+      }
+      ok(errors.length === 0, `fake: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, 'fake-390.png') });
+      // leaving the game (list) unmounts the 3D box
+      await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 }); await page.waitForTimeout(500);
+      ok(await page.locator('.pz-bat3d').count() === 0, 'fake: list screen has no 3D box');
+      await context.close();
+    }
+
+    // ---------- ① deterministic DOM-level regression (synthetic page, same pz-batter.js, fake model) ----------
+    {
+      const { context, page, errors } = await open(390, 844);
+      const A = '<span class="sv-al-label">실제 투구 · 3구 · Kim</span><i class="sv-g1 strike">3</i><b class="sv-actual-name">포심</b><span>헛스윙</span>';
+      const B = '<span class="sv-al-label">실제 투구 · 4구 · Kim</span><i class="sv-g1 strike">4</i><b class="sv-actual-name">슬라이더</b><span>파울</span>';   // contact: the fake model (no meta) has no take clip
+      const EMPTY = '<span class="sv-al-label">실제 투구 기록 없음</span>';
+      const CONF = '<span class="sv-al-label">실제 투구 · 4구 · Kim</span><i class="sv-g1 unknown">4</i><b class="sv-actual-name">슬라이더</b><span>확인 중</span>';
+      host.synthetic = `<!doctype html><html><head><meta charset="utf-8">${html.match(/<script type="importmap">[^<]*<\/script>/)[0]}<link rel="stylesheet" href="./pz/pz-theme.css"></head><body>
+        <div class="sv-page sv-game"><main><div class="sv-zrow bat-r" style="position:relative;height:240px;--sv-zone-mid:50%"><div class="sv-batband at-right"><svg width="40" height="120"></svg></div><div class="sv-zone-wrap" style="position:relative"></div></div>
+        <p class="sv-actual-line" id="line">${A}</p></main></div><script type="module" src="./pz/pz-batter.js"></script></body></html>`;
+      await page.goto(`${origin}/__synthetic__.html`);
+      const set = (h) => page.evaluate((h) => { document.getElementById('line').innerHTML = h; }, h);
+      const att = await waited('① synthetic: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }));
+      if (att) {
+        const played = async () => (await status(page)).played;
+        const step = async (h) => { await set(h); await page.waitForTimeout(250); return played(); };
+        const p0 = await played();
+        ok(p0 === 0, `① synthetic: pitch on screen at attach does not play (${p0})`);
+        ok(await step(EMPTY) === 0 && await step(A) === 0, '① synthetic: A → 기록 없음 → A does not replay');
+        ok(await step(CONF) === 0 && await step(A) === 0, '① synthetic: A → 확인 중 → A does not replay');
+        ok(await step(B) === 1, '① synthetic: A → B plays once');
+        ok(await step(EMPTY) === 1 && await step(B) === 1, '① synthetic: B → 기록 없음 → B does not replay');
+        ok(await step(A) === 2, '① synthetic: B → A (picked again) plays');
+        await page.evaluate(() => { document.querySelector('.sv-zrow').className = 'sv-zrow bat-l'; }); await page.waitForTimeout(300);
+        const st = await status(page);
+        ok(st.side === 'L' && await page.locator('.pz-bat3d.side-r').count() === 0, '① synthetic: batter side follows bat-l');
+      }
+      // review P2-2 hole: 3D attaches while the line is a no-result line; the same pitch coming back must not play
+      host.synthetic = host.synthetic.replace(/<p class="sv-actual-line" id="line">[\s\S]*?<\/p>/, `<p class="sv-actual-line" id="line">${EMPTY}</p>`);
+      const page2 = await context.newPage(); page2.on('pageerror', (e) => errors.push(String(e)));
+      await page2.goto(`${origin}/__synthetic__.html`);
+      if (await waited('① synthetic (attach on a blank line): attaches', () => page2.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        const set2 = (h) => page2.evaluate((h) => { document.getElementById('line').innerHTML = h; }, h);
+        const played2 = async () => (await page2.evaluate(() => window.PZSongSkin.status().played));
+        await set2(A); await page2.waitForTimeout(250);
+        ok(await played2() === 0, '① synthetic: attached on "기록 없음", then the pitch appears → no play (it was on screen before)');
+        await set2(EMPTY); await page2.waitForTimeout(250); await set2(A); await page2.waitForTimeout(250);
+        ok(await played2() === 0, '① synthetic: … → 기록 없음 → same pitch → still no play');
+        await set2(B); await page2.waitForTimeout(250);
+        ok(await played2() === 1, '① synthetic: a different pitch then plays once');
+        // review P3-c: the last played pitch survives a re-attach (WebGL context loss / zone row replaced) while the line is blank
+        const reattach = async () => {
+          await page2.evaluate(() => { const r = document.querySelector('.sv-zrow'), n = r.cloneNode(true); n.querySelectorAll('.pz-bat3d').forEach((x) => x.remove()); n.classList.remove('pz-has3d'); n.querySelectorAll('svg').forEach((v) => { v.style.visibility = ''; }); r.replaceWith(n); });
+          return page2.waitForFunction(() => window.PZSongSkin?.status().attached === true && !!document.querySelector('.sv-zrow .pz-bat3d canvas'), null, { timeout: 20000 }).then(() => true, () => false);
+        };
+        await set2(EMPTY); await page2.waitForTimeout(250);
+        const re1 = await reattach(); await set2(B); await page2.waitForTimeout(250);
+        ok(re1 && await played2() === 1, '① synthetic P3-c: B → 기록 없음 → re-attach → B again → no replay');
+        await set2(EMPTY); await page2.waitForTimeout(250);
+        const re2 = await reattach(); await set2(A); await page2.waitForTimeout(250);
+        ok(re2 && await played2() === 2, '① synthetic P3-c: B → 기록 없음 → re-attach → A (a new pitch) → plays (missed before P3-c)');
+      }
+      ok(errors.length === 0, `① synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
+    }
+
+    // ---------- live swing (demo/front-liveswing-1116): the live view has no '실제 투구' line; pz-batter reads .sv-zrow data-pz-last-* ----------
+    {
+      const { context, page, errors } = await open(390, 844);
+      const row = (k, kind, side) => k === null ? '' : ` data-pz-last-key="${k}" data-pz-last-kind="${kind}" data-pz-last-side="${side}"`;
+      host.synthetic = `<!doctype html><html><head><meta charset="utf-8">${html.match(/<script type="importmap">[^<]*<\/script>/)[0]}<link rel="stylesheet" href="./pz/pz-theme.css"></head><body>
+        <div class="sv-page sv-game"><main><div class="sv-zrow bat-r" id="zr"${row('p1', 'miss', 'R')} style="position:relative;height:240px;--sv-zone-mid:50%"><div class="sv-batband at-right"><svg width="40" height="120"></svg></div><div class="sv-zone-wrap" style="position:relative"></div></div>
+        <div id="slot"></div></main></div><script type="module" src="./pz/pz-batter.js"></script></body></html>`;
+      await page.goto(`${origin}/__synthetic__.html`);
+      if (await waited('live synthetic: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        const set = (k, kind = '', side = 'R') => page.evaluate(([k, kind, side]) => { const r = document.getElementById('zr');
+          if (k === null) { for (const a of ['key', 'kind', 'side']) r.removeAttribute('data-pz-last-' + a); } else { r.dataset.pzLastKey = k; r.dataset.pzLastKind = kind; r.dataset.pzLastSide = side; } }, [k, kind, side]);
+        const st = async () => (await status(page));
+        const step = async (...a) => { await set(...a); await page.waitForTimeout(250); return (await st()).played; };
+        const hide = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        ok((await st()).played === 0, `live (a): the newest pitch on screen at attach does not play (${(await st()).played})`);
+        ok(await step('p2', 'contact') === 1 && (await st()).last === 'contact', 'live: a new pitch (foul) plays one contact');
+        ok(await step('p3', 'miss') === 2 && (await st()).last === 'miss', 'live: the next pitch (swinging strike) plays one miss');
+        ok(await step(null) === 2 && await step('p3', 'miss') === 2, 'live (b): attributes gone (masked re-read) → same pitch back → no replay');
+        ok(await step('p3', 'miss') === 2, 'live (b): the same content published again → no replay');
+        ok(await step('p3', 'contact') === 2, 'live (c): a correction of the same pitch (miss → contact) does not replay');
+        ok(await step('p4', '') === 2 && await step('p4', 'contact') === 3, 'live (c): a pitch first shown without a result plays once when its result arrives');
+        const boxSide = () => page.evaluate(() => document.querySelector('.pz-bat3d').classList.contains('side-r') ? 'R' : 'L');
+        const f0 = (await st()).liveFlip;
+        const pd = await step('p5', 'contact', 'L'), sd = await st(), bd = await boxSide();
+        ok(pd === 4 && sd.side === 'L' && bd === 'L' && sd.hold === true && sd.liveFlip === f0 + 1, `live (d): the previous batter's last pitch (side L) while a right-handed batter is up → swings on the L side, not the R side (played ${pd}, side ${sd.side}, box ${bd}, hold ${sd.hold})`);
+        await page.waitForTimeout(2200); const sd2 = await st(), bd2 = await boxSide();
+        ok(sd2.side === 'R' && bd2 === 'R' && sd2.hold === false && sd2.played === 4, `live (d): … then back to the batter at the plate (side ${sd2.side}, box ${bd2}, hold ${sd2.hold})`);
+        await step('p5b', 'contact', 'L'); const sd3 = await st();
+        const pd4 = await step('p6', 'miss', 'R'), sd4 = await st(), bd4 = await boxSide();
+        ok(sd3.hold === true && pd4 === 6 && sd4.side === 'R' && bd4 === 'R' && sd4.last === 'miss', `live (d): a new pitch during that swing ends it and plays on the batter at the plate (played ${pd4}, side ${sd4.side}, box ${bd4})`);
+        // (e) viewer opens a past pitch (the line appears, live attributes go away), a pitch arrives meanwhile, then back to live
+        await page.evaluate(() => { document.getElementById('slot').innerHTML = '<p class="sv-actual-line"><span class="sv-al-label">실제 투구 · 2구 · Kim</span><i class="sv-g1 strike">2</i><b class="sv-actual-name">포심</b><span>파울</span></p>'; });
+        const pe = await step(null);
+        await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; });
+        ok(pe === 6 && await step('p6', 'miss') === 6, 'live (e): past pitch viewed, back to live on the same pitch → no replay');
+        await page.evaluate(() => { document.getElementById('slot').innerHTML = '<p class="sv-actual-line"><span class="sv-al-label">실제 투구 · 2구 · Kim</span><i class="sv-g1 strike">2</i><b class="sv-actual-name">포심</b><span>파울</span></p>'; });
+        await step(null); await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; }); await page.waitForTimeout(250);   // the line goes first, then (next frame) the pitch: deterministic
+        ok(await step('p7', 'contact') === 6 && await step('p8', 'miss') === 7, 'live (e): a pitch that came while viewing a past pitch is only the baseline on return; the next one plays');
+        await hide(true); await step('p9', 'contact'); await hide(false); await page.waitForTimeout(4300);   // past the 4 s re-read window
+        ok((await st()).played === 7 && await step('p10', 'miss') === 8, 'live: tab hidden → pitch arrives → back: that pitch is the baseline, the next one plays');
+        const s9 = await st(); ok(s9.livePlayed === 'p10' && s9.liveCont === true, `live: status exposes livePlayed / liveCont (${s9.livePlayed}, ${s9.liveCont})`);
+        ok(await step('p8', 'miss') === 8, 'live review P2-3: an earlier pitch coming back (p10 → p8, A→B→A) does not replay');
+        await hide(true); await step(null); await hide(false); await page.waitForTimeout(250);
+        const sm = await st();
+        const p11 = await step('p11', 'contact'); await page.waitForTimeout(4300);
+        ok(sm.liveCont === false && p11 === 8 && await step('p12', 'miss') === 9, `live review P2-1: tab back while the attributes are masked → no baseline yet (cont ${sm.liveCont}); the re-read pitch is the baseline, the next one plays`);
+      }
+      ok(errors.length === 0, `live synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
+    }
+    // review P2-1: 3D attaches while the live attributes are masked → the first pitch after the mask is only the baseline
+    {
+      const { context, page, errors } = await open(390, 844);
+      host.synthetic = host.synthetic.replace(/ data-pz-last-key="p1" data-pz-last-kind="miss" data-pz-last-side="R"/, '');
+      await page.goto(`${origin}/__synthetic__.html`);
+      if (await waited('live masked attach: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        const put = (k, kind) => page.evaluate(([k, kind]) => { const r = document.getElementById('zr'); r.dataset.pzLastKey = k; r.dataset.pzLastKind = kind; r.dataset.pzLastSide = 'R'; }, [k, kind]);
+        const c0 = (await status(page)).liveCont; await put('m1', 'miss'); await page.waitForTimeout(250); const a1 = (await status(page)).played;
+        await put('m2', 'contact'); await page.waitForTimeout(250); const a2 = (await status(page)).played;
+        ok(c0 === false && a1 === 0 && a2 === 1, `live review P2-1: attached on masked attributes (cont ${c0}) → first pitch is the baseline (played ${a1}), the next plays (${a2})`);
+        // the race seen on the real screen: the return tick runs before the mask is drawn (old pitch still there), then the mask, then a new pitch
+        await page.evaluate(() => { const r = document.getElementById('zr'); for (const x of ['key', 'kind', 'side']) r.removeAttribute('data-pz-last-' + x); }); await page.waitForTimeout(250);
+        await put('m3', 'miss'); await page.waitForTimeout(250); const a3 = (await status(page)).played;
+        ok(a3 === 2, `live R5 re-review P1-1: continuous watching, m2 → attributes gone (new-file wait mask) → m3 → plays (played ${a3})`);
+        // live with no pitch thrown yet = an empty key (not a mask): the game's first pitch plays
+        await page.evaluate(() => { const r = document.getElementById('zr'); r.removeAttribute('data-pz-last-kind'); r.removeAttribute('data-pz-last-side'); r.dataset.pzLastKey = ''; }); await page.waitForTimeout(250);
+        await put('m4', 'contact'); await page.waitForTimeout(250); const a4 = (await status(page)).played;
+        ok(a4 === 3, `live: empty key (no pitch yet) keeps watching — the first pitch after it plays (played ${a4})`);
+        // the P2-1 race with explicit events: tab back → the return tick sees the old pitch → mask → the re-read pitch → baseline only; later pitches play
+        const vis = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        await vis(true); await page.waitForTimeout(100); await vis(false); await page.waitForTimeout(250);
+        await page.evaluate(() => { const r = document.getElementById('zr'); for (const x of ['key', 'kind', 'side']) r.removeAttribute('data-pz-last-' + x); }); await page.waitForTimeout(250);
+        await put('m5', 'miss'); await page.waitForTimeout(250); const a5 = (await status(page)).played;
+        await page.waitForTimeout(4300); await put('m6', 'contact'); await page.waitForTimeout(250); const a6 = (await status(page)).played;
+        ok(a5 === 3 && a6 === 4, `live R5 re-review: tab back → old pitch → mask → re-read pitch m5 is the baseline (played ${a5}); after the window m6 plays (${a6})`);
+        await page.evaluate(() => dispatchEvent(new Event('online'))); await page.waitForTimeout(100); await put('m7', 'miss'); await page.waitForTimeout(250); const a7 = (await status(page)).played;
+        ok(a7 === 4, `live R5 re-review: online (reconnect) → the re-read pitch is the baseline (played ${a7})`);
+      }
+      ok(errors.length === 0, `live masked attach: no page errors (${errors.length})`);
+      host.synthetic = host.synthetic.replace('id="zr"', 'id="zr" data-pz-last-key="p1" data-pz-last-kind="miss" data-pz-last-side="R"');
+      await context.close();
+    }
+    // live (f): reduced motion → still pose, a new pitch never animates
+    {
+      const { context, page, errors } = await open(390, 844, { reduceMotion: true });
+      await page.goto(`${origin}/__synthetic__.html`);
+      if (await waited('live (f) reduced motion: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        await page.evaluate(() => { const r = document.getElementById('zr'); r.dataset.pzLastKey = 'q2'; r.dataset.pzLastKind = 'miss'; r.dataset.pzLastSide = 'R'; }); await page.waitForTimeout(400);
+        const s = await status(page);
+        ok(s.played === 0 && s.livePlayed === 'q2', `live (f): reduced motion — the new pitch is taken (livePlayed ${s.livePlayed}) but no swing runs (played ${s.played})`);
+      }
+      ok(errors.length === 0, `live (f): no page errors (${errors.length})`);
+      await context.close();
+    }
+    // live swing on the real screen: the live fixture loses its newest pitches, then they "arrive" by re-read (2 s poll)
+    {
+      host.liveDrop = 2; host.liveBump = 0;
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('live real: 3D attached', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        const attrs = () => page.evaluate(() => { const r = document.querySelector('.sv-game .sv-zrow'); return { k: r.getAttribute('data-pz-last-key'), kind: r.getAttribute('data-pz-last-kind'), side: r.getAttribute('data-pz-last-side'), lines: document.querySelectorAll('.sv-actual-line').length }; });
+        const a0 = await attrs(), s0 = await status(page);
+        ok(a0.lines === 0 && a0.k === '849843:10:2' && a0.kind === 'take' && a0.side === 'L' && s0.played === 0, `live real (a): no '실제 투구' line, attributes name the newest pitch (${JSON.stringify(a0)}), first screen still (played ${s0.played})`);
+        host.liveDrop = 1; host.liveBump = 1;
+        const got1 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:3', null, { timeout: 15000 }).then(() => true, () => false);
+        await page.waitForTimeout(300); const s1 = await status(page);
+        ok(got1 && s1.played === 1 && s1.last === 'contact' && s1.side === 'L' && s1.liveFlip === s0.liveFlip + 1, `live real (d): the in-play out of the left-handed batter arrives while the right-handed batter is up → one contact swing on the L side (played ${s1.played}, side ${s1.side})`);
+        await page.waitForTimeout(2200); const s1b = await status(page);
+        ok(s1b.side === 'R' && s1b.hold === false, `live real (d): … then back to the right-handed batter at the plate (side ${s1b.side})`);
+        host.liveDrop = 0; host.liveBump = 2;
+        const got2 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 15000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s2 = await status(page);
+        ok(got2 && s2.played === 2 && s2.last === 'contact' && s2.side === 'R', `live real: the foul arrives on the live screen → one contact swing (played ${s2.played}, last ${s2.last})`);
+        await page.waitForTimeout(5000); const s3 = await status(page);
+        ok(s3.played === 2, `live real (b): 5 s of re-reads of the same content → no replay (played ${s3.played})`);
+        await page.locator('.sv-atbat-toggle').click(); await page.waitForTimeout(300);
+        const rows = page.locator('.sv-pitch-row'); const nrows = await rows.count();
+        if (nrows) { await rows.first().click(); await page.waitForTimeout(500); }
+        // a live game never shows a past pitch on the main screen (GameScreen: pitch = live ? null : selectedPitch) — picking opens a sheet over the live view
+        const ap = await attrs(), sp = await status(page), sheet = await page.locator('.sv-sheet-close').count();
+        ok(nrows > 0 && sheet > 0 && ap.k === '849843:11:1' && ap.lines === 0 && sp.played === 2, `live real (e): picking a pitch opens a sheet, the live view and its attributes stay, no extra swing (${JSON.stringify(ap)}, sheet ${sheet}, played ${sp.played})`);
+        await page.keyboard.press('Escape'); await page.waitForTimeout(600); const sc = await status(page);
+        ok(await page.locator('.sv-sheet-close').count() === 0 && sc.played === 2, `live real (e): closing the sheet → no replay (played ${sc.played})`);
+      }
+      ok(errors.length === 0, `live real: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0;
+      await context.close();
+    }
+    // review P2-1 on the real screen (static mode): tab back → 확인 중 mask drops the attributes → the re-read brings a new pitch → no swing
+    {
+      host.liveDrop = 1; host.liveBump = 0; host.checks = LIVE_PK; host.slowGameMs = 0;
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('live real mask: 3D attached', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true && document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:3', null, { timeout: 20000 }))) {
+        const vis = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        const s0 = await status(page);
+        await vis(true); host.liveDrop = 0; host.liveBump = 1; host.slowGameMs = 1500; await page.waitForTimeout(300);
+        await vis(false);
+        const masked = await page.waitForFunction(() => !document.querySelector('.sv-game .sv-zrow')?.hasAttribute('data-pz-last-key'), null, { timeout: 3000, polling: 50 }).then(() => true, () => false);
+        const got = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 15000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s1 = await status(page);
+        ok(masked && got && s0.played === 0 && s1.played === 0 && s1.livePlayed === '849843:11:1', `live real review P2-1: tab back → masked (${masked}) → re-read brings 11:1 (${got}) → baseline only, no swing (played ${s0.played} → ${s1.played}, livePlayed ${s1.livePlayed})`);
+      }
+      ok(errors.length === 0, `live real mask: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
+      await context.close();
+    }
+    // R5 re-review P1-1 on the real screen: game_checks on + slow game file, NO tab change — every new pitch passes through the new-file mask and must swing
+    {
+      host.liveDrop = 2; host.liveBump = 0; host.checks = LIVE_PK; host.slowGameMs = 1500;
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('live real continuous: 3D attached', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true && document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:2', null, { timeout: 25000 }))) {
+        await page.evaluate(() => { window.__masks = 0; new MutationObserver((rs) => { for (const r of rs) if (r.attributeName === 'data-pz-last-key' && !r.target.hasAttribute('data-pz-last-key')) window.__masks++; })
+          .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-pz-last-key'] }); });
+        const s0 = await status(page);
+        host.liveDrop = 1; host.liveBump = 1;
+        const g1 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:3', null, { timeout: 20000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s1 = await status(page), m1 = await page.evaluate(() => window.__masks);
+        await page.waitForTimeout(2500);
+        host.liveDrop = 0; host.liveBump = 2;
+        const g2 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 20000 }).then(() => true, () => false);
+        await page.waitForTimeout(400); const s2 = await status(page), m2 = await page.evaluate(() => window.__masks);
+        ok(g1 && g2 && m2 >= 2 && s0.played === 0 && s1.played === 1 && s2.played === 2, `live real R5 re-review P1-1: continuous watching with game_checks + slow file (masks seen ${m1} → ${m2}): 10:3 swings (played ${s1.played}), 11:1 swings (played ${s2.played})`);
+      }
+      ok(errors.length === 0, `live real continuous: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
+      await context.close();
+    }
+    // R5 3rd review P2-3 on the real screen: game_checks on + FAST file (250 ms) — tab back: the re-read pitch is the baseline, the next two swing;
+    // online while watching: after the re-read window the next pitches swing (the window used to grow for ever)
+    for (const kind of ['tab', 'online']) {
+      host.liveDrop = kind === 'tab' ? 3 : 2; host.liveBump = 0; host.checks = LIVE_PK; host.slowGameMs = 250;   // online starts on 10:2 (a ball: no take clip in the fake model), so both later pitches are swings
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      const key = () => page.evaluate(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key'));
+      const until = (k) => page.waitForFunction((k) => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === k, k, { timeout: 20000 }).then(() => true, () => false);
+      if (await waited(`live real fast ${kind}: 3D attached`, () => page.waitForFunction((k0) => window.PZSongSkin?.status().attached === true && document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === k0, kind === 'tab' ? '849843:10:1' : '849843:10:2', { timeout: 25000 }))) {
+        const vis = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        await page.evaluate(() => { const t0 = performance.now(); window.__tl = []; new MutationObserver(() => { const r = document.querySelector('.sv-game .sv-zrow'), k = r?.getAttribute('data-pz-last-key'); const v = k === null || k === undefined ? '-' : k.slice(-4); if (window.__tl[window.__tl.length - 1]?.[1] !== v) window.__tl.push([Math.round(performance.now() - t0), v, window.PZSongSkin.status().rebase]); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-pz-last-key'] }); });
+        let gA;
+        if (kind === 'tab') { await vis(true); host.liveDrop = 2; host.liveBump = 1; await page.waitForTimeout(300); await vis(false); gA = await until('849843:10:2'); }
+        else { await page.evaluate(() => dispatchEvent(new Event('online'))); gA = true; }
+        await page.waitForTimeout(400); const sA = await status(page);
+        await page.waitForTimeout(4500);   // past the 4 s re-read window
+        host.liveDrop = 1; host.liveBump = kind === 'tab' ? 2 : 1;
+        const gB = await until('849843:10:3'); await page.waitForTimeout(2600); const sB = await status(page);   // 10:3 = other side → hold ~1.2 s
+        host.liveDrop = 0; host.liveBump = kind === 'tab' ? 3 : 2;
+        const gC = await until('849843:11:1'); await page.waitForTimeout(400); const sC = await status(page);
+        ok(gA && gB && gC && sA.played === 0 && sB.played === 1 && sC.played === 2,
+          `live real R5 3rd P2-3 (${kind}, fast file 250 ms): ${kind === 'tab' ? 'the re-read pitch is the baseline' : 'online re-read'} (played ${sA.played}), then the next two pitches swing (played ${sB.played}, ${sC.played}; key ${await key()}; timeline ${JSON.stringify(await page.evaluate(() => window.__tl))})`);
+      }
+      ok(errors.length === 0, `live real fast ${kind}: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
+      await context.close();
+    }
+    // finished game: never live attributes
+    {
+      const { context, page } = await open(390, 844);
+      await page.goto(`${origin}/?game=${PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      ok(await page.evaluate(() => !document.querySelector('[data-pz-last-key]')), 'live attributes: absent on a finished game');
+      await context.close();
+    }
+
+    // ---------- ④ (review R4 P2-3): narrow widths on a tall screen — the zone stays 216 and the box keeps 140×210, inside the screen ----------
+    for (const w of [320, 344, 359]) {
+      const { context, page, errors } = await open(w, 900);
+      await page.goto(`${origin}/?game=${PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited(`④ ${w}x900: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        for (const side of ['R', 'L']) {
+          const r = await page.evaluate((side) => { const box = document.querySelector('.pz-bat3d'); box.classList.toggle('side-r', side === 'R'); const b = box.getBoundingClientRect();
+            return { l: b.left, r: b.right, w: b.width, h: b.height, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zone: document.querySelector('.sv-game .sv-zrow').getBoundingClientRect().height }; }, side);
+          ok(r.zone === 216 && r.w === 140 && r.h === 210 && r.l >= 0 && r.r <= r.vw && r.sw <= 0, `④ ${w}x900 side ${side}: zone 216, box 140×210 inside the screen (${r.w}×${r.h} at ${r.l.toFixed(1)}..${r.r.toFixed(1)} of ${r.vw}, zone ${r.zone})`);
+        }
+      }
+      ok(errors.length === 0, `④ ${w}x900: no page errors (${errors.length})`);
+      await context.close();
+    }
+    // ---------- ④ box geometry (real attach with fake model at each width, both sides by class) + zone painted above ----------
+    for (const w of [320, 344, 359, 360, 390, 402]) {
+      const { context, page, errors } = await open(w, w < 360 ? 640 : 760);
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (!(await waited(`④ ${w}: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 })))) { await context.close(); continue; }
+      for (const side of ['R', 'L']) {
+        const r = await page.evaluate((side) => {
+          const box = document.querySelector('.pz-bat3d'); box.classList.toggle('side-r', side === 'R');
+          const b = box.getBoundingClientRect(), zw = document.querySelector('.sv-zrow .sv-zone-wrap');
+          const zr = document.querySelector('.sv-game .sv-zrow').getBoundingClientRect(), fit = window.PZFit ? window.PZFit.status() : null;
+          return { l: b.left, r: b.right, w: b.width, h: b.height, t: b.top, bt: b.bottom, zt: zr.top, zb: zr.bottom, zv: zr.height, fit: fit && fit.applied, vw: innerWidth, sw: document.scrollingElement.scrollWidth - innerWidth, zBox: getComputedStyle(box).zIndex, zZone: getComputedStyle(zw).zIndex, posZone: getComputedStyle(zw).position };
+        }, side);
+        ok(r.l >= 0 && r.r <= r.vw && r.sw <= 0, `④ ${w} side ${side}: box inside the screen (${r.l.toFixed(1)}..${r.r.toFixed(1)} of ${r.vw}, side scroll ${r.sw})`);
+        // fit (demo/front-fit-1115): the zone row is the fitted height (pz-fit.js, 150..216) and the box follows it at 2:3, never taller than the row
+        const zoneWant = r.fit ?? 216, boxH = Math.min(210, zoneWant), boxW = boxH * 2 / 3;
+        ok(Math.abs(r.zv - zoneWant) < 0.5 && zoneWant >= 150 && zoneWant <= 216, `④ ${w} side ${side}: zone row = fitted ${zoneWant}px (${r.zv})`);
+        ok(Math.abs(r.h - boxH) < 0.5 && Math.abs(r.w - boxW) < 0.5 && r.t >= r.zt - 0.5 && r.bt <= r.zb + 0.5, `④ ${w} side ${side}: box ${boxW.toFixed(1)}×${boxH} inside the zone row (${r.w.toFixed(1)}×${r.h.toFixed(1)})`);
+        ok(Number(r.zZone) > Number(r.zBox) && r.posZone === 'relative', `④ ${w} side ${side}: zone (z ${r.zZone}) above the 3D box (z ${r.zBox})`);
+      }
+      // paint: fill the box red; the zone frame's right edge where it overlaps the box must still show the zone stroke, not red
+      const probe = await page.evaluate(() => {
+        const box = document.querySelector('.pz-bat3d'); box.classList.add('side-r');
+        const red = document.createElement('div'); red.id = 'pz-red'; red.style.cssText = 'position:absolute;inset:0;background:#ff0000'; box.append(red);
+        const zb = document.querySelector('.sv-zrow .sv-zone-box'); const z = zb.getBoundingClientRect(), b = box.getBoundingClientRect();
+        return { x: z.right, y: (Math.max(z.top, b.top) + Math.min(z.bottom, b.bottom)) / 2, overlap: z.right > b.left && z.left < b.right };
+      });
+      if (probe.overlap) {
+        const png = await page.screenshot({ clip: { x: probe.x - 1, y: probe.y - 1, width: 2, height: 2 } });   // 4×4 device px; (2,2) = the stroke centre (SVG bbox = geometry edge)
+        const px = await page.evaluate(async (b64) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); return [...x.getImageData(2, 2, 1, 1).data]; }, png.toString('base64'));
+        ok(!(px[0] > 200 && px[1] < 60 && px[2] < 60), `④ ${w}: zone frame painted over the box where they overlap (pixel ${px.slice(0, 3).join(',')})`);
+      } else {   // review R3 P2-3: a smaller (fitted) box may not reach the frame — then it must not cover it at all
+        const gap = await page.evaluate(() => { const z = document.querySelector('.sv-zrow .sv-zone-box').getBoundingClientRect(), b = document.querySelector('.pz-bat3d').getBoundingClientRect(); return b.left - z.right; });
+        ok(gap >= 0, `④ ${w}: box does not reach the zone frame, so nothing to cover (gap ${gap.toFixed(1)}px)`);
+      }
+      await page.evaluate(() => document.getElementById('pz-red')?.remove());
+      ok(errors.length === 0, `④ ${w}: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, `fake-${w}.png`) });
+      await context.close();
+    }
+  }
+
+  // ---------- ② what the page paints: list mark and zone mark of an in-play pitch, legend ----------
+  {
+    const { context, page } = await open(390, 844);
+    await page.goto(`${origin}/?game=${PK}`);
+    await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+    const c = await page.evaluate(() => {
+      const g = document.querySelector('.sv-game');
+      const i = document.createElement('i'); i.className = 'sv-g1 inplay'; i.textContent = '7'; g.append(i);
+      const s = getComputedStyle(i), out = { listBg: s.backgroundColor, listFg: s.color };
+      const ring = document.createElement('i'); ring.className = 'sv-g1 ball ring'; g.append(ring); out.ring = getComputedStyle(ring).boxShadow;
+      const k = document.querySelector('.sv-zone-legend .k.inplay'); out.legend = k ? getComputedStyle(k).backgroundColor : null;
+      // review P3-a: the fixture's shown pitch is not in play, so put an in-play mark with Zone.tsx's markup into the real zone svg and
+      // read what the page's CSS paints (selectors .sv-game .sv-actual.g1.inplay > circle / .sv-g1-num)
+      const svg = document.querySelector('.sv-game .sv-zone'), NS = 'http://www.w3.org/2000/svg';
+      const gm = document.createElementNS(NS, 'g'); gm.setAttribute('class', 'sv-actual g1 inplay latest');
+      const cc = document.createElementNS(NS, 'circle'); cc.setAttribute('cx', '10'); cc.setAttribute('cy', '10'); cc.setAttribute('r', '9');
+      const tt = document.createElementNS(NS, 'text'); tt.setAttribute('class', 'sv-g1-num'); tt.textContent = '7'; gm.append(cc, tt); svg?.append(gm);
+      out.zoneFill = svg ? getComputedStyle(cc).fill : null; out.zoneNum = svg ? getComputedStyle(tt).fill : null; gm.remove();
+      i.remove(); ring.remove(); return out;
+    });
+    ok(cr(c.listBg, '#ffffff') >= 3, `② list in-play mark ${c.listBg} vs white ${cr(c.listBg, '#ffffff').toFixed(2)}:1 ≥ 3`);
+    ok(cr(c.listFg, c.listBg) >= 4.5, `② list in-play number ${c.listFg} on ${c.listBg} ${cr(c.listFg, c.listBg).toFixed(2)}:1 ≥ 4.5`);
+    const ringColor = (c.ring.match(/rgb\([^)]*\)/g) || []).pop();
+    ok(ringColor && cr(ringColor, '#ffffff') >= 3, `② recent-pitch ring ${ringColor} vs white ${ringColor ? cr(ringColor, '#ffffff').toFixed(2) : '?'}:1 ≥ 3`);
+    if (c.legend) ok(cr(c.legend, '#ffffff') >= 3, `② legend in-play dot ${c.legend} ${cr(c.legend, '#ffffff').toFixed(2)}:1 ≥ 3`); else ok(false, '② legend in-play dot present');
+    if (c.zoneFill && c.zoneFill !== 'none') { ok(cr(c.zoneFill, '#ffffff') >= 3, `② zone in-play mark ${c.zoneFill} ${cr(c.zoneFill, '#ffffff').toFixed(2)}:1 ≥ 3`); ok(c.zoneNum && cr(c.zoneNum, c.zoneFill) >= 4.5, `② zone in-play number ${c.zoneNum} ${c.zoneNum ? cr(c.zoneNum, c.zoneFill).toFixed(2) : '?'}:1 ≥ 4.5`); }
+    else ok(false, `② zone in-play mark could not be measured (fill ${c.zoneFill})`);
+    await context.close();
+  }
+
+  // ---------- 10/26 show / hide rules with the skin on (handoff §8) ----------
+  const notes = [];
+  const look = async (page) => page.evaluate(() => {
+    const main = document.querySelector('.sv-page'); const c = main.cloneNode(true); c.querySelectorAll('.sv-backdrop, .sv-sheet').forEach((x) => x.remove());
+    const ab = document.querySelector('.sv-atbat-head')?.getBoundingClientRect(), nav = document.querySelector('.sv-bottom-nav')?.getBoundingClientRect();
+    return { vScroll: document.scrollingElement.scrollHeight - innerHeight, hScroll: document.scrollingElement.scrollWidth - innerWidth,
+      toggle: document.querySelector('.sv-atbat-toggle')?.getAttribute('aria-expanded') ?? null, list: document.querySelectorAll('.sv-atbat-list .sv-pitch-row').length,
+      nav: [...document.querySelectorAll('.sv-bottom-nav button')].map((b) => b.innerText.trim()),
+      switches: document.querySelectorAll('input[type=checkbox], input[type=range], [role=switch]').length,
+      prevNext: [...c.querySelectorAll('button')].filter((b) => /^[‹›]$/.test(b.innerText.trim())).length,
+      abBottom: ab ? ab.bottom : null, navTop: nav ? nav.top : null, text: c.innerText };
+  });
+  for (const pk of [PK, LIVE_PK]) for (const [w, h] of [[402, 681], [360, 620]]) {
+    const id = `show/hide ${pk} ${w}x${h}`;
+    const got = {};
+    for (const which of ['skin', 'plain']) {
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}${which === 'plain' ? '/__plain__' : ''}/?game=${pk}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(1500);
+      got[which] = await look(page);
+      ok(errors.length === 0, `${id} ${which}: no page errors (${errors.length})`, errors.slice(0, 3));
+      if (shots) await page.screenshot({ path: path.join(shots, `showhide-${which}-${pk}-${w}x${h}.png`) });
+      await context.close();
+    }
+    const r = got.skin, p = got.plain;
+    ok(r.vScroll <= p.vScroll, `${id}: skin adds no vertical scroll (skin ${r.vScroll}px, plain c47 ${p.vScroll}px)`);
+    if (r.vScroll > 1 || p.vScroll > 1) notes.push(`${id}: first screen scrolls ${r.vScroll}px with the skin, ${p.vScroll}px without (rule: 0) — pre-existing in the plain build`);
+    if (r.abBottom !== null && r.navTop !== null && r.abBottom > r.navTop) notes.push(`${id}: "이번 타석" line bottom ${r.abBottom.toFixed(0)} under the bottom bar top ${r.navTop.toFixed(0)} (plain: ${p.abBottom?.toFixed(0)} / ${p.navTop?.toFixed(0)})`);
+    ok(r.hScroll <= 0, `${id}: no side scroll (${r.hScroll}px)`);
+    ok(r.toggle === 'false' && r.list === 0, `${id}: "이번 타석" folded by default (aria-expanded ${r.toggle}, ${r.list} rows)`);
+    ok(r.nav.length === 4 && r.nav.join('|') === '추천|선수|구종|기록', `${id}: bottom menu has 4 items (${r.nav.join('|')})`);
+    ok(r.switches === 0, `${id}: no user switches (${r.switches})`);
+    ok(r.prevNext === 0, `${id}: no ‹ › pitch buttons on the main screen (${r.prevNext})`);
+    ok(!/스포일러|TV 중계보다|자동 진행|투구 애니메이션|라인업|선택 투구/.test(r.text), `${id}: no in-screen notice / V4 control words`);
+    ok(r.text === p.text, `${id}: same visible text as the plain c47 screen`);
+  }
+  for (const n of notes) console.log('note', n);
+
+  if (mode3d) {
+  // ---------- portrait fit (demo/front-fit-1115): zone = clamp(150, visible height − everything else, 216); scroll only below the floor ----------
+    // review R4 P2-3: fixed expectations (zone px, spacing trimmed?) measured 2026-11-15 on the fixtures — not "measured = measured"
+    const PIN = { [PK]: { '430x740': [216, false], '402x681': [216, true], '393x659': [216, true], '375x667': [216, true], '360x620': [188, true], '320x568': [150, true], '360x480': [150, true] },
+      [LIVE_PK]: { '430x740': [216, false], '402x681': [216, true], '393x659': [209, true], '375x667': [216, true], '360x620': [170, true], '320x568': [150, true], '360x480': [150, true] } };
+    for (const pk of [PK, LIVE_PK]) for (const [w, h] of [[430, 740], [402, 681], [393, 659], [375, 667], [360, 620], [320, 568], [360, 480]]) {
+      const id = `fit ${pk} ${w}x${h}`, [pinZone, pinTight] = PIN[pk][`${w}x${h}`];
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => { const f = window.PZFit?.status(), z = document.querySelector('.sv-game .sv-zrow').getBoundingClientRect();
+        return { applied: f?.applied ?? null, tight: f?.tight ?? null, rest: f?.rest ?? null, zone: z.height, scroll: document.scrollingElement.scrollHeight - innerHeight, side: document.scrollingElement.scrollWidth - innerWidth }; });
+      ok(r.applied === pinZone && Math.abs(r.zone - pinZone) < 0.5 && r.tight === pinTight, `${id}: zone ${pinZone}px, spacing ${pinTight ? 'trimmed' : 'as is'} (zone row ${r.zone}, applied ${r.applied}, trimmed ${r.tight}, rest ${r.rest})`);
+      if (r.applied > 150) ok(r.scroll <= 0, `${id}: fits — no vertical scroll (${r.scroll}px, zone ${r.applied})`);
+      else {
+        await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight)); await page.waitForTimeout(200);
+        const end = await page.evaluate(() => { const nav = document.querySelector('.sv-bottom-nav').getBoundingClientRect().top; const bs = [...document.querySelectorAll('.sv-stage > *')].map((e) => e.getBoundingClientRect().bottom); return { nav, last: Math.max(...bs) }; });
+        ok(r.scroll > 0 && end.last <= end.nav + 0.5, `${id}: below the floor (zone 150) it scrolls ${r.scroll}px and the last line ends above the bottom menu at the end (${end.last.toFixed(0)} ≤ ${end.nav.toFixed(0)})`);
+      }
+      ok(r.side <= 0 && errors.length === 0, `${id}: no side scroll (${r.side}), no page errors (${errors.length})`);
+      if (shots && [[393, 659], [360, 480]].some(([a, b]) => a === w && b === h)) await page.screenshot({ path: path.join(shots, `fit-${pk}-${w}x${h}.png`) });
+      await context.close();
+    }
+    // review R4 P2-1: left alone, pz-fit does not run again (no re-measure loop) — attached, trimmed size, tall size, and with the batter band gone
+    for (const [pk, w, h] of [[LIVE_PK, 393, 659], [PK, 393, 659], [LIVE_PK, 402, 874]]) {
+      const id = `fit idle ${pk} ${w}x${h}`;
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      await waited(`${id}: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 })); await page.waitForTimeout(1500);
+      const runs = () => page.evaluate(() => window.PZFit.status().runs);
+      const a = await runs(); await page.waitForTimeout(5000); const b = await runs();
+      ok(b - a === 0, `${id}: 5 s idle after attach → pz-fit runs +${b - a} (want 0)`);
+      await page.evaluate(() => document.querySelectorAll('.sv-game .sv-batband').forEach((e) => e.remove())); await page.waitForTimeout(500);
+      const c = await runs(); await page.waitForTimeout(5000); const d = await runs();
+      ok(d - c === 0 && await page.evaluate(() => document.querySelector('.pz-bat3d')?.hidden === true), `${id}: batter side unknown (band gone), box hidden, 5 s → runs +${d - c} (want 0)`);
+      ok(errors.length === 0, `${id}: no page errors (${errors.length})`);
+      await context.close();
+    }
+    // review R4 P2-2 (PM decision): the opened "이번 타석" list is not part of the first screen — zone and 3D stay, the page scrolls like c47
+    for (const [pk, w, h] of [[PK, 393, 659], [PK, 360, 620]]) {
+      const id = `fit at-bat list ${pk} ${w}x${h}`;
+      const { context, page, errors } = await open(w, h);
+      await page.goto(`${origin}/?game=${pk}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(1200);
+      const st = () => page.evaluate(() => ({ zone: document.querySelector('.sv-game .sv-zrow').getBoundingClientRect().height, tight: window.PZFit.status().tight, rows: document.querySelectorAll('.sv-atbat-list .sv-pitch-row').length, scroll: document.scrollingElement.scrollHeight - innerHeight, box: (() => { const b = document.querySelector('.pz-bat3d')?.getBoundingClientRect(); return b ? +b.height.toFixed(1) : null; })() }));
+      const s0 = await st(); await page.locator('.sv-atbat-toggle').click(); await page.waitForTimeout(500); const s1 = await st();
+      if (shots) await page.screenshot({ path: path.join(shots, `fit-atbat-open-${pk}-${w}x${h}.png`), fullPage: true });
+      ok(s1.rows > 0 && s1.zone === s0.zone && s1.tight === s0.tight && s1.box === s0.box, `${id}: opened (${s1.rows} rows) → zone ${s0.zone} → ${s1.zone}, trimmed ${s0.tight} → ${s1.tight}, 3D box ${s0.box} → ${s1.box} (unchanged)`);
+      ok(s1.scroll > s0.scroll, `${id}: opened list lengthens the page instead (scroll ${s0.scroll} → ${s1.scroll})`);
+      await page.locator('.sv-atbat-toggle').click(); await page.waitForTimeout(500); const s2 = await st();
+      ok(s2.rows === 0 && s2.zone === s0.zone && s2.scroll === s0.scroll, `${id}: folded again → same as before (zone ${s2.zone}, scroll ${s2.scroll})`);
+      // an open sheet (추천 자세히) is position: fixed — the zone does not change either
+      const more = page.locator('.sv-state-more, .sv-reclist').first();
+      if (await more.count()) { await more.click(); await page.waitForTimeout(600); const s3 = await st(); const open = await page.locator('.sv-sheet').count();
+        ok(open > 0 && s3.zone === s0.zone && s3.tight === s0.tight, `${id}: open sheet → zone ${s3.zone}, trimmed ${s3.tight} (unchanged)`);
+        if (shots) await page.screenshot({ path: path.join(shots, `fit-sheet-open-${pk}-${w}x${h}.png`) });
+        const close = page.locator('.sv-sheet button', { hasText: '닫기' }); if (await close.count()) await close.first().click(); }
+      ok(errors.length === 0, `${id}: no page errors (${errors.length})`);
+      await context.close();
+    }
+    for (const [w, h, zone] of [[1920, 1080, 330], [740, 360, 216]]) {   // wide (≥760) and a narrow landscape screen: untouched
+      const { context, page } = await open(w, h); await page.goto(`${origin}/?game=${PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 }); await page.waitForTimeout(800);
+      const r = await page.evaluate(() => ({ applied: window.PZFit?.status().applied ?? null, zone: document.querySelector('.sv-game .sv-zrow').getBoundingClientRect().height, v: document.documentElement.style.getPropertyValue('--pz-zone-fit') }));
+      ok(r.applied === null && r.v === '' && Math.abs(r.zone - zone) < 0.5, `fit ${w}x${h}: not applied (zone ${r.zone}, expected ${zone})`);
+      await context.close();
+    }
+    // the list screen: nothing applied
+    { const { context, page } = await open(393, 659); await page.goto(origin + '/'); await page.locator('.sv-list').waitFor({ timeout: 15000 }); await page.waitForTimeout(500);
+      ok(await page.evaluate(() => document.documentElement.style.getPropertyValue('--pz-zone-fit') === ''), 'fit: list screen has no fitted height'); await context.close(); }
+  }
+
+  if (mode3d) {
+  // ---------- reduced motion: attaches but never plays ----------
+    {
+      const { context, page, errors } = await open(390, 844, { reduceMotion: true });
+      await page.goto(`${origin}/?game=${PK}`);
+      await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      if (await waited('reduced motion: attaches', () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true, null, { timeout: 20000 }))) {
+        await page.waitForTimeout(800);
+        const st = await status(page);
+        ok(st.state && st.state.idleLoop === false, `reduced motion: no idle loop (${st.state?.idleLoop})`);
+      }
+      ok(errors.length === 0, `reduced motion: no page errors (${errors.length})`, errors.slice(0, 3));
+      await context.close();
+    }
+  }
+} catch (e) {
+  ok(false, `unexpected: ${String(e && e.stack || e).slice(0, 400)}`);
+} finally {
+  await browser.close(); server.close();
+}
+console.log(`\n${passes} ok, ${failures} FAIL`);
+process.exit(failures ? 1 : 0);
