@@ -78,7 +78,7 @@ def test_lost_response_is_reconciled_by_head_with_or_without_remote_commit(mirro
     sink.write(GAME, b'{"attempt":1}')
     assert (GAME in endpoint.objects) is stored
     attempt = dict(state['upload_attempts'][GAME])
-    assert (attempt['phase'], attempt['reason'], attempt['unknown_count'], attempt['detail']) == ('retry', 'upload_unknown', 1, 'TimeoutError')
+    assert (attempt['phase'], attempt['reason'], attempt['unknown_count'], attempt['detail']) == ('retry', 'upload_unknown', 1, 'send_TimeoutError')
     assert TOKEN not in saved.read_text()
     monkeypatch.setattr(endpoint, 'handle', original)
     if after_restart:

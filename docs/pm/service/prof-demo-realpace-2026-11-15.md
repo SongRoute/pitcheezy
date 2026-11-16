@@ -235,9 +235,17 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 **원인 — 확인한 것과 추정:**
 - 확인: 두 PUT 모두 **자식이 스스로 `upload_unknown`을 답했다**(추적의 traceback이 `upload_worker.py:151`, 자식 응답 경로). 부모 쪽 마감(15초)·응답 놓침이 아니다. 자식 안에서 `upload_unknown`은 (가) `HttpSink._request`의 연결 예외(`OSError`·`HTTPException` 등), (나) 200이 아닌 예상 밖 상태(5xx 등), (다) 그 밖의 모든 예외(`except BaseException`)에서 나온다. 옛 코드는 예외 이름을 버려 셋을 구분할 수 없었다.
 - 확인: 11:18:57 PUT 자식은 앞 HEAD 자식을 거둔 뒤 0.21초 만에 답했다. 바로 뒤 정상 요청 5건의 간격(0.35~0.68초, 추적의 자식 회수 시각)보다 짧다 → 5초 소켓 시간 초과가 아니라 **빨리 끝난 실패**다.
+- 확인(팀원 호스트 기록, 11/16 추가): **세 건 모두 호스트 코드까지 오지 않았다.** 11:18:57 `games/2026-10-29.json`은 직전 HEAD 404만 있고 PUT이 없다(다음 회차 11:20:22에 처음 200). 11:23:58 HEAD는 manifest로 추정(그 회차 주기에 manifest 조회·올리기만 빠짐). 즉 셋 다 맥미니에서 나가는 단계(자식 내부·연결·TLS)에서 끝났다.
+- 확인(코드): 자식 안에서 `upload_unknown`이 나오는 곳은 스냅샷 파일 읽기(PUT만)와 `HttpSink._request`(연결 예외·200 아닌 상태)뿐이다. 설정·토큰 읽기 실패는 `upload_config_invalid`로 다른 코드다. 그래서 **11:23:58 HEAD(스냅샷 없음)는 `_request` 안, 곧 네트워크 단계에서 실패한 것이 확정**이다. 두 PUT은 스냅샷 읽기 가능성이 아직 남는다.
+- 확인(시간): 이 맥에서 자식 하나의 고정 비용(spawn·import·회수)은 네트워크가 1ms인 경우에도 **약 270ms**다(가짜 수신기, 닫힌 포트·정상 각 20회, 중앙값 272·274ms, 최소 269ms). 오늘 실패한 자식은 앞 자식 회수부터 **212ms(PUT 11:18:57)·224ms(HEAD 11:23:58)** 만에 답했다 — 고정 비용과 같거나 짧다. 원격 TLS 왕복(정상 요청 간격 350~680ms에 포함)을 하지 않고 **연결 시작 직후(이름 풀이·TCP 연결) 또는 그 전에** 끝났다는 뜻이다.
 - 확인(로컬 재현 실패): 같은 849799 시작을 새 코드로 **12번**(3개씩 4번, 각 40초, 가짜 수신기, `repro/start1/summary.txt`) 띄웠다 — 요청 969건(HEAD 485·PUT 484) 중 업로드 실패 **0**. 시작 직후 로컬 경합(스냅샷 파일 없음·자식 시작 경합 등)이라면 여기서도 나왔어야 한다. 다만 가짜 수신기는 TLS 없는 loopback이라 연결 단계는 흉내 내지 못한다.
-- 추정(확인 못 함): 호스트 코드까지 안 온 점, 빠른 실패, 로컬 0/12를 합치면 **연결 단계**(TLS·앞단 프록시가 연결을 끊음, 또는 앞단이 호스트 코드 전에 5xx를 줌) 쪽이다. 어느 것인지는 다음 실제 전송의 `detail`로 가른다.
-- 바꾼 것: 예외 **클래스 이름**(또는 `http_<상태>`)만 `detail`로 상태 파일·로그에 남긴다 — 예: `RemoteDisconnected`, `ConnectionResetError`, `TimeoutError`, `http_503`, 자식 안 기타 예외는 `child_<이름>`, 부모 마감은 `deadline`, 자식이 답 없이 죽으면 `child_exit_<코드>`. 주소·토큰·헤더·예외 문구는 남기지 않는다. 다음 실제 전송에서 이 값으로 (가)/(나)/(다)를 가른다.
+- 추정(확인 못 함): HEAD가 네트워크 단계로 확정이고, 세 건 모두 같은 모양(빠름·호스트 미도착)이며 로컬 0/12이므로, 셋 다 **맥미니 쪽 연결 시작 단계**(이름 풀이 실패·TCP 연결 즉시 거절/끊김 등)일 가능성이 가장 크다. TLS 중간 끊김이나 앞단 5xx는 원격 왕복 시간이 들어 212ms 안에 들어오기 어렵다. 어느 것인지는 다음 실제 전송의 `detail`로 가른다.
+- 바꾼 것: **어느 단계에서, 어떤 예외 클래스로, 몇 ms 만에** 실패했는지만 상태 파일(`detail`, `elapsed_ms`)·로그에 남긴다. 주소·토큰·헤더·예외 문구는 남기지 않는다.
+  - `connect_<예외>` = 이름 풀이·TCP·TLS(이제 요청 전에 따로 연결한다). 예: `connect_gaierror`(이름 풀이), `connect_ConnectionRefusedError`, `connect_SSLError`, `connect_TimeoutError`.
+  - `send_<예외>` = 요청 보내는 중, `response_<예외>` = 응답 기다리는 중(예: `response_RemoteDisconnected` = 도착했을 수 있음).
+  - `http_<상태>` = 누군가 200이 아닌 상태를 답함(앞단 프록시 5xx면 여기).
+  - `child_snapshot_<예외>` = 자식 안 **로컬** 스냅샷 읽기, `child_init_…`·`child_transport_…` = 그 밖의 자식 내부 예외. 부모 마감은 `deadline`, 자식이 답 없이 죽으면 `child_exit_<코드>`.
+  - 다음 실제 전송에서 끊김이 다시 나면 `out.state.json`의 `upload_attempts[경로].detail`·`elapsed_ms`(대조가 끝나 지워졌으면 `publisher.log`의 `upload_failed` 줄)를 본다: `child_snapshot_…`이면 로컬, `connect_…`이면 연결 단계다.
 
 **수정(`publisher.py`·`upload_worker.py`):** PUT/DELETE 결과를 모를 때(`upload_unknown`: 연결 끊김·소켓 시간 초과·5xx·자식 비정상 종료·작업자 마감) 영구 `blocked` 대신 `retry`(`reason` `upload_unknown`, `unknown_count` n)로 두고 2·4·8초 뒤 다음 전송이 HEAD로 대조한다.
 - HEAD의 `X-Content-SHA256`이 지금 의도와 같으면 **성공으로 확정**(다시 보내지 않음, 로그 `upload_reconciled`). DELETE는 HEAD가 404·삭제 표시면 확정.

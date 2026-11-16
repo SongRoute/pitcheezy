@@ -305,11 +305,14 @@ def upload_path(path):
 class UploadError(OSError):
     """Fixed codes only; no credentials, URLs, server bodies or chained transport errors."""
 
-    def __init__(self, code, *, outcome='rejected', retry_after=0, detail=None):
+    def __init__(self, code, *, outcome='rejected', retry_after=0, detail=None, elapsed_ms=None):
         super().__init__(code)
         self.outcome, self.retry_after = outcome, retry_after
-        # Diagnostic only: an exception CLASS name or 'http_<status>' (never its message, a URL, header or body).
+        # Diagnostic only: '<stage>_<exception CLASS name>' or 'http_<status>' (never its message, a URL, header or
+        # body). Stages: connect (DNS+TCP+TLS), send (request line, headers, body), response (status line, headers).
         self.detail = detail if isinstance(detail, str) and re.fullmatch(r'[A-Za-z0-9_]{1,64}', detail) else None
+        # How long the failing HTTP exchange ran inside the transport (ms), to tell an instant refusal from a timeout.
+        self.elapsed_ms = elapsed_ms if type(elapsed_ms) is int and 0 <= elapsed_ms < 10**7 else None
 
 
 def _detail(error):
@@ -394,7 +397,7 @@ class HttpSink(Sink):
         if self.dry_run:
             LOGGER.info('dry-run-upload %s %s (%s bytes, %s)', method, path, len(data or b''), 'final' if final else 'live')
             return None
-        connection = None
+        connection, stage, started = None, 'prepare', time.monotonic()
         try:
             factory = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
             connection = factory(self.url.hostname, self.url.port, timeout=self.timeout)
@@ -407,8 +410,14 @@ class HttpSink(Sink):
                 headers |= {'If-None-Match': '*'} if expected is None else {'If-Match': expected}
                 if method == 'PUT':
                     headers['X-Content-SHA256'] = hashlib.sha256(data).hexdigest()
+            stage = 'connect'
+            if hasattr(connection, 'connect'):
+                connection.connect()  # DNS + TCP (+ TLS) apart from sending, so a failure says which part broke
+            stage = 'send'
             connection.request(method, f'{self.prefix}/{path}', body=data, headers=headers)
+            stage = 'response'
             response = connection.getresponse()
+            stage = 'answered'
             if method == 'HEAD' and response.status == 404:
                 return {'etag': None, 'sha256': None, 'deleted': False}
             if response.status != 200:
@@ -421,7 +430,8 @@ class HttpSink(Sink):
                 # A timeout/5xx/unexpected 2xx does not establish that a mutation failed at the storage layer.
                 rejected = response.status in (400, 401, 403, 404, 405, 411, 413, 415, 422, 428)
                 raise UploadError('upload_rejected' if rejected else 'upload_unknown', outcome='rejected' if rejected else 'blocked',
-                                  detail=f'http_{response.status}' if isinstance(response.status, int) else None)
+                                  detail=f'http_{response.status}' if isinstance(response.status, int) else None,
+                                  elapsed_ms=round((time.monotonic()-started)*1000))
             etag = response.getheader('ETag', '')
             if not isinstance(etag, str) or _ETAG.fullmatch(etag) is None:
                 raise UploadError('upload_receipt_invalid', outcome='blocked')
@@ -446,7 +456,8 @@ class HttpSink(Sink):
         except UploadError:
             raise
         except (OSError, http.client.HTTPException, ValueError, RecursionError, UnicodeError) as error:
-            raise UploadError('upload_unknown', outcome='blocked', detail=_detail(error)) from None
+            raise UploadError('upload_unknown', outcome='blocked', detail=f'{stage}_{_detail(error)}',
+                              elapsed_ms=round((time.monotonic()-started)*1000)) from None
         finally:
             if connection is not None:
                 try:
@@ -639,7 +650,8 @@ class MirrorSink(Sink):
             meta = self.worker.request('HEAD', path) if self.worker else self.remote.head(path)
         except UploadError as error:
             # HEAD sent no mutation; later metadata retry remains safe.
-            LOGGER.warning('upload_failed HEAD %s %s %s', path, error, error.detail or '-')
+            LOGGER.warning('upload_failed HEAD %s %s %s %sms', path, error, error.detail or '-',
+                           '-' if error.elapsed_ms is None else error.elapsed_ms)
             return
         snapshot = None
         with self.lock:
@@ -692,6 +704,8 @@ class MirrorSink(Sink):
                 attempt.update(phase=error.outcome, reason=str(error))
                 if error.detail:
                     attempt['detail'] = error.detail
+                if error.elapsed_ms is not None:
+                    attempt['elapsed_ms'] = error.elapsed_ms
                 if error.outcome == 'retry':
                     attempt['not_before'] = time.time()+error.retry_after
                 elif str(error) == 'upload_unknown' and error.outcome == 'blocked':
@@ -700,7 +714,8 @@ class MirrorSink(Sink):
                     if count <= UNKNOWN_RETRIES:
                         attempt.update(phase='retry', not_before=time.time()+min(UNKNOWN_RETRY_MAX_S, UNKNOWN_RETRY_BASE_S*2**(count-1)))
                 self.save()
-            LOGGER.warning('upload_failed %s %s %s %s %s', action.upper(), path, error, error.detail or '-', attempt['phase'])
+            LOGGER.warning('upload_failed %s %s %s %s %sms %s', action.upper(), path, error, error.detail or '-',
+                           '-' if error.elapsed_ms is None else error.elapsed_ms, attempt['phase'])
         else:
             with self.lock:
                 if self.state['upload_intents'].get(path) == intent:

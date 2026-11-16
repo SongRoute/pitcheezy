@@ -84,7 +84,8 @@ def test_put_dropped_before_arrival_is_resent_after_head(sink, server, existing)
     until(lambda: sink.state['upload_attempts'].get(PATH, {}).get('phase') == 'retry')
     attempt = sink.state['upload_attempts'][PATH]
     assert (attempt['reason'], attempt['unknown_count']) == ('upload_unknown', 1)
-    assert attempt['detail'] in ('RemoteDisconnected', 'ConnectionResetError', 'BadStatusLine')
+    assert attempt['detail'] in ('response_RemoteDisconnected', 'response_ConnectionResetError', 'send_ConnectionResetError', 'send_BrokenPipeError')
+    assert type(attempt['elapsed_ms']) is int and attempt['elapsed_ms'] < 5000
     assert attempt['expected'] == (server.tags[PATH] if existing else None)
     settle(sink, server, lambda: PATH not in sink.pending)
     assert server.objects[PATH] == b'{"v":2}' and PATH not in sink.state['upload_attempts']
@@ -139,3 +140,25 @@ def test_drops_below_the_limit_recover_and_reset_the_count(sink, server):
     assert sink.state['upload_attempts'][PATH]['unknown_count'] == 1  # a confirmed success started a new count
     settle(sink, server, lambda: PATH not in sink.pending)
     assert server.objects[PATH] == b'{"v":2}'
+
+
+def test_failure_stage_is_recorded_without_text(world, monkeypatch, tmp_path):
+    """The next real send must show WHERE a transport failed: local child step vs DNS/TCP/TLS vs request vs answer."""
+    import socket
+    from observer_app import upload_worker
+    from test_publisher_upload import config, TOKEN
+    probe = socket.socket(); probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]; probe.close()  # closed port
+    monkeypatch.setenv('PITCHEEZY_PUBLISH_TOKEN', TOKEN)
+    cfg = config(type('E', (), {'url': f'http://127.0.0.1:{port}/channel'})(), background=True, operation_deadline_s=10, shutdown_grace_s=0)
+    worker = upload_worker.UploadWorker(lambda path: None, cfg)
+    try:
+        with pytest.raises(publisher.UploadError) as refused:
+            worker.request('HEAD', PATH)
+        assert (str(refused.value), refused.value.detail) == ('upload_unknown', 'connect_ConnectionRefusedError')
+        assert type(refused.value.elapsed_ms) is int
+        with pytest.raises(publisher.UploadError) as local:
+            worker.request('PUT', PATH, expected=None, snapshot=str(tmp_path/'gone.tmp'), sha256='0'*64, final=False)
+        assert (str(local.value), local.value.detail) == ('upload_unknown', 'child_snapshot_FileNotFoundError')
+        assert TOKEN not in repr(vars(refused.value)) + repr(vars(local.value))
+    finally:
+        worker.close()
