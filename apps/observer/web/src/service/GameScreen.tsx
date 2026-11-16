@@ -585,8 +585,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <G1Dot kind={resultKind(actual.description)} n={shownPitch.pitch_number} /><b className="sv-actual-name">{actual.pitch_label}</b>
       {actual.speed_mph !== null && <small>{speedText(actual.speed_mph, unit)}</small>}<span>· {ending ?? actual.result_label}</span>
       {settledCorrection(shownPitch.receipt) && <span className="sv-tag" role="note" aria-label="기록이 정정된 공">정정됨</span>}</>;
-  const pzLast = nextPhase && !maskPublished && lastPitch ? { 'data-pz-last-key': lastPitch.key, 'data-pz-last-kind': unconfirmed(lastPitch) ? '' : pzKind(lastPitch.actual),
-    'data-pz-last-side': lastPitch.batter?.side === 'R' || lastPitch.batter?.side === 'L' ? lastPitch.batter.side : '' } : {};
+  // live and not masked: the newest pitch, or an empty key when no pitch is thrown yet; masked (확인 중) or not live: no attributes at all
+  const pzLast = !nextPhase || maskPublished ? {} : !lastPitch ? { 'data-pz-last-key': '' } : { 'data-pz-last-key': lastPitch.key, 'data-pz-last-kind': unconfirmed(lastPitch) ? '' : pzKind(lastPitch.actual),
+    'data-pz-last-side': lastPitch.batter?.side === 'R' || lastPitch.batter?.side === 'L' ? lastPitch.batter.side : '' };
   const top1 = !nextPhase && !pastUnconfirmed && rec?.status === 'ready' ? rec.candidates[0] ?? null : null;
   const pairText = top1 && actual && !fold ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
   // New as-of player context is optional; absent fields stay unknown rather than guessed from an incomplete pitch list.

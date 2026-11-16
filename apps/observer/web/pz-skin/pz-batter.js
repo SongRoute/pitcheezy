@@ -158,7 +158,8 @@ function tick() {
 /* 실시간 반응(3b): 실시간 화면(다음 공 추천)에는 그 줄이 없다(Song 화면은 지난 공을 볼 때만 줄을 그린다). 그때는 존 행의 data-pz-last-key·kind·side
  *       (GameScreen이 실시간에만 다는 속성, 화면에 보이지 않음)를 읽어 새 공마다 같은 규칙으로 반응한다(2026-11-16, demo/front-liveswing-1116).
  *  열쇠는 투구 식별자(lastPitch.key)다. 규칙:
- *  검토 P2-1(11/16): 처음 보는 순간 속성이 비어 있으면(공개 모드 탭 복귀의 "확인 중" 가림 등) 기준을 정하지 않고 다음 틱에서 다시 잡는다.
+ *  검토 P2-1(11/16): GameScreen은 가림(확인 중) 동안 속성을 떼고, 아직 던진 공이 없으면 빈 열쇠(data-pz-last-key="")를 단다.
+ *  속성이 없어지면 추적을 쉬고, 다시 생긴 첫 공은 기준으로만 삼는다(탭 복귀 재읽기·재연결 뒤 새 공이 한 번 재생되던 문제).
  *  (a) 처음 보는 순간(붙을 때·지난 공에서 돌아올 때·탭 복귀·이닝 사이 뒤)의 마지막 공은 결과가 있든 없든 기준으로만 삼는다(liveCont=false).
  *  (b) 본(기준으로 삼았거나 재생한) 식별자는 문서 수명 동안 모두 기억해(liveSeen, Set) 다시 재생하지 않는다(A→B→A도 A를 다시 재생하지 않음) — 탭 복귀·재연결·같은 내용 재발행·확인 중 가림 뒤 같은 공은 재생하지 않는다.
  *  (c) 정정: 같은 공의 결과가 바뀌어도(예: 파울 → 헛스윙) 다시 재생하지 않는다(이미 반응한 공). 결과 없이 먼저 온 공(확인 중)은
@@ -167,15 +168,17 @@ function tick() {
  *      넘어감 — 5차전 849799에서 타석을 끝낸 스윙 59개 중 46개가 다음 타자와 방향이 다르다) 그 공의 방향에서 반응을 재생하고(hold),
  *      끝나면 지금 타자 방향으로 돌아간다. 지금 타자 방향에서 앞 타자의 스윙을 재생하지 않는다. 반응 중 새 공이 오면 먼저 끊고 지금 방향으로.
  *  (f) 동작 줄이기면 playKind가 정지 자세만 둔다. */
-function liveAttrs(row) { return { k: row.getAttribute("data-pz-last-key") || "", kind: row.getAttribute("data-pz-last-kind") || "", side: row.getAttribute("data-pz-last-side") || "" }; }
+function liveAttrs(row) { return { has: row.hasAttribute("data-pz-last-key"), k: row.getAttribute("data-pz-last-key") || "", kind: row.getAttribute("data-pz-last-kind") || "", side: row.getAttribute("data-pz-last-side") || "" }; }
 function seen(k) { S.liveSeen.add(k); S.livePlayed = k; }
-function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = a.k + "|" + a.kind; if (on && a.k) seen(a.k); S.liveCont = on && !!a.k; } // 가림 중에 붙으면 기준 미정(P2-1)
+function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = (a.has ? "+" : "-") + a.k + "|" + a.kind; if (on && a.k) seen(a.k); S.liveCont = on && a.has; } // 가림 중(속성 없음)에 붙으면 기준 미정(P2-1)
 function syncSide(side) { S.side = side; S.box.classList.toggle("side-r", side === "R"); S.b.setSide(side); S.b.reset(reduceMotion() ? { still: true } : undefined); }
 function live(row, side) {
-  const a = liveAttrs(row), id = a.k + "|" + a.kind;
+  const a = liveAttrs(row), id = (a.has ? "+" : "-") + a.k + "|" + a.kind;
   if (id === S.liveLast && S.liveCont) return;
-  const cont = S.liveCont; S.liveLast = id; S.liveCont = true;
-  if (!cont) { if (a.k) seen(a.k); else S.liveCont = false; return; } // 빈 속성으로는 기준을 확정하지 않는다(P2-1)
+  S.liveLast = id;
+  if (!a.has) { S.liveCont = false; return; } // 속성이 아예 없음 = 가림(확인 중)·실시간 아님: 추적을 쉬고 다음 공은 기준으로만(P2-1, 복귀 틱이 가림보다 먼저 돌아도 맞다)
+  const cont = S.liveCont; S.liveCont = true;
+  if (!cont) { if (a.k) seen(a.k); return; } // 빈 열쇠(아직 던진 공 없음)는 기준 없이 이어 본다 → 경기 첫 공은 재생
   if (!a.k || !a.kind || S.liveSeen.has(a.k)) return;
   seen(a.k);
   if (S.hold) stopRaf(); // 앞 타자 반응 중에 새 공: 끊는다(hold 해제)

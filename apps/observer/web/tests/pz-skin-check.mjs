@@ -142,8 +142,8 @@ try {
     ok(cfg.skin === 'off' && cfg.model === '' && skinFiles(cfg).length === 0 && skinHtml(page0, cfg) === page0, `P3-d no variables → PZ_SKIN off: no pz/ files, index.html untouched (skin ${cfg.skin})`);
     const plainIndex = readFileSync(path.join(plainDist, 'index.html'));
     // demo/front-liveswing-1116: GameScreen.tsx now adds data-pz-last-* to the live zone row, so the plain build is c47 + those attributes:
-    // index.html differs from c47 (85616c4b…) only by the JS file name, the CSS file is the same bytes, the JS is +479 B. Pinned anew.
-    ok(createHash('sha256').update(plainIndex).digest('hex') === '74d5e48e2e6be2d249d48729510f550839eeb5cb9cde784910cd6ba69c312cb6', 'P3-d the plain build index.html is the pinned plain bytes (c47 + live attributes, 74d5e48e…)');
+    // index.html differs from c47 (85616c4b…) only by the JS file name, the CSS file is the same bytes, the JS is +502 B. Pinned anew (review R5: empty key when no pitch yet).
+    ok(createHash('sha256').update(plainIndex).digest('hex') === '16002ccd0058d1af84bee9e230dae2813477840cfaba0b1593f4617d46ebf228', 'P3-d the plain build index.html is the pinned plain bytes (c47 + live attributes, 16002ccd…)');
   }
   // ---------- 0. build output (3D build: PZ_SKIN=3d; colour-only build: PZ_SKIN=theme, detected from index.html) ----------
   const html = readFileSync(path.join(dist, 'index.html'), 'utf8');
@@ -413,6 +413,14 @@ try {
         const c0 = (await status(page)).liveCont; await put('m1', 'miss'); await page.waitForTimeout(250); const a1 = (await status(page)).played;
         await put('m2', 'contact'); await page.waitForTimeout(250); const a2 = (await status(page)).played;
         ok(c0 === false && a1 === 0 && a2 === 1, `live review P2-1: attached on masked attributes (cont ${c0}) → first pitch is the baseline (played ${a1}), the next plays (${a2})`);
+        // the race seen on the real screen: the return tick runs before the mask is drawn (old pitch still there), then the mask, then a new pitch
+        await page.evaluate(() => { const r = document.getElementById('zr'); for (const x of ['key', 'kind', 'side']) r.removeAttribute('data-pz-last-' + x); }); await page.waitForTimeout(250);
+        await put('m3', 'miss'); await page.waitForTimeout(250); const a3 = (await status(page)).played;
+        ok(a3 === 1, `live review P2-1: m2 → attributes removed (mask) → m3 → baseline only, even though m2 was already the baseline (played ${a3})`);
+        // live with no pitch thrown yet = an empty key (not a mask): the game's first pitch plays
+        await page.evaluate(() => { const r = document.getElementById('zr'); r.removeAttribute('data-pz-last-kind'); r.removeAttribute('data-pz-last-side'); r.dataset.pzLastKey = ''; }); await page.waitForTimeout(250);
+        await put('m4', 'contact'); await page.waitForTimeout(250); const a4 = (await status(page)).played;
+        ok(a4 === 2, `live: empty key (no pitch yet) keeps watching — the first pitch after it plays (played ${a4})`);
       }
       ok(errors.length === 0, `live masked attach: no page errors (${errors.length})`);
       host.synthetic = host.synthetic.replace('id="zr"', 'id="zr" data-pz-last-key="p1" data-pz-last-kind="miss" data-pz-last-side="R"');
