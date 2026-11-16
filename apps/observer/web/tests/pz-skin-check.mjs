@@ -373,19 +373,25 @@ try {
         ok(await step('p3', 'miss') === 2, 'live (b): the same content published again → no replay');
         ok(await step('p3', 'contact') === 2, 'live (c): a correction of the same pitch (miss → contact) does not replay');
         ok(await step('p4', '') === 2 && await step('p4', 'contact') === 3, 'live (c): a pitch first shown without a result plays once when its result arrives');
-        const skip0 = (await st()).liveSkip;
-        ok(await step('p5', 'contact', 'L') === 3 && (await st()).liveSkip === skip0 + 1, 'live (d): the previous batter\'s pitch (side L) with a right-handed batter at the plate → no swing');
-        ok(await step('p6', 'miss', 'R') === 4, 'live (d): … then the next pitch of this batter plays');
+        const boxSide = () => page.evaluate(() => document.querySelector('.pz-bat3d').classList.contains('side-r') ? 'R' : 'L');
+        const f0 = (await st()).liveFlip;
+        const pd = await step('p5', 'contact', 'L'), sd = await st(), bd = await boxSide();
+        ok(pd === 4 && sd.side === 'L' && bd === 'L' && sd.hold === true && sd.liveFlip === f0 + 1, `live (d): the previous batter's last pitch (side L) while a right-handed batter is up → swings on the L side, not the R side (played ${pd}, side ${sd.side}, box ${bd}, hold ${sd.hold})`);
+        await page.waitForTimeout(2200); const sd2 = await st(), bd2 = await boxSide();
+        ok(sd2.side === 'R' && bd2 === 'R' && sd2.hold === false && sd2.played === 4, `live (d): … then back to the batter at the plate (side ${sd2.side}, box ${bd2}, hold ${sd2.hold})`);
+        await step('p5b', 'contact', 'L'); const sd3 = await st();
+        const pd4 = await step('p6', 'miss', 'R'), sd4 = await st(), bd4 = await boxSide();
+        ok(sd3.hold === true && pd4 === 6 && sd4.side === 'R' && bd4 === 'R' && sd4.last === 'miss', `live (d): a new pitch during that swing ends it and plays on the batter at the plate (played ${pd4}, side ${sd4.side}, box ${bd4})`);
         // (e) viewer opens a past pitch (the line appears, live attributes go away), a pitch arrives meanwhile, then back to live
         await page.evaluate(() => { document.getElementById('slot').innerHTML = '<p class="sv-actual-line"><span class="sv-al-label">실제 투구 · 2구 · Kim</span><i class="sv-g1 strike">2</i><b class="sv-actual-name">포심</b><span>파울</span></p>'; });
         const pe = await step(null);
         await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; });
-        ok(pe === 4 && await step('p6', 'miss') === 4, 'live (e): past pitch viewed, back to live on the same pitch → no replay');
+        ok(pe === 6 && await step('p6', 'miss') === 6, 'live (e): past pitch viewed, back to live on the same pitch → no replay');
         await page.evaluate(() => { document.getElementById('slot').innerHTML = '<p class="sv-actual-line"><span class="sv-al-label">실제 투구 · 2구 · Kim</span><i class="sv-g1 strike">2</i><b class="sv-actual-name">포심</b><span>파울</span></p>'; });
         await step(null); await page.evaluate(() => { document.getElementById('slot').innerHTML = ''; });
-        ok(await step('p7', 'contact') === 4 && await step('p8', 'miss') === 5, 'live (e): a pitch that came while viewing a past pitch is only the baseline on return; the next one plays');
+        ok(await step('p7', 'contact') === 6 && await step('p8', 'miss') === 7, 'live (e): a pitch that came while viewing a past pitch is only the baseline on return; the next one plays');
         await hide(true); await step('p9', 'contact'); await hide(false); await page.waitForTimeout(250);
-        ok((await st()).played === 5 && await step('p10', 'miss') === 6, 'live: tab hidden → pitch arrives → back: that pitch is the baseline, the next one plays');
+        ok((await st()).played === 7 && await step('p10', 'miss') === 8, 'live: tab hidden → pitch arrives → back: that pitch is the baseline, the next one plays');
         const s9 = await st(); ok(s9.livePlayed === 'p10' && s9.liveCont === true, `live: status exposes livePlayed / liveCont (${s9.livePlayed}, ${s9.liveCont})`);
       }
       ok(errors.length === 0, `live synthetic: no page errors (${errors.length})`, errors.slice(0, 3));
@@ -414,19 +420,24 @@ try {
         ok(a0.lines === 0 && a0.k === '849843:10:2' && a0.kind === 'take' && a0.side === 'L' && s0.played === 0, `live real (a): no '실제 투구' line, attributes name the newest pitch (${JSON.stringify(a0)}), first screen still (played ${s0.played})`);
         host.liveDrop = 1; host.liveBump = 1;
         const got1 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:10:3', null, { timeout: 15000 }).then(() => true, () => false);
-        await page.waitForTimeout(400); const s1 = await status(page);
-        ok(got1 && s1.played === 0 && s1.liveSkip === s0.liveSkip + 1, `live real (d): the in-play out of the left-handed batter arrives while the right-handed batter is up → no swing (played ${s1.played}, skip ${s0.liveSkip} → ${s1.liveSkip})`);
+        await page.waitForTimeout(300); const s1 = await status(page);
+        ok(got1 && s1.played === 1 && s1.last === 'contact' && s1.side === 'L' && s1.liveFlip === s0.liveFlip + 1, `live real (d): the in-play out of the left-handed batter arrives while the right-handed batter is up → one contact swing on the L side (played ${s1.played}, side ${s1.side})`);
+        await page.waitForTimeout(2200); const s1b = await status(page);
+        ok(s1b.side === 'R' && s1b.hold === false, `live real (d): … then back to the right-handed batter at the plate (side ${s1b.side})`);
         host.liveDrop = 0; host.liveBump = 2;
         const got2 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 15000 }).then(() => true, () => false);
         await page.waitForTimeout(400); const s2 = await status(page);
-        ok(got2 && s2.played === 1 && s2.last === 'contact', `live real: the foul arrives on the live screen → one contact swing (played ${s2.played}, last ${s2.last})`);
+        ok(got2 && s2.played === 2 && s2.last === 'contact' && s2.side === 'R', `live real: the foul arrives on the live screen → one contact swing (played ${s2.played}, last ${s2.last})`);
         await page.waitForTimeout(5000); const s3 = await status(page);
-        ok(s3.played === 1, `live real (b): 5 s of re-reads of the same content → no replay (played ${s3.played})`);
+        ok(s3.played === 2, `live real (b): 5 s of re-reads of the same content → no replay (played ${s3.played})`);
         await page.locator('.sv-atbat-toggle').click(); await page.waitForTimeout(300);
         const rows = page.locator('.sv-pitch-row'); const nrows = await rows.count();
         if (nrows) { await rows.first().click(); await page.waitForTimeout(500); }
-        const ap = await attrs(), sp = await status(page);
-        ok(nrows > 0 && ap.k === null && ap.lines === 1 && sp.played === 1, `live real: picking a pitch of this at-bat shows its '실제 투구' line, removes the live attributes, no extra swing (${JSON.stringify(ap)}, rows ${nrows}, played ${sp.played})`);
+        // a live game never shows a past pitch on the main screen (GameScreen: pitch = live ? null : selectedPitch) — picking opens a sheet over the live view
+        const ap = await attrs(), sp = await status(page), sheet = await page.locator('.sv-sheet-close').count();
+        ok(nrows > 0 && sheet > 0 && ap.k === '849843:11:1' && ap.lines === 0 && sp.played === 2, `live real (e): picking a pitch opens a sheet, the live view and its attributes stay, no extra swing (${JSON.stringify(ap)}, sheet ${sheet}, played ${sp.played})`);
+        await page.keyboard.press('Escape'); await page.waitForTimeout(600); const sc = await status(page);
+        ok(await page.locator('.sv-sheet-close').count() === 0 && sc.played === 2, `live real (e): closing the sheet → no replay (played ${sc.played})`);
       }
       ok(errors.length === 0, `live real: no page errors (${errors.length})`, errors.slice(0, 3));
       host.liveDrop = 0; host.liveBump = 0;

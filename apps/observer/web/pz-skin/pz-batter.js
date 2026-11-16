@@ -21,7 +21,7 @@ const REACT_DELAY_MS = 250; // 안 치는 공: 이만큼 뒤에 반응 시작
 const HIT_FADE_FROM = 0.86; // hit 끝부분 투명 처리 시작 진행률
 const FALLBACK_PLAY = { contact: { clip: "contact_hit1", cue: 1.456042, end: 2.1 }, miss: { clip: "miss", cue: 1.198889, end: 2.45 } };
 
-const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null, liveLast: null, livePlayed: null, liveCont: false, liveSkip: 0 };
+const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null, liveLast: null, livePlayed: null, liveCont: false, liveFlip: 0, hold: false };
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function resolvePlay(meta) {
@@ -59,10 +59,10 @@ const keyOf = (line) => {
   return [t(".sv-al-label"), g1 ? g1.className : "", g1 ? (g1.textContent || "").trim() : "", t(".sv-actual-name"), res].join("|");
 };
 
-function stopRaf() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; if (S.box) { S.box.style.transition = "none"; S.box.style.opacity = ""; } }
+function stopRaf() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; if (S.box) { S.box.style.transition = "none"; S.box.style.opacity = ""; } if (S.hold) { S.hold = false; schedule(); } } // 앞 타자 방향 유지(hold)를 끊으면 다음 틱이 지금 타자 방향으로 되돌린다
 function run(ms, frame, done) {
   const t0 = performance.now();
-  const step = (now) => { const k = document.hidden ? 1 : Math.min(1, (now - t0) / ms); frame(k); if (k < 1) S.raf = requestAnimationFrame(step); else { S.raf = 0; done(); } };
+  const step = (now) => { const k = document.hidden ? 1 : Math.min(1, (now - t0) / ms); frame(k); if (k < 1) S.raf = requestAnimationFrame(step); else { S.raf = 0; done(); if (S.hold) { S.hold = false; schedule(); } } };
   S.raf = requestAnimationFrame(step);
 }
 function setOpacity(v, soft) { if (!S.box) return; S.box.style.transition = soft ? "opacity .35s ease" : "none"; S.box.style.opacity = v >= 1 ? "" : String(Math.max(0, Math.min(1, v))); }
@@ -144,7 +144,7 @@ function tick() {
   if (!row.classList.contains("pz-has3d")) row.classList.add("pz-has3d");
   hideSilhouette(row, true);
   const side = row.classList.contains("bat-r") ? "R" : "L";
-  if (side !== S.side) { S.side = side; S.box.classList.toggle("side-r", side === "R"); stopRaf(); S.b.setSide(side); S.b.reset(reduceMotion() ? { still: true } : undefined); }
+  if (side !== S.side && !S.hold) { stopRaf(); syncSide(side); } // hold: 앞 타자의 마지막 공 반응이 끝날 때까지 그 방향을 유지(실시간 (d))
   const line = document.querySelector(".sv-game .sv-actual-line"), key = keyOf(line);
   // 수정 ①(2026-11-15): Song 화면은 탭 복귀·재연결·새 발행 때 '실제 투구' 줄을 잠깐 결과 없는 줄(기록 없음·확인 중)로 바꿨다가 같은 공으로 되돌린다.
   // 열쇠가 바뀌었다는 것만으로 재생하지 않고, 결과 종류가 있는 줄이면서 마지막으로 재생(또는 붙을 때 본) 공과 다를 때만 재생한다.
@@ -155,25 +155,30 @@ function tick() {
     const kind = key ? kindFromActual(line) : null;
     if (kind && key !== S.playedKey) { const first = S.playedKey === null; S.playedKey = key; if (!first) playKind(kind); }
   }
-  if (line) S.liveCont = false; else live(row); // 지난 공을 보는 동안은 실시간 추적을 쉰다 → (e) 실시간으로 돌아오면 그때 공은 기준으로만
+  if (line) S.liveCont = false; else live(row, side); // 지난 공을 보는 동안은 실시간 추적을 쉰다 → (e) 실시간으로 돌아오면 그때 공은 기준으로만
 }
 /* 실시간 반응(3b). 열쇠는 투구 식별자(lastPitch.key)다. 규칙:
  *  (a) 처음 보는 순간(붙을 때·지난 공에서 돌아올 때·탭 복귀·이닝 사이 뒤)의 마지막 공은 결과가 있든 없든 기준으로만 삼는다(liveCont=false).
  *  (b) 같은 식별자는 문서 수명 동안 한 번만 재생한다(livePlayed) — 탭 복귀·재연결·같은 내용 재발행·확인 중 가림 뒤 같은 공은 재생하지 않는다.
  *  (c) 정정: 같은 공의 결과가 바뀌어도(예: 파울 → 헛스윙) 다시 재생하지 않는다(이미 반응한 공). 결과 없이 먼저 온 공(확인 중)은
  *      이어 보는 중에 결과가 붙으면 그때 한 번 재생한다.
- *  (d) 공의 타자 방향(data-pz-last-side)이 지금 존 행 방향과 다르면(앞 타자의 마지막 공인데 다음 타자가 이미 서 있음) 재생하지 않는다.
+ *  (d) 공의 타자 방향(data-pz-last-side)이 지금 존 행 방향과 다르면(앞 타자의 타석을 끝낸 공인데 Song 화면은 같은 발행에서 이미 다음 타자로
+ *      넘어감 — 5차전 849799에서 타석을 끝낸 스윙 59개 중 46개가 다음 타자와 방향이 다르다) 그 공의 방향에서 반응을 재생하고(hold),
+ *      끝나면 지금 타자 방향으로 돌아간다. 지금 타자 방향에서 앞 타자의 스윙을 재생하지 않는다. 반응 중 새 공이 오면 먼저 끊고 지금 방향으로.
  *  (f) 동작 줄이기면 playKind가 정지 자세만 둔다. */
 function liveAttrs(row) { return { k: row.getAttribute("data-pz-last-key") || "", kind: row.getAttribute("data-pz-last-kind") || "", side: row.getAttribute("data-pz-last-side") || "" }; }
 function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = a.k + "|" + a.kind; if (on && a.k) S.livePlayed = a.k; S.liveCont = on; }
-function live(row) {
+function syncSide(side) { S.side = side; S.box.classList.toggle("side-r", side === "R"); S.b.setSide(side); S.b.reset(reduceMotion() ? { still: true } : undefined); }
+function live(row, side) {
   const a = liveAttrs(row), id = a.k + "|" + a.kind;
   if (id === S.liveLast && S.liveCont) return;
   const cont = S.liveCont; S.liveLast = id; S.liveCont = true;
   if (!cont) { if (a.k) S.livePlayed = a.k; return; }
   if (!a.k || !a.kind || a.k === S.livePlayed) return;
   S.livePlayed = a.k;
-  if (a.side && a.side !== S.side) { S.liveSkip++; return; }
+  if (S.hold) stopRaf(); // 앞 타자 반응 중에 새 공: 끊는다(hold 해제)
+  if (S.side !== side) syncSide(side);
+  if (a.side && a.side !== side && !reduceMotion()) { syncSide(a.side); playKind(a.kind); if (S.raf) { S.hold = true; S.liveFlip++; } else syncSide(side); return; }
   playKind(a.kind);
 }
 const schedule = () => { if (!scheduled) scheduled = requestAnimationFrame(tick); };
@@ -184,6 +189,6 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) { S.l
 schedule();
 
 window.PZSongSkin = Object.freeze({
-  status: () => ({ attached: !!S.b, model: MODEL, side: S.side, last: S.last, played: S.played, lastKey: S.lastKey, playedKey: S.playedKey, livePlayed: S.livePlayed, liveCont: S.liveCont, liveSkip: S.liveSkip, play: S.play, fails: S.fails, state: S.b ? S.b.getState() : null }),
+  status: () => ({ attached: !!S.b, model: MODEL, side: S.side, last: S.last, played: S.played, lastKey: S.lastKey, playedKey: S.playedKey, livePlayed: S.livePlayed, liveCont: S.liveCont, liveFlip: S.liveFlip, hold: S.hold, play: S.play, fails: S.fails, state: S.b ? S.b.getState() : null }),
   kindFromActual,
 });
