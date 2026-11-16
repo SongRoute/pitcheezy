@@ -115,19 +115,29 @@ def test_mailbox_coalesces_before_insertion_and_overflow_keeps_durable_pending(w
 
 @pytest.mark.parametrize('after_store',[False,True])
 def test_timeout_restart_preserves_uncertain_attempt_and_never_resends_old_bytes(world, server, monkeypatch, after_store):
+    # 2026-11-16: the timed-out attempt now waits for its backoff (survives the restart) and is then reconciled by HEAD.
+    # The held request lands once released, so HEAD shows the same bytes and the old bytes are never PUT again.
     server.hold=('PUT',GAME);server.after_store=after_store
     sink=attach_background(world,server,monkeypatch)
     sink.worker.deadline=1
     sink.write(GAME,b'{"synthetic":true}');assert server.entered.wait(5)
-    until(lambda:world.publisher.state['upload_attempts'].get(GAME,{}).get('phase')=='blocked',3)
+    until(lambda:world.publisher.state['upload_attempts'].get(GAME,{}).get('phase')=='retry',3)
     frozen=dict(world.publisher.state['upload_attempts'][GAME])
+    assert (frozen['reason'],frozen['unknown_count'],frozen['detail'])==('upload_unknown',1,'deadline')
     assert sink.worker.process is None or not sink.worker.process.is_alive()
     world.start();server.release.set();server.hold=None
     before=server.arrivals.count(('PUT',GAME))
     world.cycle(settle=False)
     time.sleep(.2)
-    assert world.publisher.state['upload_attempts'][GAME]==frozen
+    assert world.publisher.state['upload_attempts'][GAME]==frozen  # still inside the backoff
     assert server.arrivals.count(('PUT',GAME))==before
+    until(lambda:server.objects.get(GAME)==b'{"synthetic":true}',3)  # the released request was stored
+    monkeypatch.setattr(publisher.time,'time',lambda:frozen['not_before']+1)
+    world.cycle(settle=False)
+    until(lambda:GAME not in world.publisher.state['upload_pending'])
+    assert GAME not in world.publisher.state['upload_attempts']
+    # The cycle wrote a newer game file, which may go out normally; the timed-out bytes were sent exactly once.
+    assert [r[2] for r in server.requests if r[:2]==('PUT',GAME)].count(b'{"synthetic":true}')==1
 
 
 def test_close_reaps_owned_child_before_releasing_output_lock(world, server, monkeypatch):
@@ -213,7 +223,8 @@ def test_blocked_prefix_cannot_starve_later_eligible_path(world, server, monkeyp
         sink.local.write(path,b'{}')
         publisher._queue_upload(sink.state,path,'put',hashlib.sha256(b'{}').hexdigest())
         sink.save();sink.retry(HEALTH)
-    until(lambda:path in server.objects)
+    # The server stores the object before the worker has read the child's answer and cleared it from pending.
+    until(lambda:path in server.objects and path not in sink.pending)
     assert len(sink.pending)==140 and sink.worker.peak_entries==1
 
 

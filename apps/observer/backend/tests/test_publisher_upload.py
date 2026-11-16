@@ -192,7 +192,18 @@ def test_withdrawal_replaces_pending_put_and_retries_delete(world, endpoint, mon
     assert ('DELETE', GAME) in [r[:2] for r in endpoint.requests]
     assert ('DELETE', SETUP) in [r[:2] for r in endpoint.requests]
     assert world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]['embargoed']
-    if status != 200:
+    if status == 503:
+        # 2026-11-16: a 5xx leaves the outcome unknown -> reconciled after a backoff, also across a restart.
+        attempt = world.publisher.state['upload_attempts'][GAME]
+        assert (attempt['phase'], attempt['reason'], attempt['detail']) == ('retry', 'upload_unknown', 'http_503')
+        world.start()
+        endpoint.requests.clear()
+        endpoint.statuses['DELETE', GAME] = 200
+        monkeypatch.setattr(publisher.time, 'time', lambda: attempt['not_before']+1)
+        world.cycle(settle=False)
+        assert [r[0] for r in endpoint.requests if r[1] == GAME] == ['HEAD', 'DELETE']
+        assert GAME not in world.publisher.state['upload_pending'] and GAME not in endpoint.objects
+    elif status != 200:
         assert world.publisher.state['upload_attempts'][GAME]['phase'] == 'blocked'
         world.start()
         endpoint.requests.clear()

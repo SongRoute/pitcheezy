@@ -20,24 +20,31 @@ def _transport(connection, lifetime, config, job):
             os._exit(0)
     threading.Thread(target=owner_exit, daemon=True).start()
     from .publisher import HttpSink, UPLOAD_MAX_BYTES, UploadError
+    stage = 'init'  # init (config/token) -> snapshot (local body file, PUT only) -> transport (HttpSink._request)
     try:
         remote = HttpSink(config)
+        stage = 'transport'
         if job['method'] == 'HEAD':
             result = remote.head(job['path'])
         elif job['method'] == 'DELETE':
             result = remote.delete(job['path'], expected=job['expected'])
         else:
             import hashlib
+            stage = 'snapshot'
             with open(job['snapshot'], 'rb') as handle:
                 data = handle.read(UPLOAD_MAX_BYTES+1)
             if len(data) > UPLOAD_MAX_BYTES or hashlib.sha256(data).hexdigest() != job['sha256']:
                 raise UploadError('upload_local_mismatch', outcome='blocked')
+            stage = 'transport'
             result = remote.write(job['path'], data, expected=job['expected'], final=job['final'])
         message = {'ok': True, 'result': result}
     except UploadError as error:
-        message = {'ok': False, 'code': str(error), 'outcome': error.outcome, 'retry_after': error.retry_after}
-    except BaseException:
-        message = {'ok': False, 'code': 'upload_unknown', 'outcome': 'blocked', 'retry_after': 0}
+        message = {'ok': False, 'code': str(error), 'outcome': error.outcome, 'retry_after': error.retry_after,
+                   'detail': error.detail, 'elapsed_ms': error.elapsed_ms}
+    except BaseException as error:
+        # Only the class name crosses back (e.g. FileNotFoundError vs ConnectionResetError), never its text.
+        message = {'ok': False, 'code': 'upload_unknown', 'outcome': 'blocked', 'retry_after': 0,
+                   'detail': f'child_{stage}_{type(error).__name__}'}
     raw = json.dumps(message).encode()
     if len(raw) < MAX_IPC-4:  # one small pipe frame; parent also limits allocation before receiving it
         connection.send_bytes(raw)
@@ -148,14 +155,17 @@ class UploadWorker:
                     message = json.loads(receive.recv_bytes(MAX_IPC))
                     if message['ok']:
                         return message['result']
-                    raise UploadError(message['code'], outcome=message['outcome'], retry_after=message['retry_after'])
+                    raise UploadError(message['code'], outcome=message['outcome'], retry_after=message['retry_after'],
+                                      detail=message.get('detail'), elapsed_ms=message.get('elapsed_ms'))
                 if not process.is_alive():
-                    break
-            raise UploadError('upload_unknown', outcome='blocked')
+                    if receive.poll(0):
+                        continue  # it answered and exited between our poll and this check: read that answer
+                    raise UploadError('upload_unknown', outcome='blocked', detail=f'child_exit_{process.exitcode}'.replace('-', 'm'))
+            raise UploadError('upload_unknown', outcome='blocked', detail='stopping' if self.stop.is_set() else 'deadline')
         except UploadError:
             raise
-        except (OSError, EOFError, ValueError, RuntimeError, KeyError):
-            raise UploadError('upload_unknown', outcome='blocked') from None
+        except (OSError, EOFError, ValueError, RuntimeError, KeyError) as error:
+            raise UploadError('upload_unknown', outcome='blocked', detail='parent_' + type(error).__name__) from None
         finally:
             try:
                 self._reap()

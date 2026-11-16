@@ -61,7 +61,11 @@ def test_conflict_and_newer_local_intent_never_rebase_even_after_restart(mirror,
 
 
 @pytest.mark.parametrize('stored', [False, True])
-def test_lost_response_is_blocked_with_or_without_remote_commit(mirror, endpoint, monkeypatch, stored):
+@pytest.mark.parametrize('after_restart', [False, True])
+def test_lost_response_is_reconciled_by_head_with_or_without_remote_commit(mirror, endpoint, monkeypatch, stored, after_restart):
+    # 2026-11-16 (draft decision in docs/decisions.md): an unknown PUT outcome is no longer blocked for good. After a
+    # backoff the next transfer HEADs: equal X-Content-SHA256 confirms it with no second PUT; otherwise the current
+    # intent goes again under that HEAD's ETag (If-None-Match: * when the object is absent).
     sink, state, saved = mirror
     original = endpoint.handle
     def uncertain(method, path, data, headers):
@@ -73,13 +77,92 @@ def test_lost_response_is_blocked_with_or_without_remote_commit(mirror, endpoint
     monkeypatch.setattr(endpoint, 'handle', uncertain)
     sink.write(GAME, b'{"attempt":1}')
     assert (GAME in endpoint.objects) is stored
-    assert state['upload_attempts'][GAME]['reason'] == 'upload_unknown'
+    attempt = dict(state['upload_attempts'][GAME])
+    assert (attempt['phase'], attempt['reason'], attempt['unknown_count'], attempt['detail']) == ('retry', 'upload_unknown', 1, 'send_TimeoutError')
+    assert TOKEN not in saved.read_text()
     monkeypatch.setattr(endpoint, 'handle', original)
-    sink, state = restart(sink, saved)
+    if after_restart:
+        sink, state = restart(sink, saved)
+    sink.attempted.clear()  # what each publisher cycle does
     endpoint.requests.clear()
-    sink.write(GAME, b'{"newer":2}')
-    assert endpoint.requests == []  # matching remote SHA is not an ownership receipt
-    assert state['upload_attempts'][GAME]['sha256'] == hashlib.sha256(b'{"attempt":1}').hexdigest()
+    sink.retry('v1/health.json')
+    assert endpoint.requests == []  # not before the backoff
+    monkeypatch.setattr(publisher.time, 'time', lambda: attempt['not_before']+1)
+    sink.retry('v1/health.json')
+    sent = [(m, p, h.get('If-Match'), h.get('If-None-Match')) for m, p, _, h in endpoint.requests]
+    if stored:
+        assert sent == [('HEAD', GAME, None, None)]  # same bytes already there: confirmed, nothing resent
+    else:
+        assert sent == [('HEAD', GAME, None, None), ('PUT', GAME, None, '*')]
+    assert endpoint.objects[GAME] == b'{"attempt":1}'
+    assert state['upload_pending'] == {} and state['upload_attempts'] == {}
+
+
+def test_unknown_reconcile_sends_newer_intent_under_head_etag(mirror, endpoint, monkeypatch):
+    sink, state, saved = mirror
+    sink.write(GAME, b'{"initial":1}')
+    original = endpoint.handle
+    def stored_then_lost(method, path, data, headers):
+        status = original(method, path, data, headers)
+        if method == 'PUT':
+            raise ConnectionResetError(TOKEN)
+        return status
+    monkeypatch.setattr(endpoint, 'handle', stored_then_lost)
+    sink.write(GAME, b'{"old":2}')
+    assert state['upload_attempts'][GAME]['phase'] == 'retry'
+    monkeypatch.setattr(endpoint, 'handle', original)
+    stored_tag = endpoint.tags[GAME]
+    sink.local.write(GAME, b'{"newer":3}')  # a newer local intent arrives while the path waits for its backoff
+    publisher._queue_upload(state, GAME, 'put', hashlib.sha256(b'{"newer":3}').hexdigest())
+    sink.attempted.clear()
+    endpoint.requests.clear()
+    monkeypatch.setattr(publisher.time, 'time', lambda: state['upload_attempts'][GAME]['not_before']+1)
+    sink.retry('v1/health.json')
+    assert [(m, h.get('If-Match')) for m, _, _, h in endpoint.requests] == [('HEAD', None), ('PUT', stored_tag)]
+    assert endpoint.objects[GAME] == b'{"newer":3}' and state['upload_attempts'] == {}
+
+
+def test_unknown_outcomes_block_after_the_retry_limit(mirror, endpoint, monkeypatch):
+    sink, state, saved = mirror
+    endpoint.statuses['PUT', GAME] = 503
+    clock = [1000.0]
+    monkeypatch.setattr(publisher.time, 'time', lambda: clock[0])
+    sink.write(GAME, b'{"attempt":1}')
+    waits = []
+    for count in range(1, publisher.UNKNOWN_RETRIES+1):
+        attempt = state['upload_attempts'][GAME]
+        assert (attempt['phase'], attempt['unknown_count'], attempt['detail']) == ('retry', count, 'http_503')
+        waits.append(attempt['not_before']-clock[0])
+        clock[0] = attempt['not_before']+.01
+        sink.attempted.clear()
+        sink.retry('v1/health.json')
+    assert waits == [publisher.UNKNOWN_RETRY_BASE_S*2**i for i in range(publisher.UNKNOWN_RETRIES)]
+    attempt = state['upload_attempts'][GAME]
+    assert (attempt['phase'], attempt['reason'], attempt['unknown_count']) == ('blocked', 'upload_unknown', publisher.UNKNOWN_RETRIES+1)
+    assert len([r for r in endpoint.requests if r[0] == 'PUT']) == publisher.UNKNOWN_RETRIES+1
+    endpoint.statuses.pop(('PUT', GAME))
+    clock[0] += 3600
+    sink.attempted.clear()
+    endpoint.requests.clear()
+    sink.retry('v1/health.json')
+    assert endpoint.requests == []  # past the limit it stays blocked for this run, as before
+
+
+@pytest.mark.parametrize('status', [412, 403, 'receipt'])
+def test_conflict_rejection_and_bad_receipt_are_not_reconciled(mirror, endpoint, monkeypatch, status):
+    sink, state, saved = mirror
+    if status == 'receipt':
+        original = endpoint.handle
+        def broken(method, path, data, headers):
+            result = original(method, path, data, headers)
+            if method == 'PUT': endpoint.response_headers.pop('ETag', None)
+            return result
+        monkeypatch.setattr(endpoint, 'handle', broken)
+    else:
+        endpoint.statuses['PUT', GAME] = status
+    sink.write(GAME, b'{"attempt":1}')
+    attempt = state['upload_attempts'][GAME]
+    assert attempt['phase'] == ('rejected' if status == 403 else 'blocked') and 'unknown_count' not in attempt
 
 
 @pytest.mark.parametrize('damage', ['weak', 'missing', 'wrong_sha', 'stored_false', 'deleted', 'schema', 'too_large', 'not_json'])
@@ -213,3 +296,24 @@ def test_malformed_attempt_metadata_is_not_silently_reset(mirror, damage):
     state['upload_attempts'][GAME] = damage
     saved.write_text(json.dumps(state))
     with pytest.raises(publisher.UploadError, match='upload_state_invalid'): restart(sink, saved)
+
+
+def test_unknown_count_survives_interleaved_429(mirror, endpoint, monkeypatch):
+    sink, state, saved = mirror
+    clock = [1000.0]
+    monkeypatch.setattr(publisher.time, 'time', lambda: clock[0])
+    from collections import deque
+    endpoint.statuses['PUT', GAME] = deque([503, 429, 503, 429, 503, 503])
+    sink.write(GAME, b'{"attempt":1}')
+    seen = []
+    for _ in range(8):
+        attempt = state['upload_attempts'].get(GAME)
+        if attempt is None or attempt['phase'] != 'retry':
+            break
+        seen.append((attempt['reason'], attempt.get('unknown_count')))
+        clock[0] = attempt['not_before']+.01
+        sink.attempted.clear(); sink.retry('v1/health.json')
+    assert seen == [('upload_unknown', 1), ('upload_rate_limited', 1), ('upload_unknown', 2), ('upload_rate_limited', 2),
+                    ('upload_unknown', 3)]
+    attempt = state['upload_attempts'][GAME]  # 4th unknown, with two 429s in between: blocked
+    assert (attempt['phase'], attempt['unknown_count']) == ('blocked', publisher.UNKNOWN_RETRIES+1)

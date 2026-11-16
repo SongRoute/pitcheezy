@@ -132,6 +132,24 @@ class RecordedPaceReplay(ReplayTransport):
         return self.body
 
 
+class GameClockReplay:
+    """Rehearsal only (``PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE=game``): a completed game at its REAL pitch times.
+
+    Game bodies come from ``timed`` (``demo_precompute.TimedReplay``: the state before pitch n is fetchable once
+    pitch n-1 was seen on a replay clock that started ``lead_s`` before the start pitch at its ``t0``); the schedule
+    comes from the replay folder (``ReplayTransport``), so the publisher finds the game as in a folder replay. The
+    clock never waits for the poller: a slow poll skips straight to the current pitch."""
+
+    def __init__(self, directory, timed):
+        self.schedule, self.timed = ReplayTransport(directory), timed
+
+    def position(self):
+        return self.timed.position()
+
+    def __call__(self, url, timeout):
+        return self.timed(url, timeout) if '/feed/live' in url else self.schedule(url, timeout)
+
+
 def replay_config(poll_s, config=LIVE_CONFIG):
     """``config`` for a recorded-snapshot replay that hands out one body per ``poll_s`` seconds instead of the
     live poll pace (``PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S``; rehearsal only). ``ReplayTransport`` advances one

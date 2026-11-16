@@ -298,7 +298,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     live_lock = threading.Lock()  # sync routes run in a thread pool; the one live feed is built once
 
     def live_parts():
-        from .live_feed import LIVE_CONFIG, LiveFeed, RecordedPaceReplay, ReplayTransport, http_json, replay_config
+        from .live_feed import (LIVE_CONFIG, GameClockReplay, LiveFeed, RecordedPaceReplay, ReplayTransport, http_json,
+                                replay_config)
         with live_lock:  # first requests arrive together: two feeds would poll and replay twice
             if live['feed'] is None:
                 replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
@@ -310,6 +311,14 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                     # delayed-viewing rehearsal: bodies at their recorded receipt times on today's clock (never upstream)
                     gap = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_MAX_GAP_S')
                     player = RecordedPaceReplay(replay, max_gap_s=float(gap) if gap else None)
+                elif replay and os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE') == 'game':
+                    # real-pitch-time rehearsal of a completed game (demo only, never upstream): pitch START is
+                    # released LEAD_S after T0 (epoch; default now) on the replay clock, LAG_S publishes each pitch later
+                    env = lambda name, default: os.environ.get(f'PITCHEEZY_OBSERVER_LIVE_REPLAY_{name}') or default
+                    timed, _ = timed_replay(int(env('GAME', '0')), start=int(env('START', '0')),
+                                            t0=float(env('T0', time.time())), speed=float(env('SPEED', '1')),
+                                            lag_s=float(env('LAG_S', '0')), lead_s=float(env('LEAD_S', '15')))
+                    player = GameClockReplay(replay, timed)
                 elif replay:
                     player = ReplayTransport(replay)
                 transport, options = ((player, {'delay_s': float(delay or 0), 'config': pace}) if replay else

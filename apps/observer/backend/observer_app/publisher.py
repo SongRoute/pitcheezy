@@ -305,9 +305,27 @@ def upload_path(path):
 class UploadError(OSError):
     """Fixed codes only; no credentials, URLs, server bodies or chained transport errors."""
 
-    def __init__(self, code, *, outcome='rejected', retry_after=0):
+    def __init__(self, code, *, outcome='rejected', retry_after=0, detail=None, elapsed_ms=None):
         super().__init__(code)
         self.outcome, self.retry_after = outcome, retry_after
+        # Diagnostic only: '<stage>_<exception CLASS name>' or 'http_<status>' (never its message, a URL, header or
+        # body). Stages: connect (DNS+TCP+TLS), send (request line, headers, body), response (status line, headers).
+        self.detail = detail if isinstance(detail, str) and re.fullmatch(r'[A-Za-z0-9_]{1,64}', detail) else None
+        # How long the failing HTTP exchange ran inside the transport (ms), to tell an instant refusal from a timeout.
+        self.elapsed_ms = elapsed_ms if type(elapsed_ms) is int and 0 <= elapsed_ms < 10**7 else None
+
+
+def _detail(error):
+    return type(error).__name__
+
+
+# A PUT/DELETE whose outcome is unknown (connection dropped, timeout, 5xx, child died) is reconciled, not blocked for
+# good: after UNKNOWN_RETRY_BASE_S * 2**(n-1) seconds the next transfer HEADs the path; equal X-Content-SHA256 confirms
+# it, otherwise the current intent is sent again under that HEAD's ETag (or If-None-Match: * when absent). After
+# UNKNOWN_RETRIES consecutive unknown outcomes for one path it is blocked as before.
+UNKNOWN_RETRIES = 3
+UNKNOWN_RETRY_BASE_S = 2.0
+UNKNOWN_RETRY_MAX_S = 30.0
 
 
 class HttpSink(Sink):
@@ -379,7 +397,7 @@ class HttpSink(Sink):
         if self.dry_run:
             LOGGER.info('dry-run-upload %s %s (%s bytes, %s)', method, path, len(data or b''), 'final' if final else 'live')
             return None
-        connection = None
+        connection, stage, started = None, 'prepare', time.monotonic()
         try:
             factory = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
             connection = factory(self.url.hostname, self.url.port, timeout=self.timeout)
@@ -392,8 +410,14 @@ class HttpSink(Sink):
                 headers |= {'If-None-Match': '*'} if expected is None else {'If-Match': expected}
                 if method == 'PUT':
                     headers['X-Content-SHA256'] = hashlib.sha256(data).hexdigest()
+            stage = 'connect'
+            if hasattr(connection, 'connect'):
+                connection.connect()  # DNS + TCP (+ TLS) apart from sending, so a failure says which part broke
+            stage = 'send'
             connection.request(method, f'{self.prefix}/{path}', body=data, headers=headers)
+            stage = 'response'
             response = connection.getresponse()
+            stage = 'answered'
             if method == 'HEAD' and response.status == 404:
                 return {'etag': None, 'sha256': None, 'deleted': False}
             if response.status != 200:
@@ -405,7 +429,9 @@ class HttpSink(Sink):
                     raise UploadError('upload_rate_limited', outcome='retry', retry_after=max(1.0, delay))
                 # A timeout/5xx/unexpected 2xx does not establish that a mutation failed at the storage layer.
                 rejected = response.status in (400, 401, 403, 404, 405, 411, 413, 415, 422, 428)
-                raise UploadError('upload_rejected' if rejected else 'upload_unknown', outcome='rejected' if rejected else 'blocked')
+                raise UploadError('upload_rejected' if rejected else 'upload_unknown', outcome='rejected' if rejected else 'blocked',
+                                  detail=f'http_{response.status}' if isinstance(response.status, int) else None,
+                                  elapsed_ms=round((time.monotonic()-started)*1000))
             etag = response.getheader('ETag', '')
             if not isinstance(etag, str) or _ETAG.fullmatch(etag) is None:
                 raise UploadError('upload_receipt_invalid', outcome='blocked')
@@ -417,7 +443,10 @@ class HttpSink(Sink):
                     raise UploadError('upload_receipt_invalid', outcome='blocked')
                 return {'etag': etag, 'sha256': sha, 'deleted': deleted == 'true'}
             raw = response.read(4097)
-            receipt = json.loads(raw) if len(raw) <= 4096 else None
+            try:  # a 200 whose receipt cannot be read is a bad receipt (blocked), not an unknown outcome (reconciled)
+                receipt = json.loads(raw) if len(raw) <= 4096 else None
+            except (ValueError, UnicodeError, RecursionError):
+                receipt = None
             sha = hashlib.sha256(data if method == 'PUT' else b'').hexdigest()
             if (not isinstance(receipt, dict) or receipt.get('stored') is not True
                     or receipt.get('deleted') is not (method == 'DELETE') or receipt.get('sha256') != sha
@@ -426,8 +455,9 @@ class HttpSink(Sink):
             return {'etag': etag, 'sha256': sha, 'deleted': method == 'DELETE'}
         except UploadError:
             raise
-        except (OSError, http.client.HTTPException, ValueError, RecursionError, UnicodeError):
-            raise UploadError('upload_unknown', outcome='blocked') from None
+        except (OSError, http.client.HTTPException, ValueError, RecursionError, UnicodeError) as error:
+            raise UploadError('upload_unknown', outcome='blocked', detail=f'{stage}_{_detail(error)}',
+                              elapsed_ms=round((time.monotonic()-started)*1000)) from None
         finally:
             if connection is not None:
                 try:
@@ -614,10 +644,15 @@ class MirrorSink(Sink):
                     attempts[path] = {'phase': 'blocked', 'reason': 'local_intent_mismatch'}
                     self.save()
                     return
+        # Unknown outcomes so far for this path since its last confirmed success. A 429 in between keeps the count
+        # (it says nothing about the earlier unknown), so unknown/429 alternation cannot reset it; success pops it.
+        unknown = attempt.get('unknown_count', 0) if attempt and attempt.get('phase') == 'retry' else 0
         try:
             meta = self.worker.request('HEAD', path) if self.worker else self.remote.head(path)
-        except UploadError:
-            LOGGER.warning('upload_failed')  # HEAD sent no mutation; later metadata retry remains safe.
+        except UploadError as error:
+            # HEAD sent no mutation; later metadata retry remains safe.
+            LOGGER.warning('upload_failed HEAD %s %s %s %sms', path, error, error.detail or '-',
+                           '-' if error.elapsed_ms is None else error.elapsed_ms)
             return
         snapshot = None
         with self.lock:
@@ -625,6 +660,15 @@ class MirrorSink(Sink):
             if self.state['upload_intents'].get(path) != intent or self.pending.get(path) != action:
                 return
             if action == 'delete' and meta['etag'] is None:
+                self.pending.pop(path, None)
+                self.state['upload_intents'].pop(path, None)
+                attempts.pop(path, None)
+                self.save()
+                return
+            # Reconcile an unknown outcome: the server already holds exactly this intent -> it is done, send nothing.
+            if unknown and (meta['deleted'] if action == 'delete' else
+                            meta['etag'] is not None and not meta['deleted'] and meta['sha256'] == intent['sha256']):
+                LOGGER.warning('upload_reconciled %s %s after %d unknown', action.upper(), path, unknown)
                 self.pending.pop(path, None)
                 self.state['upload_intents'].pop(path, None)
                 attempts.pop(path, None)
@@ -641,7 +685,10 @@ class MirrorSink(Sink):
                 self.local.staging.mkdir(parents=True, exist_ok=True)
                 snapshot = self.local.staging/f'upload_{uuid.uuid4().hex}.{os.getpid()}.tmp'
                 os.link(target, snapshot, follow_symlinks=False)  # our writer only replaces inodes atomically
-            attempt = attempts[path] = intent | {'expected': meta['etag'], 'phase': 'inflight'}
+            attempt = attempts[path] = intent | {'expected': meta['etag'], 'phase': 'inflight'} | (
+                {'reason': 'upload_unknown', 'unknown_count': unknown} if unknown else {})
+            # unknown may be > 0 after a 429 too; the reconcile check above only runs for unknown > 0, which is safe
+            # either way (it confirms only when the server already holds exactly this intent).
             try:
                 self.save()  # immutable body/condition durably prepared before spawning the mutating child
             except BaseException:
@@ -658,10 +705,20 @@ class MirrorSink(Sink):
         except UploadError as error:
             with self.lock:
                 attempt.update(phase=error.outcome, reason=str(error))
+                if error.detail:
+                    attempt['detail'] = error.detail
+                if error.elapsed_ms is not None:
+                    attempt['elapsed_ms'] = error.elapsed_ms
                 if error.outcome == 'retry':
                     attempt['not_before'] = time.time()+error.retry_after
+                elif str(error) == 'upload_unknown' and error.outcome == 'blocked':
+                    # Outcome unknown, not refused: reconcile by HEAD later instead of blocking the path for this run.
+                    attempt['unknown_count'] = count = unknown+1
+                    if count <= UNKNOWN_RETRIES:
+                        attempt.update(phase='retry', not_before=time.time()+min(UNKNOWN_RETRY_MAX_S, UNKNOWN_RETRY_BASE_S*2**(count-1)))
                 self.save()
-            LOGGER.warning('upload_failed')
+            LOGGER.warning('upload_failed %s %s %s %s %sms %s', action.upper(), path, error, error.detail or '-',
+                           '-' if error.elapsed_ms is None else error.elapsed_ms, attempt['phase'])
         else:
             with self.lock:
                 if self.state['upload_intents'].get(path) == intent:
@@ -1606,4 +1663,10 @@ def _start(args):
 
 
 if __name__ == '__main__':
+    # `python -m observer_app.publisher` runs this file as __main__, but upload_worker imports `.publisher` by name.
+    # Without this alias that import loads a second copy whose UploadError is another class, so `except UploadError`
+    # in MirrorSink._transfer never catches a worker failure and the attempt stays 'inflight' (2026-11-15 rehearsal).
+    if __spec__ is not None and sys.modules.setdefault(__spec__.name, sys.modules[__name__]) is not sys.modules[__name__]:
+        # Something imported observer_app.publisher before this point, so two copies exist and uploads could stick.
+        sys.exit('publisher: observer_app.publisher was imported before it ran as __main__; refusing to start')
     sys.exit(main())
