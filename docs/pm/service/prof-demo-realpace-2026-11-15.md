@@ -228,6 +228,37 @@ ssh <사용자>@<맥미니 이름> '~/Projects/pitcheezy-pm-jobs/20261115-demo/r
 - publisher 테스트 전체 **345 passed**(새 테스트 포함).
 - `test_public_viewer_e2e`·`test_public_viewer_gateway_e2e` 실패는 환경 문제가 아니라 의도된 핀 거부다: 이 가지의 `apps/observer/web/src/preview/…` 파일이 10/19 핀(`dccde711748d`)과 달라 "source pin mismatch"로 멈춘다(브라우저 시작 전).
 
+## 4.7 끊김 한 번에 영구 `blocked` → 대조 후 재시도 (2026-11-16, 브랜치 `demo/publish-retry-1116`, 독립 검토 전)
+
+**11/16 연습 실측(실제 호스트 첫 전송, PM 기록):** 약 27분·요청 2,500여 건 중 3건이 자식 프로세스에서 `upload_unknown`으로 끝났다 — 11:13:51 `v1/dates.json` PUT(`If-Match`, 시작 +3초), 11:18:57 `v1/games/2026-10-29.json` PUT(`If-None-Match: *`, 시작 +1초), 11:23:58 HEAD 1건(자동 통과). 팀원 호스트 기록은 PUT 735건 전부 200, 429·5xx 0이고 11:13:51 PUT은 호스트 코드까지 오지 않았다. 두 PUT은 그 회차 내내 `blocked`(목록 파일이라 5차전이 목록에 안 뜸) → 새 회차로 풀었다. 회차: `20261115-demo/runRT-111347-8876`, `runRT-111856-8876`·`runRT-112019-8876`(추적 있음).
+
+**원인 — 확인한 것과 추정:**
+- 확인: 두 PUT 모두 **자식이 스스로 `upload_unknown`을 답했다**(추적의 traceback이 `upload_worker.py:151`, 자식 응답 경로). 부모 쪽 마감(15초)·응답 놓침이 아니다. 자식 안에서 `upload_unknown`은 (가) `HttpSink._request`의 연결 예외(`OSError`·`HTTPException` 등), (나) 200이 아닌 예상 밖 상태(5xx 등), (다) 그 밖의 모든 예외(`except BaseException`)에서 나온다. 옛 코드는 예외 이름을 버려 셋을 구분할 수 없었다.
+- 확인: 11:18:57 PUT 자식은 앞 HEAD 자식을 거둔 뒤 0.21초 만에 답했다. 바로 뒤 정상 요청 5건의 간격(0.35~0.68초, 추적의 자식 회수 시각)보다 짧다 → 5초 소켓 시간 초과가 아니라 **빨리 끝난 실패**다.
+- 확인(로컬 재현 실패): 같은 849799 시작을 새 코드로 **12번**(3개씩 4번, 각 40초, 가짜 수신기, `repro/start1/summary.txt`) 띄웠다 — 요청 969건(HEAD 485·PUT 484) 중 업로드 실패 **0**. 시작 직후 로컬 경합(스냅샷 파일 없음·자식 시작 경합 등)이라면 여기서도 나왔어야 한다. 다만 가짜 수신기는 TLS 없는 loopback이라 연결 단계는 흉내 내지 못한다.
+- 추정(확인 못 함): 호스트 코드까지 안 온 점, 빠른 실패, 로컬 0/12를 합치면 **연결 단계**(TLS·앞단 프록시가 연결을 끊음, 또는 앞단이 호스트 코드 전에 5xx를 줌) 쪽이다. 어느 것인지는 다음 실제 전송의 `detail`로 가른다.
+- 바꾼 것: 예외 **클래스 이름**(또는 `http_<상태>`)만 `detail`로 상태 파일·로그에 남긴다 — 예: `RemoteDisconnected`, `ConnectionResetError`, `TimeoutError`, `http_503`, 자식 안 기타 예외는 `child_<이름>`, 부모 마감은 `deadline`, 자식이 답 없이 죽으면 `child_exit_<코드>`. 주소·토큰·헤더·예외 문구는 남기지 않는다. 다음 실제 전송에서 이 값으로 (가)/(나)/(다)를 가른다.
+
+**수정(`publisher.py`·`upload_worker.py`):** PUT/DELETE 결과를 모를 때(`upload_unknown`: 연결 끊김·소켓 시간 초과·5xx·자식 비정상 종료·작업자 마감) 영구 `blocked` 대신 `retry`(`reason` `upload_unknown`, `unknown_count` n)로 두고 2·4·8초 뒤 다음 전송이 HEAD로 대조한다.
+- HEAD의 `X-Content-SHA256`이 지금 의도와 같으면 **성공으로 확정**(다시 보내지 않음, 로그 `upload_reconciled`). DELETE는 HEAD가 404·삭제 표시면 확정.
+- 다르면 그 HEAD의 ETag로 `If-Match`, 없던 파일이면 `If-None-Match: *`로 **지금 의도(최신 바이트)** 를 다시 PUT. CAS라 늦게 도착한 옛 요청이 새 것을 덮을 수 없다(먼저 적용된 쪽 외에는 412).
+- 경로당 연속 4번째 미확정이면 예전처럼 `blocked`. 확정된 성공이 횟수를 0으로 돌린다. 재시작 뒤에도 `retry`는 그대로 이어진다(재시작 때 `inflight`였던 것은 예전처럼 `interrupted_unknown` → `blocked`).
+- 바꾸지 않은 것: 412 충돌·4xx `rejected`·영수증 불량(`upload_receipt_invalid`; 200인데 영수증 JSON을 못 읽는 경우도 이제 명시적으로 여기에 넣음)·429(Retry-After 대기).
+- 설계 변경 기록: `docs/decisions.md` 끝줄 D(안). 옛 원칙 "같은 SHA는 소유 영수증이 아니다"를 이 범위에서 뒤집는다(이 호스트 경로에 쓰는 것은 우리 발행기 하나).
+- 요청 수: 재시도는 끊김이 있을 때만 경로당 최대 HEAD 3 + PUT 3 더. 한도 분당 300, 11/16 5초 간격 실측 최대 114.
+
+**가짜 수신기 재현(127.0.0.1, 가짜 토큰, `repro/drop2/`, 같은 849799 시작·같은 주입):** `PUT dates.json` 연결 끊김(저장 안 함) + `PUT games/2026-10-29.json` 저장 뒤 응답 끊김 + `HEAD manifest.json` 끊김.
+
+| | 옛 코드(`prof-demo-1117`) | 새 코드(`publish-retry-1116`) |
+|---|---|---|
+| 75초 뒤 상태 | `dates`·`games` **`blocked`**, 다시 PUT 0번 | 대기 0, 시도 기록 0 |
+| 두 목록 파일 | 끊긴 뒤 한 번도 안 올라감(오늘 증상 그대로) | 약 6초 뒤 HEAD 대조 → 각각 PUT 200, 이후 14번씩 정상 |
+| 로그 | `upload_failed`만 | `upload_failed PUT v1/dates.json upload_unknown RemoteDisconnected retry` 등 |
+
+`games` 파일은 저장된 뒤 응답만 끊겼지만, 대조 시점에는 다음 주기의 새 내용이 의도라 SHA가 달라 새 ETag로 다시 보냈다(정상). "같은 바이트면 다시 안 보냄"은 시험 `test_put_stored_but_answer_lost_is_confirmed_by_head_without_resending`이 확인한다.
+
+**재시작 감싸개 `run_realpace_guard.sh`(job 폴더):** 인자·env는 `run_realpace.sh`와 같다. 시작 15초 뒤 `blocked`·`inflight`·`upload_recovery_blocked`가 있으면 그 회차만 끄고 새 회차로 다시 띄운다(최대 3회, 마지막 줄 = 남은 회차). 확인(`repro/guard1/`, 옛 코드 + `PUT dates.json` 끊김 1번): 1회차 `v1/dates.json:blocked:upload_unknown` → 끔 → 2회차 통과, 종료 코드 0. `run_realpace.sh`는 `WT=<worktree>`로 다른 checkout을 띄울 수 있게만 바꿨다(기본값은 `prof-demo-1117` 그대로).
+
 ## 5. 화면 갱신 간격 — 발행 간격을 따른다
 
 공개 화면은 진행 중 경기를 **manifest의 `publish_interval_s`마다** 읽는다(`web/src/service/GameScreen.tsx:332`, `api.ts:163`). 없을 때만 10초(`livePollMs`)를 쓴다. 그래서 11/15 07시대의 "화면이 0~10초 늦다"는 발행 간격 10초 때문이었다.

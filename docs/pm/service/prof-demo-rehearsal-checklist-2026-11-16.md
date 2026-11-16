@@ -8,10 +8,14 @@
 
 **일정(Song 결정 11/15 밤):** 11/16 10:00 연습은 **영상 없이** 서비스 경로만 시험한다(맥미니 재생 → 호스트 → 아이폰 2대; 849843으로 경로 확인 뒤 849799로 한 번 더). 영상(5차전 풀경기)과 맞추는 점검은 **11/17(화) 오전, 시각 미정**에 시연(16:30) 직전 점검으로 한다(G절). **11/17 데모 경기는 5차전 849799로 확정**(Song, 11/15 밤). 장면·경과 시간은 [대본](prof-demo-script-2026-11-17.md) 0.0절.
 
-> **화면이 멈추면 (먼저 볼 것, 11/15 가짜 수신기로 확인):**
-> 1. 맥미니: `python3 -c "import json;print(json.load(open('<회차>/out.state.json')).get('upload_attempts'))"` — `phase`가 **`blocked`**(또는 오래 남은 `inflight`)인 경로가 있으면 그 파일은 **이 회차에서는 다시 올라가지 않는다**(`publisher.py:580`). PUT이 503·기타 5xx·5초 타임아웃·연결 끊김을 만나면 이렇게 된다(`publisher.py:408, 429-430`). 풀어 주는 명령은 없다.
-> 2. 팀원에게 업로드 받기가 켜져 있는지 확인(꺼진 동안 호스트는 503). `--check-remote`는 HEAD만 보므로 **통과해도 PUT은 막힐 수 있다**.
-> 3. **`stop_scene.sh <회차>` → 새 회차로 다시 시작(B-4 또는 B-8)** → 1분 안에 `upload_attempts`가 비었는지 다시 본다. 새 회차(새 `out/`·상태 파일)로 풀리는 것을 확인했다(PUT 503·PUT 타임아웃 각 1회 → 새 회차에서 경기 파일 16회 정상 업로드). 호스트가 아직 503이면 새 회차도 다시 막힌다(확인함).
+> **화면이 멈추면 (먼저 볼 것) — 2026-11-16 갱신: 끊김 대조 재시도(`demo/publish-retry-1116`) 기준.** 이 동작은 `run_realpace.sh`를 `WT=~/Projects/pitcheezy-worktrees/publish-retry-1116`로 띄울 때만 적용된다(PM이 독립 검토 뒤 정함). 옛 코드(`prof-demo-1117`)로 띄우면 끊김 한 번에 그 파일이 회차 내내 `blocked`다(11/16 연습 실측: 27분·요청 약 2,500건 중 PUT 2건).
+> 0. 시작은 **`run_realpace_guard.sh`**(인자·env는 `run_realpace.sh`와 같음)로 한다: 시작 15초 뒤 `blocked`·`inflight`가 있으면 그 회차를 끄고 새 회차로 다시 띄운다(최대 3회, 마지막 줄 = 남은 회차 폴더). 다시 띄울 때마다 경기 시계가 약 16초 밀리고, 아이폰 탭은 닫고 새로 연다.
+> 1. 맥미니: `python3 -c "import json;print(json.load(open('<회차>/out.state.json')).get('upload_attempts'))"`.
+>    - `phase` **`retry`** + `reason` `upload_unknown` = **끊김 뒤 자동 대조 대기**(2·4·8초 뒤 HEAD로 확인 → 같은 내용이면 끝, 다르면 새 ETag로 다시 보냄). **기다린다.** `detail`에 예외 이름이나 `http_<상태>`가 남는다(주소·토큰 없음) — 기록해 둔다.
+>    - `phase` **`blocked`** = 이 회차에서는 다시 안 올라간다(`publisher.py:580`). 연속 4번째 끊김(`reason` `upload_unknown`, `unknown_count` 4), 412 충돌, 영수증 불량, 재시작 때 진행 중이던 요청(`interrupted_unknown`)일 때 생긴다. 풀어 주는 명령은 없다 → 3으로.
+>    - `phase` `rejected` = 4xx(토큰·경로 거부). 새 회차로도 안 풀린다 → 팀원에게 확인.
+> 2. 팀원에게 업로드 받기가 켜져 있는지 확인(꺼진 동안 호스트는 503 → 이제는 `retry`가 4번 이어진 뒤 `blocked`). `--check-remote`는 HEAD만 보므로 **통과해도 PUT은 막힐 수 있다**.
+> 3. **`stop_scene.sh <회차>` → 새 회차로 다시 시작(B-4 또는 B-8, 가능하면 `run_realpace_guard.sh`)** → 1분 안에 `upload_attempts`에 `blocked`가 없는지 다시 본다. 새 회차(새 `out/`·상태 파일)로 풀리는 것은 11/15·11/16 확인했다. 호스트가 아직 503이면 새 회차도 다시 막힌다.
 > 4. 아이폰 2대: 탭을 닫고 새로 연다(새 회차는 순번 1부터).
 > 5. 3분 안에 안 풀리면 E(예비안).
 >
@@ -77,11 +81,13 @@
    ```
    회차 폴더: ______.
 5. □ 1분 안에 업로드 확인: `out/v1/health.json`의 `upload.pending`이 쌓이지 않는지, `out.state.json`의 `upload_recovery_blocked`가 없고 `upload_attempts`에 `blocked`·`rejected`·**오래 남은 `inflight`**가 없는지.
-   - `blocked`가 생기면: 그 경로만 다시 안 보낸다(`publisher.py:580`). 다른 파일 발행은 계속된다. 풀어 주는 명령은 없다(런북 139-147행) → **멈추고 새 회차 폴더로 다시 시작**(순번 1부터 → 아이폰 새로고침).
+   - `retry`(`reason` `upload_unknown`)는 끊김 뒤 자동 대조 대기다(11/16 수정, 위 상자 1). 기다린다.
+   - `blocked`가 생기면: 그 경로만 다시 안 보낸다(`publisher.py:580`). 다른 파일 발행은 계속된다. 풀어 주는 명령은 없다(런북 139-147행) → **멈추고 새 회차 폴더로 다시 시작**(순번 1부터 → 아이폰 새로고침). `run_realpace_guard.sh`로 띄웠으면 시작 15초 안의 `blocked`는 스크립트가 알아서 다시 띄운다.
    - **경기 파일 멈춤 알아채기:** `out.state.json`의 `upload_attempts["v1/game/<경기 번호>.json"]`이 있고 `phase`가 `inflight`·`blocked`이면 멈춘 것이다. 아이폰에서 공이 안 바뀔 때 이것부터 본다. 명령: `python3 -c "import json;print(json.load(open('<회차>/out.state.json')).get('upload_attempts'))"`.
    - **복구 순서:** ① `stop_scene.sh <회차>` ② 새 회차로 B-4 ③ 아이폰 탭 닫고 새로 열기.
    - 원인(11/15 찾음·고침): 시작 직후 업로드 자식 프로세스의 응답을 놓치는 경합(`upload_worker.py:152`) + `-m` 실행에서 그 오류를 못 잡던 문제(`publisher.py` 끝). 가짜 수신기 재현 수정 전 6/6 → 수정 후 0/6(기록 4.5절). 연습은 **이 수정이 든 worktree**(`prof-demo-1117`)에서 띄운다 — `run_realpace.sh`가 그 코드를 쓴다.
    - 429면 `retry`로 기다린다(Retry-After, 없으면 60초, `publisher.py:402-405`).
+   - 11/16 연습에서 끊김 한 번에 `blocked`(목록 파일 2개) → 대조 재시도로 고침(`demo/publish-retry-1116`, [기록](prof-demo-realpace-2026-11-15.md) 4.7절). 그 코드로 띄우려면 `WT=~/Projects/pitcheezy-worktrees/publish-retry-1116`을 앞에 붙인다(독립 검토 통과 뒤, PM 결정). 시작은 `run_realpace_guard.sh`(같은 인자)를 권한다.
 6. □ 아이폰 두 대: 849843을 **탭을 닫고 새로 열기**. 호스트의 c47 파일은 순번이 다르므로 이미 연 탭은 재생 파일을 버릴 수 있다(sequence가 낮다, `api.ts:103-113`).
 7. □ 다시 띄울 때: ① `stop_scene.sh <회차>` ② 새 회차로 B-4 ③ 아이폰 탭 새로 열기. 순번이 1로 돌아가고, 업로더는 순번을 비교하지 않고 덮어쓴다(`publisher.py:618, 644`). 그래서 폰 쪽이 낮은 순번을 버린다.
 8. □ **경기 바꿔 한 번 더(849799):** ① `stop_scene.sh <849843 회차>` ② 아래로 새 회차 ③ 아이폰 2대에서 목록(첫 화면, 2026년 10월 29일)에 849799(밀워키·탬파베이)가 뜨는지 → 열기.
