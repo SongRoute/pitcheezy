@@ -19,7 +19,7 @@ const REACT_DELAY_MS = 250; // 안 치는 공: 이만큼 뒤에 반응 시작
 const HIT_FADE_FROM = 0.86; // hit 끝부분 투명 처리 시작 진행률
 const FALLBACK_PLAY = { contact: { clip: "contact_hit1", cue: 1.456042, end: 2.1 }, miss: { clip: "miss", cue: 1.198889, end: 2.45 } };
 
-const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null, liveLast: null, livePlayed: null, liveSeen: new Set(), rebase: Infinity, liveFlip: 0, hold: false };
+const S = { b: null, box: null, row: null, side: null, play: null, lastKey: null, playedKey: null, raf: 0, busy: false, fails: 0, last: "대기", played: 0, ro: null, liveLast: null, livePlayed: null, liveSeen: new Set(), rebase: Infinity, win: 0, liveFlip: 0, hold: false };
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function resolvePlay(meta) {
@@ -124,7 +124,7 @@ function unmount(reason) {
   if (S.row) { S.row.classList.remove("pz-has3d"); hideSilhouette(S.row, false); }
   if (S.b) { try { S.b.dispose(); } catch (e) { /* 무시 */ } }
   if (S.box && S.box.parentNode) S.box.remove();
-  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; S.rebase = Infinity; S.last = reason || "해제"; // playedKey·liveSeen은 남긴다(P3-c)
+  S.b = null; S.box = null; S.row = null; S.side = null; S.play = null; S.lastKey = null; pause(); S.last = reason || "해제"; // playedKey·liveSeen은 남긴다(P3-c)
 }
 
 let scheduled = 0;
@@ -135,7 +135,7 @@ function tick() {
   if (S.b && (S.row !== row || !S.box.isConnected)) unmount("존 행 교체");
   // Song이 타자 방향을 모를 때(경기 전·타자 교체 사이)는 실루엣 띠(.sv-batband) 자체를 그리지 않는다 → 우리도 3D를 숨기고 반응하지 않는다(검토 지적)
   const band = row.querySelector(".sv-batband");
-  if (!band) { S.rebase = Infinity; if (S.box && !S.box.hidden) S.box.hidden = true; return; } // 값이 바뀔 때만 쓴다(검토 R4 P2-1: 같은 값 쓰기도 변경 기록을 남겨 pz-fit을 매 프레임 깨웠다)
+  if (!band) { pause(); if (S.box && !S.box.hidden) S.box.hidden = true; return; } // 값이 바뀔 때만 쓴다(검토 R4 P2-1: 같은 값 쓰기도 변경 기록을 남겨 pz-fit을 매 프레임 깨웠다)
   if (!S.b) { mount(row); return; }
   if (S.box.hidden) { S.box.hidden = false; S.b.resize(); }
   // React가 .sv-zrow의 className을 통째로 다시 쓰면(bat-l ↔ bat-r) 우리가 붙인 pz-has3d가 지워진다 → 틱마다 되살리고, 실루엣 svg는 인라인 style로도 숨긴다(11/9 확인: 우타자로 바뀐 뒤 실루엣이 비쳐 보였음)
@@ -153,16 +153,20 @@ function tick() {
     const kind = key ? kindFromActual(line) : null;
     if (kind && key !== S.playedKey) { const first = S.playedKey === null; S.playedKey = key; if (!first) playKind(kind); }
   }
-  if (line) S.rebase = Infinity; else live(row, side); // 지난 공을 보는 동안은 실시간 추적을 쉰다 → (e) 실시간으로 돌아오면 그때 공은 기준으로만
+  if (line) pause(); else live(row, side); // 지난 공을 보는 동안은 실시간 추적을 쉰다 → (e) 실시간으로 돌아오면 그때 공은 기준으로만
 }
 /* 실시간 반응(3b): 실시간 화면(다음 공 추천)에는 그 줄이 없다(Song 화면은 지난 공을 볼 때만 줄을 그린다). 그때는 존 행의 data-pz-last-key·kind·side
  *       (GameScreen이 실시간에만 다는 속성, 화면에 보이지 않음)를 읽어 새 공마다 같은 규칙으로 반응한다(2026-11-16, demo/front-liveswing-1116).
  *  열쇠는 투구 식별자(lastPitch.key)다. 규칙:
  *  기준 다시 잡기(rebase)는 명시적 사건 때만 한다(검토 R5 재검토 P1-1, 11/16). 속성이 잠깐 없어지는 것만으로는 다시 잡지 않는다 —
  *  공개 모드에서는 새 공마다 "옛 공 → 속성 없음(새 파일 기다림 가림) → 새 공"이 되기 때문이다(발행기가 진행 중 경기의 game_checks를 매 주기 씀).
- *  (a) 붙을 때 보인 공, 띠가 사라졌다 돌아온 뒤(이닝 사이)·'실제 투구' 줄을 보다 돌아온 뒤 처음 보인 공은 기준으로만(rebase = Infinity: 다음 공 하나).
- *      탭 복귀·online(재연결)은 재읽기 창(RETURN_MS)을 연다: 창 안에 보인 공은 모두 기준으로만 삼고, 창 안에서 속성이 없는 동안(확인 중·새 파일 기다림)은
- *      창이 MASK_TAIL_MS씩 늘어난다 — 복귀 틱이 가림보다 먼저 돌아도, 재읽기로 온 공(그사이 던진 공)은 재생하지 않는다. 창이 지난 뒤 새 공부터 재생.
+ *  (a) 붙을 때 보인 공, 띠가 사라졌다 돌아온 뒤(이닝 사이)·'실제 투구' 줄을 보다 돌아온 뒤·탭이 가려진 동안 처음 보인 공은 기준으로만
+ *      (rebase = Infinity: 다음에 보인 공 하나).
+ *      탭 복귀·online(재연결)은 재읽기 창(win = 그 순간 + RETURN_MS, 늘리지 않음)을 연다(검토 3차 P1-1: 창이 영구히 늘던 결함):
+ *        - 창 안에 보인 공은 기준으로만 삼는다(가림 없는 API 모드의 재읽기).
+ *        - 창 안에서 가림(속성 없음)을 보면 rebase = Infinity: 가림 뒤 처음 보인 공 하나가 기준이다 — 재읽기가 창보다 오래 걸려도(파일 타임아웃까지)
+ *          그사이 던진 공은 재생하지 않는다(3차 P2-1). 그 공을 본 뒤 아직 창 안이면 창으로 돌아가고, 창이 지났으면 이어 보기(0)로.
+ *        - 창이 지난 뒤의 가림·공은 이어 보기와 같다(창을 닫는다).
  *      가림 중에 붙으면(속성 없음) 다음에 보인 공이 기준. 빈 열쇠(아직 던진 공 없음)에서 붙으면 경기 첫 공은 재생한다.
  *  (b) 본(기준으로 삼았거나 재생한) 식별자는 문서 수명 동안 모두 기억해(liveSeen, Set) 다시 재생하지 않는다(A→B→A도 A를 다시 재생하지 않음) — 탭 복귀·재연결·같은 내용 재발행·확인 중 가림 뒤 같은 공은 재생하지 않는다.
  *  (c) 정정: 같은 공의 결과가 바뀌어도(예: 파울 → 헛스윙) 다시 재생하지 않는다(이미 반응한 공). 결과 없이 먼저 온 공(확인 중)은
@@ -173,16 +177,17 @@ function tick() {
  *  (f) 동작 줄이기면 playKind가 정지 자세만 둔다. */
 function liveAttrs(row) { return { has: row.hasAttribute("data-pz-last-key"), k: row.getAttribute("data-pz-last-key") || "", kind: row.getAttribute("data-pz-last-kind") || "", side: row.getAttribute("data-pz-last-side") || "" }; }
 function seen(k) { S.liveSeen.add(k); S.livePlayed = k; }
-const RETURN_MS = 4000, MASK_TAIL_MS = 1500;
-function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = (a.has ? "+" : "-") + a.k + "|" + a.kind; if (on && a.k) seen(a.k); S.rebase = on && a.has ? 0 : Infinity; } // 가림 중(속성 없음)에 붙으면 기준 미정(P2-1)
+const RETURN_MS = 4000;
+function pause() { S.rebase = Infinity; S.win = 0; }
+function liveBase(row, on) { const a = liveAttrs(row); S.liveLast = (a.has ? "+" : "-") + a.k + "|" + a.kind; if (on && a.k) seen(a.k); if (on && a.has) { S.rebase = 0; S.win = 0; } else pause(); } // 가림 중(속성 없음)에 붙으면 기준 미정(P2-1)
 function syncSide(side) { S.side = side; S.box.classList.toggle("side-r", side === "R"); S.b.setSide(side); S.b.reset(reduceMotion() ? { still: true } : undefined); }
 function live(row, side) {
   const a = liveAttrs(row), id = (a.has ? "+" : "-") + a.k + "|" + a.kind, now = performance.now();
   if (id === S.liveLast && !S.rebase) return;
   S.liveLast = id;
-  if (!a.has) { if (S.rebase && S.rebase !== Infinity) S.rebase = Math.max(S.rebase, now + MASK_TAIL_MS); return; } // 가림: 이어 보기는 그대로, 재읽기 창만 늘린다
-  if (S.rebase === Infinity) { S.rebase = 0; if (a.k) seen(a.k); return; } // 다음 공 하나를 기준으로(빈 열쇠면 기준 없이 이어 보기 → 첫 공 재생)
-  if (S.rebase) { if (now <= S.rebase) { if (a.k) seen(a.k); return; } S.rebase = 0; } // 재읽기 창 안의 공은 기준으로만
+  if (!a.has) { if (S.rebase && S.rebase !== Infinity) { if (now <= S.rebase) S.rebase = Infinity; else { S.rebase = 0; S.win = 0; } } return; } // 창 안의 가림 → 가림 뒤 첫 공이 기준 / 창이 지났으면 이어 보기
+  if (S.rebase === Infinity) { if (a.k) seen(a.k); if (S.win && now <= S.win) S.rebase = S.win; else { S.rebase = 0; S.win = 0; } return; } // 다음 공 하나를 기준으로(빈 열쇠면 기준 없이)
+  if (S.rebase) { if (now <= S.rebase) { if (a.k) seen(a.k); return; } S.rebase = 0; S.win = 0; } // 재읽기 창 안의 공은 기준으로만, 창이 지났으면 닫고 이어 보기
   if (!a.k || !a.kind || S.liveSeen.has(a.k)) return;
   seen(a.k);
   if (S.hold) stopRaf(); // 앞 타자 반응 중에 새 공: 끊는다(hold 해제)
@@ -194,9 +199,9 @@ const schedule = () => { if (!scheduled) scheduled = requestAnimationFrame(tick)
 const mo = new MutationObserver(schedule);
 mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-pz-last-key", "data-pz-last-kind", "data-pz-last-side"], characterData: true });
 // 탭이 가려지면 진행 중 반응을 끊고 바로 대기 자세로(끊기만 하면 setSwing 자세에서 멈춘 채 남는다; 검토 지적)
-const reopen = () => { S.rebase = performance.now() + RETURN_MS; schedule(); }; // 탭 복귀·재연결: 재읽기 창
+const reopen = () => { S.rebase = S.win = performance.now() + RETURN_MS; schedule(); }; // 탭 복귀·재연결: 재읽기 창
 addEventListener("online", reopen);
-document.addEventListener("visibilitychange", () => { if (document.hidden) { S.rebase = Infinity; stopRaf(); if (S.b && S.b.ok) S.b.reset(reduceMotion() ? { still: true } : undefined); } else reopen(); }); // 돌아오면 한 틱: 그때 마지막 공을 기준으로(그 뒤 새 공부터 재생)
+document.addEventListener("visibilitychange", () => { if (document.hidden) { pause(); stopRaf(); if (S.b && S.b.ok) S.b.reset(reduceMotion() ? { still: true } : undefined); } else reopen(); }); // 돌아오면 한 틱: 그때 마지막 공을 기준으로(그 뒤 새 공부터 재생)
 schedule();
 
 window.PZSongSkin = Object.freeze({

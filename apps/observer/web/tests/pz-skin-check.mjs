@@ -517,9 +517,36 @@ try {
         host.liveDrop = 0; host.liveBump = 2;
         const g2 = await page.waitForFunction(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === '849843:11:1', null, { timeout: 20000 }).then(() => true, () => false);
         await page.waitForTimeout(400); const s2 = await status(page), m2 = await page.evaluate(() => window.__masks);
-        ok(g1 && g2 && m2 >= 1 && s0.played === 0 && s1.played === 1 && s2.played === 2, `live real R5 re-review P1-1: continuous watching with game_checks + slow file (masks seen ${m1} → ${m2}): 10:3 swings (played ${s1.played}), 11:1 swings (played ${s2.played})`);
+        ok(g1 && g2 && m2 >= 2 && s0.played === 0 && s1.played === 1 && s2.played === 2, `live real R5 re-review P1-1: continuous watching with game_checks + slow file (masks seen ${m1} → ${m2}): 10:3 swings (played ${s1.played}), 11:1 swings (played ${s2.played})`);
       }
       ok(errors.length === 0, `live real continuous: no page errors (${errors.length})`, errors.slice(0, 3));
+      host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
+      await context.close();
+    }
+    // R5 3rd review P2-3 on the real screen: game_checks on + FAST file (250 ms) — tab back: the re-read pitch is the baseline, the next two swing;
+    // online while watching: after the re-read window the next pitches swing (the window used to grow for ever)
+    for (const kind of ['tab', 'online']) {
+      host.liveDrop = kind === 'tab' ? 3 : 2; host.liveBump = 0; host.checks = LIVE_PK; host.slowGameMs = 250;   // online starts on 10:2 (a ball: no take clip in the fake model), so both later pitches are swings
+      const { context, page, errors } = await open(390, 844);
+      await page.goto(`${origin}/?game=${LIVE_PK}`); await page.locator('.sv-game .sv-zrow').waitFor({ timeout: 15000 });
+      const key = () => page.evaluate(() => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key'));
+      const until = (k) => page.waitForFunction((k) => document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === k, k, { timeout: 20000 }).then(() => true, () => false);
+      if (await waited(`live real fast ${kind}: 3D attached`, () => page.waitForFunction(() => window.PZSongSkin?.status().attached === true && document.querySelector('.sv-game .sv-zrow')?.getAttribute('data-pz-last-key') === (kind === 'tab' ? '849843:10:1' : '849843:10:2'), null, { timeout: 25000 }))) {
+        const vis = (h) => page.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+        await page.evaluate(() => { const t0 = performance.now(); window.__tl = []; new MutationObserver(() => { const r = document.querySelector('.sv-game .sv-zrow'), k = r?.getAttribute('data-pz-last-key'); const v = k === null || k === undefined ? '-' : k.slice(-4); if (window.__tl[window.__tl.length - 1]?.[1] !== v) window.__tl.push([Math.round(performance.now() - t0), v, window.PZSongSkin.status().rebase]); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-pz-last-key'] }); });
+        let gA;
+        if (kind === 'tab') { await vis(true); host.liveDrop = 2; host.liveBump = 1; await page.waitForTimeout(300); await vis(false); gA = await until('849843:10:2'); }
+        else { await page.evaluate(() => dispatchEvent(new Event('online'))); gA = true; }
+        await page.waitForTimeout(400); const sA = await status(page);
+        await page.waitForTimeout(4500);   // past the 4 s re-read window
+        host.liveDrop = 1; host.liveBump = kind === 'tab' ? 2 : 1;
+        const gB = await until('849843:10:3'); await page.waitForTimeout(2600); const sB = await status(page);   // 10:3 = other side → hold ~1.2 s
+        host.liveDrop = 0; host.liveBump = kind === 'tab' ? 3 : 2;
+        const gC = await until('849843:11:1'); await page.waitForTimeout(400); const sC = await status(page);
+        ok(gA && gB && gC && sA.played === 0 && sB.played === 1 && sC.played === 2,
+          `live real R5 3rd P2-3 (${kind}, fast file 250 ms): ${kind === 'tab' ? 'the re-read pitch is the baseline' : 'online re-read'} (played ${sA.played}), then the next two pitches swing (played ${sB.played}, ${sC.played}; key ${await key()}; timeline ${JSON.stringify(await page.evaluate(() => window.__tl))})`);
+      }
+      ok(errors.length === 0, `live real fast ${kind}: no page errors (${errors.length})`, errors.slice(0, 3));
       host.liveDrop = 0; host.liveBump = 0; host.checks = false; host.slowGameMs = 0;
       await context.close();
     }
