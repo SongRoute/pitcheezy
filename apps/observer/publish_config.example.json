@@ -1,0 +1,17 @@
+{
+ "_note": "Example only (the real file is never committed). Copy to apps/observer/publish_config.json and edit. Values here are illustrative defaults, not the ones used in operation. Upload is off: the publisher only writes files to out_dir.",
+ "contract_version": "v1",
+ "out_dir": "runs/publish/out",
+ "state_path": "runs/publish/state.json",
+ "publish_interval_s": 5,
+ "fixed_delay_s": 0,
+ "settled_recheck_s": 600,
+ "final_recheck_for_s": null,
+ "final_slow_recheck_s": null,
+ "live_days_back": 1,
+ "live_days_ahead": 0,
+ "skip_unchanged_live": true,
+ "schedule_budget_s": 8.0,
+ "profile_reference": {"enabled": false, "profile_sources": null},
+ "upload": {"enabled": false}
+}

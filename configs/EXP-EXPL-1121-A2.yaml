@@ -1,0 +1,128 @@
+# EXP-EXPL-1121-A2 — X-GRU-A 1위 설정 주변 탐색(크기·dropout·lr·임베딩, GRU+attention 풀링), seed 10개. EXP-LIT-BASE-001의 코드·분할·정보 집합·선택 규칙을 이어받는다.
+# owner: "부스 모델을 다른 후보들이랑 비교해서 선정한다", "최대한 모델을 발전시켜보자"; PREQ 팔 "1번으로 가자" (2026-11-21).
+# 등록 문서: ${PITCHEEZY_JOBS}/20261121-lit-base/PREREG-EXPL-A2.md. 실행기: experiments/lit_base/expl.py --part A2
+id: EXP-EXPL-1121-A2
+part: A2    # 나머지 팔(2023~2025 자료, R 구조+투구 흐름, U1 갱신)은 EXPL-B로 따로 등록. 최종 선택·E_PS 채점은 EXPL-FINAL 등록에서 전체 후보 집합(A∪B)을 DEV로만
+status: REGISTERED     # Fable PASS-with-fixes(REVIEW-EXPL-A2-FABLE.md) 반영 (2026-11-21)
+execute: true
+author: claude-opus-5-5 (LIT-BASE/EXPL worker)
+viewing_state: >-
+  이 묶음의 설정은 EXPL-A의 DEV 결과(X-GRU-A 1위 = 설정 0: hidden 128·1층·12 epoch, 5 seed DEV NLL 1.22934; 큰 모델은 DEV에서 나빠짐;
+  X-GRU-B 1.23315)를 본 뒤 정한 주변 탐색이다. E_PS는 보지 않았다. 최종 선택은 FINAL에서 DEV로만.
+created_kst: '2026-11-21'
+data_role: >-
+  2026 EXPOSED DEVELOPMENT(FIT 03-25..09-27 정규시즌, R과 같은 package).
+  DEV(2026-09-01..09-27)에서만 순위·선택. 이 묶음은 E_PS를 읽지 않는다(서버·맥 모두). E_PS 확인 1회는 EXPL-FINAL 등록에서.
+
+data:
+  package:
+    root: data/final-1124/september-package       # 레포 상대(서버 link data/final-1124 = 맥 worktree 심볼릭 링크). 서버 sha 7/7 일치(a5000 세션)
+    rows: 713021
+    all_keys_sha256: 345d4d86d0bbceb9943d5239e71ca3311f851721a1181921bf3bbcb24a548e17
+    sha256:
+      x-prequential.npy: e84ad8938cb64884cf7f63bbff79b8b8393018418145fe4f3450a3723d7b467d
+      corpus-subset.npz: b8608d18d0e6c4a907fb11a9d8812f1a184ede7e7905be4428c8043739a264ff
+      seq-inputs.npz: 44682d7c7f1fa6c17f9c4b21a87702656fb8a62a82232f5617486f5fbd2f1255
+      game-date.npy: 7aa8d167a1316e410481130e4bd0a05f2770927624458994b10a43967699efb1
+      encoder.json: 375c1075db3ecc5f11e0bc0847a75f9298b9f28de84dc0610c35acdc676f8e26
+  eps_inputs:                                      # 이 묶음에서는 읽지 않는다(EXPL-FINAL의 predict가 맥에서 읽음). 기록용 고정값
+    path: ${PITCHEEZY_JOBS}/20261121-lit-base/eps-inputs/eps-inputs.npz
+    sha256: 4055cfe618298455f7dfee4fd59652e5d0b782123d219d9b9c812b353931f5b2
+    rows: 8943
+    built: 8668
+  excluded_game_pks: [849799, 849802, 849803, 849804, 849805, 849809, 849810, 849811, 849812, 849813, 849815, 849816, 849817, 849818,
+                      849819, 849820, 849822, 849823, 849825, 849826, 849827, 849828, 849829, 849830, 849831, 849832, 849833, 849834,
+                      849835, 849838, 849839, 849844, 849841, 849842, 849843, 849845, 849846, 849848, 849849, 849851]
+
+splits:          # LIT-BASE와 같다
+  fit_window: ['2026-03-25', '2026-09-27']
+  fit_tr_end: '2026-08-31'
+  dev_start: '2026-09-01'
+  rule: >-
+    tune = FIT_tr로 학습, DEV로 설정·epoch/rounds·seed 묶음 tau 선정. fitw = FIT 전체로 같은 설정·같은 budget 재학습 후
+    가중치 저장(.pt / LightGBM model.txt + 표적 인코딩 표). E_PS 예측은 EXPL-FINAL에서 최종 후보 한 팔만, 맥에서.
+
+features:
+  information_set: >-
+    R·LIT-BASE와 같다: state11, 투수 ID, 타자 ID, 같은 경기 같은 투수의 엄격히 앞선 투구 최대 32개(구종 19·결과 10·볼·스트라이크·같은 타자).
+    현재 투구 물리·위치·결과 없음.
+  target_encoding_alpha: 4.0
+  target_encoding_folds: 5
+
+families:
+  X-GRU-A2a:                                     # GPU4 (단독)
+    lane: gpu4
+    kind: seq
+    device: cuda
+    data: base
+    seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]     # 5 -> 10 seed 묶음 (DEV·최종 모두)
+    max_seconds_per_fit: 3600
+    base: {encoder: gru, window: 32, type_dim: 16, context_dim: 32, head_hidden: 128, dropout: 0.1, lr: 2.0e-3, weight_decay: 1.0e-4,
+           batch_size: 2048, max_epochs: 40, patience: 3, id_dropout: 0.05, hidden: 128, pitcher_dim: 64, batter_dim: 16, layers: 1}
+    tune:
+      seed: 0
+      configs:
+        - {}                                           # X-GRU-A 설정 0 그대로(seed 10개 대조)
+        - {encoder: gru_attn}                          # GRU + attention 풀링(작은 구조 변형; 서버에서 일찍 실행되게 앞에 둠)
+        - {hidden: 96}
+        - {hidden: 160}
+        - {dropout: 0.2}
+        - {dropout: 0.3}
+  X-GRU-A2b:                                     # GPU3 (X-TAK과 같은 장에서 함께 돔)
+    lane: gpu3s
+    kind: seq
+    device: cuda
+    data: base
+    seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]     # 5 -> 10 seed 묶음 (DEV·최종 모두)
+    max_seconds_per_fit: 3600
+    base: {encoder: gru, window: 32, type_dim: 16, context_dim: 32, head_hidden: 128, dropout: 0.1, lr: 2.0e-3, weight_decay: 1.0e-4,
+           batch_size: 2048, max_epochs: 40, patience: 3, id_dropout: 0.05, hidden: 128, pitcher_dim: 64, batter_dim: 16, layers: 1}
+    tune:
+      seed: 0
+      configs:
+        - {encoder: gru_attn, layers: 2, dropout: 0.2}
+        - {lr: 1.0e-3}
+        - {weight_decay: 1.0e-3}
+        - {pitcher_dim: 32}
+        - {batch_size: 1024, lr: 1.0e-3}
+        - {type_dim: 32}
+
+decision:
+  provisional_rule: >-
+    이 묶음 안 순위 = DEV NLL(선정 설정, seed 묶음 평균, DEV tau)이 낮은 순. select는 provisional-best.json(묶음 안 1위)만 쓴다.
+  final_rule: >-
+    최종 선택은 전체 후보 집합에서 DEV로만 한다. 이 묶음(A2a, A2b)은 EXPL-FINAL 등록을 고쳐(풀에 추가, 재검토) 들어간다.
+    E_PS는 최종 후보 확인용 1회(FINAL).
+  booth: 부스 모델 선택은 PM·owner 결정(후보 R, B-SEQ, B*_new).
+
+reference:
+  dev_selections:
+    LIT-BASE B-SEQ: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-SEQ/selection.json
+    LIT-BASE B-GBT: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-GBT/selection.json
+    LIT-BASE B-TAK: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-TAK/selection.json
+
+resources:
+  output_root: runs/EXP-EXPL-1121-A2       # 서버: runs/EXP-EXPL-1121-A2/<PITCHEEZY_LANE>/attempt-001. 맥: PITCHEEZY_OUT_ROOT=T7 EXPL-20261121/A2
+  report_dir: ${PITCHEEZY_JOBS}/20261121-lit-base
+  heavy_lock: ${PITCHEEZY_RUNS}/ML-MATRIX-20260924/.heavy.lock
+  threads: {gpu4: 4, gpu3s: 4}
+  internal_free_bytes_min: 10737418240
+  memory_free_percent_min: 30
+  forbidden_windows_kst:                   # 맥만: 새 fit을 시작하지 않는다
+    - ['2026-11-22T19:30:00', '2026-11-22T22:10:00']
+  gpu: A5000 GPU 2·3·4만. 실행·점유 확인·UUID 고정은 a5000-gpu 세션. 맥 MPS는 쓰지 않는다.
+
+dry_run:
+  package_days: ['2026-08-30', '2026-08-31']
+  configs_per_family: 1
+  override:
+    seq: {max_epochs: 1}
+    gbt: {max_rounds: 20}
+
+limitations:
+  - EXPL-A 결과를 보고 정한 12설정 주변 탐색 + 10 seed 묶음으로 같은 DEV를 다시 쓴다. DEV 순위가 더 낙관적일 수 있다.
+  - A2b는 GPU3에서 X-TAK과 같은 장을 나눠 쓴다. 같은 장 동시 실행은 결과의 비트 재현을 보장하지 않는다.
+  - E_PS는 이미 여러 번 봤고(R 채택, LIT-BASE 채점), EXPL-FINAL에서 다시 쓴다. 독립 시험이 아니다.
+  - DEV(9월)는 LIT-BASE에서 이미 수치를 본 자료이고, 이번 팔 설계(상한 늘리기 등)는 그 DEV 결과를 보고 정했다. DEV 순위는 낙관적일 수 있다.
+  - tau와 κ는 DEV에서 맞추고 DEV로 선정에 쓴다(모수 1개씩).
+  - 서버(CUDA)와 맥은 비트 재현이 보장되지 않는다. E_PS 예측(EXPL-FINAL)은 서버 가중치를 맥 CPU에서 돌린다.

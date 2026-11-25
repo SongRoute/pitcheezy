@@ -1,0 +1,12 @@
+Pitcheezy — NOTICE
+
+The MIT License in LICENSE covers the code, documents and figures written for this project only.
+
+MLB data, including Statcast and MLB Stats API data, and any data derived from it (game feeds, pitch labels,
+per-pitch predictions keyed to real pitches, replays, video and screenshots of broadcasts) are NOT covered by
+that license and are NOT included in this repository. They belong to their owners (MLB Advanced Media, L.P. and
+others) and are subject to their terms of use. Scripts here only tell you how to obtain such data yourself for
+your own use; whether a given use is allowed is your responsibility.
+
+Screenshots in docs/img show our own viewer screen. Player names and game numbers visible in them are public
+game records. The 3D batter area is covered: that render is a teammate's work and is not included here.

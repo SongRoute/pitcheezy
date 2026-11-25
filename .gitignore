@@ -1,0 +1,19 @@
+# MLB-derived inputs and run outputs stay local (see NOTICE, docs/REPRODUCE.md)
+/data/
+/runs/
+*.npz
+*.parquet
+*.json.gz
+# never commit publishing settings or env files
+publish_config*.json
+!publish_config.example.json
+.env*
+# python / node
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
+dist-public*/
+.DS_Store
+._*

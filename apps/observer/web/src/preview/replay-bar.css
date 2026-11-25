@@ -1,0 +1,17 @@
+/* Replay panel (preview only). Its own names (pz-rb-*), so nothing here can restyle the public screen. */
+.pz-rb { position: fixed; right: 0; top: 46%; z-index: 9000; font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif; color: #15191e; }
+.pz-rb-tab { writing-mode: vertical-rl; min-width: 34px; padding: 12px 0; border-radius: 12px 0 0 12px; border: 0; background: #3d7bd9; color: #fff;
+  font-weight: 700; font-size: 13px; cursor: pointer; box-shadow: 0 4px 14px rgba(21,25,30,.25); }
+.pz-rb.open .pz-rb-tab { background: #15191e; }
+.pz-rb-body { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); width: min(340px, calc(100vw - 52px)); box-sizing: border-box;
+  max-height: 70dvh; overflow-y: auto; background: #fff; border-radius: 16px; padding: 12px; box-shadow: 0 10px 34px rgba(21,25,30,.28);
+  display: grid; gap: 8px; font-size: 12px; }
+.pz-rb-note { margin: 0; color: #5b636b; line-height: 1.5; }
+.pz-rb fieldset { border: 0; border-top: 1px solid #eef0ec; padding: 8px 0 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pz-rb legend { font-weight: 700; padding: 0 0 4px; float: left; width: 100%; }
+.pz-rb fieldset button, .pz-rb fieldset a { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #dde1dc; background: #fff; cursor: pointer;
+  font: inherit; font-size: 12px; color: #15191e; text-decoration: none; display: inline-flex; align-items: center; }
+.pz-rb fieldset button[aria-pressed=true] { background: #15191e; color: #fff; border-color: #15191e; }
+.pz-rb-step { font-size: 13px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+/* while the screen has a sheet open the closed tab steps aside, so it never covers the sheet's close button */
+body:has(.sv-sheet) .pz-rb:not(.open) { display: none; }

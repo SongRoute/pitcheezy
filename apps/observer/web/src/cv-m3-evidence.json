@@ -1,0 +1,119 @@
+{
+ "schema": "pitcheezy-cv-m3-evidence-v1",
+ "note": "Display copy of the PM M3 receipt. Shared-transform reading agreement, not physical accuracy or intent validation. Not used for prediction training/tuning/selection or policy evaluation.",
+ "source": {
+  "teamRepo": "Pitcheezy/transition-models",
+  "teamCommit": "1687c1e8a7ea7213c164679e94d7515a0b530629",
+  "teamDoc": "docs/INTENT_V0_M3_EVAL.md",
+  "receiptPath": "results/checks/CV-M3-receipt-recalculation-20261004.json",
+  "receiptSha256": "b9b2ab1911f55facf98ef74f202f9c00b0837e6a0c827132dc1566091d2bf630",
+  "receiptCreatedUtc": "2026-10-04T03:56:43.463296+00:00",
+  "reviewPath": "docs/reviews/PM-M3-receipt-2026-10-04.md",
+  "calculatorSha256": "2b71ea600d8ec05c6c5840284405ee1f9f1b3ce96d873b83c2083088bee26cb6",
+  "validatorSha256": "52f46e9ae09d6f3297c3ac6acc26016e34f5788d8dbd75c8864de4a82a15609d",
+  "validatorRowsPassed": 86,
+  "exampleRule": "output-feet distance: representative = closest to pooled median, smallest, largest (849845/823407 pooled); FOX representative quoted from PM review",
+  "reviewFacts": "gamePitchesTotal 605 and NBC caughtBalls 13 are quoted from the PM review text, not the receipt JSON"
+ },
+ "pooled": {
+  "frames": 86,
+  "personMarked": 84,
+  "personAbstained": 2,
+  "aiOutput": 58,
+  "aiAbstained": 28,
+  "compared": 58,
+  "aiAbstainedPersonMarked": 26,
+  "pixels": {
+   "median": 2.5298221281347035,
+   "p90": 6.511528238439882
+  },
+  "outputFeet": {
+   "median": 0.09236584866713454,
+   "p90": 0.20090428069107935
+  },
+  "gamePitchesTotal": 605
+ },
+ "games": [
+  {
+   "gamePk": 849845,
+   "broadcast": "NBC",
+   "frames": 57,
+   "personMarked": 56,
+   "personAbstained": 1,
+   "aiOutput": 43,
+   "aiAbstained": 14,
+   "compared": 43,
+   "aiAbstainedPersonMarked": 13,
+   "pixels": {
+    "median": 2.0615528128088303,
+    "p90": 5.091168824543142
+   },
+   "outputFeet": {
+    "median": 0.08843585245815183,
+    "p90": 0.1743107856674394
+   },
+   "cameraCheck": {
+    "status": "measured",
+    "rmsFeet": 0.1488494360600154,
+    "caughtBalls": 13
+   }
+  },
+  {
+   "gamePk": 823407,
+   "broadcast": "FOX",
+   "frames": 29,
+   "personMarked": 28,
+   "personAbstained": 1,
+   "aiOutput": 15,
+   "aiAbstained": 14,
+   "compared": 15,
+   "aiAbstainedPersonMarked": 13,
+   "pixels": {
+    "median": 5.79827560572969,
+    "p90": 9.442986815621422
+   },
+   "outputFeet": {
+    "median": 0.1391276032999922,
+    "p90": 0.2661246700326747
+   },
+   "cameraCheck": {
+    "status": "unmeasured",
+    "rmsFeet": null
+   }
+  }
+ ],
+ "examples": [
+  {
+   "pitchId": "849845:10:4",
+   "role": "representative",
+   "pixels": 2.3194827009486403,
+   "outputFeet": 0.09236584866713454,
+   "videoLinked": false
+  },
+  {
+   "pitchId": "849845:23:6",
+   "role": "smallest",
+   "pixels": 3.8209946349085597,
+   "outputFeet": 0.008464632301523795,
+   "videoLinked": false
+  },
+  {
+   "pitchId": "849845:38:6",
+   "role": "largest",
+   "pixels": 1.044030650891055,
+   "outputFeet": 0.32226464280153355,
+   "videoLinked": false
+  },
+  {
+   "pitchId": "823407:50:1",
+   "role": "fox_representative",
+   "pixels": 7.3824115301167,
+   "outputFeet": 0.1391276032999922,
+   "videoLinked": false
+  }
+ ],
+ "outputHeightSigned": {
+  "meanFeet": -0.04789827586206896,
+  "medianFeet": -0.049
+ }
+}

@@ -1,0 +1,617 @@
+/* ---- F1 (owner 2026-11-21, Figma 140:2): card stack + at-bat timeline.
+   Score and status sit on the page above the cards (status chip words black); cards top to bottom: game (box score · runners · count,
+   no inning words), players, zone (cell fill), recommendation, this at-bat as an always-open timeline; floating word tabs at the bottom.
+   Selectors start with .sv-page.sv-game.f1 so they win over the later host skin (pz/pz-theme.css) without touching it. Colours come from
+   the existing tokens (--sv-*), so a later colour choice (TC) only swaps tokens. Geometry of the zone row (height, 3D box) is unchanged. ---- */
+/* ==== F1 tokens: every colour, size and gap that F1 adds lives here; change a value here and the whole screen follows (PM 11/22). ==== */
+.sv-page.sv-game.f1 {
+  --f1-gap: 8px; --f1-radius: 16px; /* room under the last card so the floating tabs never cover it */ --f1-nav-room: calc(80px + env(safe-area-inset-bottom)); --f1-pad-x: 14px; --f1-page-x: 12px;
+  /* type scale */
+  --f1-fs-score: 30px; --f1-fs-team: 16px; --f1-fs-title: 17px; --f1-fs-body: 15px; --f1-fs-small: 12px; --f1-fs-result: 26px;
+  /* status chip (words black, owner 11/21) and its dots */
+  --f1-chip-ink: #111; --f1-dot-live: #e0485c; --f1-dot-late: #c48b16; --f1-dot-fixed: #1f9e8b; --f1-dot-idle: #6b7a80; --f1-dot-pregame: #2f6b12;
+  /* ball · strike · out */
+  --f1-b: #1f8a4c; --f1-s: #e3a812; --f1-o: #d8433a; --f1-dot-ring: #9aa8ae;
+  /* result hold card */
+  --f1-hold-bg: var(--sv-hd, #15191e); --f1-hold-ink: #fff; --f1-hold-sub: #d8dfe4; --f1-hold-body: #e6eaed;
+  /* floating tabs */
+  --f1-nav-ink: #aeb8be; --f1-nav-on-bg: rgba(255, 255, 255, .16); --f1-nav-on-ink: #fff; --f1-nav-shadow: 0 6px 18px rgba(21, 25, 30, .25);
+  /* teams (win probability): home 탬파베이 blue, away 밀워키 gold — tokens, swap per game */
+  --f1-team-home: #2b6cb0; --f1-team-away: #c8961c; --f1-wp-ink: #1f2933;
+  /* 주요 장면 */
+  --f1-scene-tag: var(--sv-g1-line, #2f6b12); --f1-noise: #6b767c;
+}
+/* header: on the page background, no dark band */
+.sv-page.sv-game.f1 .sv-hd { background: var(--sv-bg); color: var(--sv-ink); }
+.sv-page.sv-game.f1 .sv-hd-1 { background: var(--sv-bg); box-shadow: none; min-height: 52px; }
+.sv-page.sv-game.f1 .sv-back { color: var(--sv-ink); }
+.sv-page.sv-game.f1 .sv-hd-score .t { color: var(--sv-ink); font-size: var(--f1-fs-team); font-weight: 800; }
+.sv-page.sv-game.f1 .sv-hd-score strong { color: var(--sv-ink); font-size: var(--f1-fs-score); }
+.sv-page.sv-game.f1 .sv-hd-score i { color: var(--sv-ink); font-size: 26px; font-weight: 800; }
+.sv-page.sv-game.f1 .sv-hd-status { border: 0; padding: 0 2px; color: var(--f1-chip-ink); font-size: var(--f1-fs-body); font-weight: 800; }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone] { color: var(--f1-chip-ink); }
+.sv-page.sv-game.f1 .sv-hd-status i { width: 9px; height: 9px; }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone="live"] { --dot: var(--f1-dot-live); }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone="late"] { --dot: var(--f1-dot-late); }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone="lost"] { --dot: var(--f1-dot-live); }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone="fixed"] { --dot: var(--f1-dot-fixed); }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone="final"], .sv-page.sv-game.f1 .sv-hd-status[data-tone="none"], .sv-page.sv-game.f1 .sv-hd-status[data-tone="checking"] { --dot: var(--f1-dot-idle); }
+.sv-page.sv-game.f1 .sv-hd-status[data-tone="pregame"] { --dot: var(--f1-dot-pregame); }
+.sv-page.sv-game.f1 .sv-hd-status.f1-final::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--dot); }
+.sv-page.sv-game.f1 .sv-hd-status:focus-visible { outline-color: var(--sv-ink); }
+/* card stack */
+.sv-page.sv-game.f1 .sv-live-layout { display: flex; flex-direction: column; gap: var(--f1-gap); padding: 4px var(--f1-page-x) var(--f1-nav-room); }
+.sv-page.sv-game.f1 .f1-card { background: var(--sv-paper); border-radius: var(--f1-radius); box-sizing: border-box; }
+.sv-page.sv-game.f1 .sv-stage { display: flex; flex-direction: column; gap: var(--f1-gap); padding: 0; background: transparent; }
+/* game card: box score left, runners + B·S·O right */
+.sv-page.sv-game.f1 .f1-game { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px var(--f1-pad-x); min-height: 60px; }
+.sv-page.sv-game.f1 .f1-game .sv-ls { justify-self: auto; color: var(--sv-ink); min-width: 0; }
+.sv-page.sv-game.f1 .f1-game .sv-ls-grid .h { color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-game .sv-ls-grid .t { color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-game .sv-ls-grid .cur { background: var(--sv-bg); color: var(--sv-ink) !important; font-weight: 800; }
+.sv-page.sv-game.f1 .f1-game .sv-ls-grid .h.cur { font-size: 15px; }
+.sv-page.sv-game.f1 .f1-game .sv-ls-grid .r { color: var(--sv-ink) !important; border-left-color: var(--sv-line); }
+.sv-page.sv-game.f1 .f1-pregame { margin: 0; font-size: var(--f1-fs-body); font-weight: 700; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-bso { flex: none; display: flex; align-items: center; gap: 8px; }
+.sv-page.sv-game.f1 .f1-bso .sv-runners { width: 34px; height: 26px; }
+.sv-page.sv-game.f1 .f1-bso-rows { display: grid; gap: 2px; }
+.sv-page.sv-game.f1 .f1-bso-rows > span { display: flex; align-items: center; gap: 3px; height: 12px; }
+.sv-page.sv-game.f1 .f1-bso-rows b { width: 10px; font-size: 10px; font-weight: 800; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-bso-rows i { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; border: 1.4px solid var(--f1-dot-ring); }
+.sv-page.sv-game.f1 .f1-bso-rows i.on { border: 0; }
+.sv-page.sv-game.f1 .f1-bso-rows i.on.b { background: var(--f1-b); }
+.sv-page.sv-game.f1 .f1-bso-rows i.on.s { background: var(--f1-s); }
+.sv-page.sv-game.f1 .f1-bso-rows i.on.o { background: var(--f1-o); }
+/* players card: batter left, pitcher right */
+.sv-page.sv-game.f1 .sv-mu { border-bottom: 0; box-shadow: none; clip-path: none; }
+.sv-page.sv-game.f1 .sv-mu:not(.line) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; max-width: none; margin: 0; padding: 10px var(--f1-pad-x) 30px; min-height: 64px; }
+.sv-page.sv-game.f1 .sv-mu.line { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px 0 0; }
+.sv-page.sv-game.f1 .sv-mu.line p { margin: 0; padding: 12px var(--f1-pad-x); }
+.sv-page.sv-game.f1 .f1-break-pa { flex: none; font-size: var(--f1-fs-body); }
+/* zone card */
+.sv-page.sv-game.f1 .f1-zone { display: flex; flex-direction: column; gap: 8px; padding: 12px 10px 10px; }
+.sv-page.sv-game.f1 .sv-rec.cell rect { stroke: none; }
+.sv-page.sv-game.f1 .sv-rec.cell.r3 rect { fill: var(--sv-rec2); fill-opacity: .6; stroke: none; }
+/* recommendation card */
+.sv-page.sv-game.f1 .sv-rec-sec { border-top: 0; padding: 12px var(--f1-pad-x) 6px; }
+.sv-page.sv-game.f1 .sv-rec-sec.f1-hold { padding: 10px; }
+.sv-page.sv-game.f1 .sv-rec-head h2 { font-size: var(--f1-fs-title); font-weight: 800; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .sv-state-more { color: var(--sv-ink); font-weight: 700; }
+/* result hold: dark card, the PA result in large type */
+.sv-page.sv-game.f1 .f1-hold .sv-result-card { height: auto; min-height: 88px; padding: 12px 16px; gap: 6px; border-radius: 12px; background: var(--f1-hold-bg); color: var(--f1-hold-ink); }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-title { font-size: 15px; line-height: 1.2; color: var(--f1-hold-sub); }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-title { white-space: normal; }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card.has-ending .sv-rc-title b { font-size: var(--f1-fs-result); line-height: 1.15; font-weight: 800; color: var(--f1-hold-ink); }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-body b { color: var(--f1-hold-body); font-weight: 600; }
+/* timeline */
+.sv-page.sv-game.f1 .f1-timeline { border-top: 0; padding: 6px var(--f1-pad-x) 8px; }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-head { min-height: 40px; }
+.sv-page.sv-game.f1 .f1-pa-open { min-height: 44px; padding: 0; border: 0; background: none; color: var(--sv-ink); font: inherit; font-size: var(--f1-fs-team); font-weight: 800; text-align: left; }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-list > li { position: relative; border-top: 0; }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-list > li:not(:last-child)::before { content: ""; position: absolute; left: 10px; top: 32px; bottom: -10px; width: 2px; background: var(--sv-line); }
+.sv-page.sv-game.f1 .f1-timeline .sv-pitch-row { min-height: 44px; }
+.sv-page.sv-game.f1 .f1-timeline .sv-pr-res { font-weight: 500; color: var(--sv-muted); font-size: var(--f1-fs-body); }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-list > li.next { min-height: 40px; gap: 12px; font-size: var(--f1-fs-body); color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-tl-dot { flex: none; width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%; border: 2px dashed var(--sv-g1-line); }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-list > li.result { padding-left: 34px; min-height: 40px; }
+/* floating word tabs */
+.sv-page.sv-game.f1 .sv-bottom-nav { left: 50%; right: auto; bottom: calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(310px, calc(100vw - 32px));
+  padding: 6px; border-radius: 999px; gap: 2px; box-shadow: var(--f1-nav-shadow); }
+.sv-page.sv-game.f1 .sv-bottom-nav button { min-height: 44px; flex-direction: row; border-radius: 999px; font-size: var(--f1-fs-body); font-weight: 600; color: var(--f1-nav-ink); }
+.sv-page.sv-game.f1 .sv-bottom-nav button.f1-on { background: var(--f1-nav-on-bg); color: var(--f1-nav-on-ink); font-weight: 800; }
+.sv-page.sv-game.f1 .sv-bottom-nav svg { display: none; }
+@media (max-width: 359px) {
+  .sv-page.sv-game.f1 .sv-live-layout { padding: 4px 8px var(--f1-nav-room); }
+  .sv-page.sv-game.f1 .f1-game { padding: 8px 10px; }
+  .sv-page.sv-game.f1 .sv-hd-score strong { font-size: 26px; }
+}
+@media (min-width: 760px) { .sv-page.sv-game.f1 .sv-live-layout { padding: 8px 16px var(--f1-nav-room); } .sv-page.sv-game.f1 .f1-zone { padding: 18px 24px 12px; } }
+/* zone height: F1 is a longer stack, so on a short phone the host's pz-fit would shrink the zone (390×664: 150 px). The zone keeps its
+   216 px here (host condition: pz-fit never shrinks the zone) and the page scrolls instead. Wider screens keep their own 330 px. */
+@media (max-width: 759px) and (orientation: portrait) { .sv-page.sv-game.f1 { --sv-zone-height: 216px; } }
+/* the host's head-to-head line (pz/pz-sheet.js, placed under the batter's today line): room for it inside the players card, as a pill */
+/* the players card keeps 30px under the names for that line at all times (padding above), so the zone never jumps when it comes and goes */
+body:has(.sv-page.sv-game.f1) .pz-sh-line .pz-sh-pill { border-radius: 999px; box-shadow: inset 0 0 0 1px var(--sv-line, #d9e3d3); margin-top: 4px; }
+/* 주요 장면 (SA-1 line under the dark result card, SA-2 sheet, SA-3 list) */
+.sv-page.sv-game.f1 .f1-scene-line { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 8px; padding: 0 12px; box-sizing: border-box;
+  border: 0; border-radius: 12px; background: var(--sv-bg); color: var(--sv-ink); font: inherit; text-align: left; }
+.sv-page.sv-game.f1 .f1-scene-tag { flex: none; font-size: var(--f1-fs-small); font-weight: 800; color: var(--f1-scene-tag); }
+.sv-page.sv-game.f1 .f1-scene-val { flex: 1; min-width: 0; font-size: var(--f1-fs-body); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-page.sv-game.f1 .f1-scene-go { flex: none; font-size: 20px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-rec-vs { margin: 8px 2px 0; font-size: 14px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-rec-vs b { color: var(--sv-ink); font-weight: 700; }
+.f1-sc-who { margin: 0; font-size: 14px; color: var(--sv-muted); }
+.f1-sc-head { margin: 4px 0 10px; font-size: 18px; font-weight: 800; color: var(--sv-ink); font-variant-numeric: tabular-nums; }
+.f1-sc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border-top: 1px solid var(--sv-line); }
+.f1-sc-row > div { display: grid; gap: 2px; }
+.f1-sc-row b { font-size: 15px; color: var(--sv-ink); }
+.f1-sc-row small { font-size: 12px; color: var(--sv-muted); }
+.f1-sc-row > span { font-size: 17px; font-weight: 800; color: var(--sv-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f1-sc-row.noise b, .f1-sc-row.noise > span { color: var(--f1-noise, #6b767c); font-weight: 600; }
+.f1-sc-row.noise > span { font-size: 14px; }
+.f1-sc-fixed { margin: 0; padding-top: 10px; border-top: 1px solid var(--sv-line); font-size: 13px; font-weight: 700; color: var(--sv-muted); }
+.f1-sc-small { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--sv-muted); }
+button.f1-sc-list { display: flex; align-items: center; width: 100%; min-height: 44px; margin: 4px 0 8px; padding: 0 12px; border: 0; border-radius: 12px;
+  background: var(--sv-bg); color: var(--sv-ink); font: inherit; font-size: 14px; font-weight: 700; text-align: left; }
+.f1-sc { padding-bottom: 16px; }
+.f1-sc-rest { margin: 4px 0 0; padding: 12px 0; border-top: 1px solid var(--sv-line); font-size: 13px; color: var(--sv-muted); }
+ol.f1-sc-list { list-style: none; padding: 0; margin: 8px 0; }
+ol.f1-sc-list > li { border-top: 1px solid var(--sv-line); }
+ol.f1-sc-list > li > button, ol.f1-sc-list .f1-sc-lock { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 6px 0; border: 0; background: none; font: inherit; text-align: left; color: var(--sv-ink); }
+ol.f1-sc-list i { flex: none; width: 22px; font-style: normal; font-weight: 800; font-size: 14px; color: var(--f1-scene-tag, #2f6b12); }
+ol.f1-sc-list li > button > span, ol.f1-sc-list .f1-sc-lock > span { flex: 1; min-width: 0; display: grid; gap: 2px; }
+ol.f1-sc-list b { font-size: 14px; }
+ol.f1-sc-list small { font-size: 12px; color: var(--sv-muted); }
+ol.f1-sc-list em { flex: none; font-style: normal; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+ol.f1-sc-list li.locked i, ol.f1-sc-list li.locked b { color: var(--f1-noise, #6b767c); font-weight: 600; }
+
+/* ---- visual review 1 (Fable 11/22) ---- */
+/* 1 result card body wraps to two lines instead of an ellipsis */
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-body { align-items: flex-start; }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-body b { white-space: normal; overflow: hidden; text-overflow: clip; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 20px; }
+/* 2 one-screen first view: tighter zone card, legend on one line, slimmer recommendation and next-pitch rows; a fade under the tabs */
+.sv-page.sv-game.f1 .f1-zone { padding: 8px 10px 6px; gap: 4px; }
+.sv-page.sv-game.f1 .f1-zone .sv-zone-legend { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 10px; }
+.sv-page.sv-game.f1 .f1-zone .sv-zone-legend p { margin: 0; }
+.sv-page.sv-game.f1 .sv-rec-sec { padding: 8px var(--f1-pad-x) 4px; }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-list > li.next { min-height: 32px; }
+.sv-page.sv-game.f1 .f1-timeline { padding: 2px var(--f1-pad-x) 4px; }
+.sv-page.sv-game.f1::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: calc(104px + env(safe-area-inset-bottom)); z-index: 14; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--sv-bg) 36%); }  /* under the tabs (z 15), over the cards */
+/* 3 no recommendation: one muted sentence */
+.sv-page.sv-game.f1 .sv-reclist.f1-rec-none { display: flex; align-items: center; min-height: 44px; padding: 10px 12px; font-size: var(--f1-fs-body); color: var(--sv-muted); }
+/* 4 reference chip: wraps, solid line */
+.sv-page.sv-game.f1 .sv-ref-teaser { height: auto; min-height: 36px; padding: 6px 10px; border-style: solid; border-color: var(--sv-line); }
+.sv-page.sv-game.f1 .sv-ref-teaser .sv-ref-line { white-space: normal; word-break: keep-all; }
+/* 6 head-to-head pill lines up with the card's text */
+body:has(.sv-page.sv-game.f1) .pz-sh-line { transform: translateX(8px); }
+/* 9 sheet titles stay on one line */
+.sv-page.sv-game.f1 .sv-sheet-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 13 the host's "선수 정보" button stays away while the big result card is up */
+body:has(.sv-page.sv-game.f1 .f1-hold) .pz-sh-more { display: none !important; }
+/* 18 wide screens: the card stack keeps a phone-like column */
+@media (min-width: 760px) { .sv-page.sv-game.f1 .sv-live-layout { max-width: 720px; margin-inline: auto; } }
+/* 19 44px targets: status chip and 자세히 */
+.sv-page.sv-game.f1 .sv-hd-status { min-height: 44px; display: inline-flex; align-items: center; }
+.sv-page.sv-game.f1 .sv-state-more { position: relative; }
+.sv-page.sv-game.f1 .sv-state-more::after { content: ""; position: absolute; inset: -12px -10px; }
+.sv-page.sv-game.f1 .f1-timeline .sv-pitch-row { min-height: 40px; }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-head { min-height: 36px; }
+.sv-page.sv-game.f1 .f1-pa-open { min-height: 36px; position: relative; }
+.sv-page.sv-game.f1 .f1-pa-open::after { content: ""; position: absolute; inset: -4px 0; }
+/* record sheet: the line-up already says "1번 · …", so no list numbers in front (was "1. 1번 · …") */
+.sv-page.sv-game.f1 ol.sv-lineup { list-style: none; padding: 0; margin: 4px 0 12px; }
+.sv-page.sv-game.f1 ol.sv-lineup > li { padding: 3px 0; font-size: 14px; }
+/* sheet sub-tabs (기록: 문자 로그·라인업·박스·분석): unpicked ones solid, not dashed (read as disabled), and room under the row */
+.sv-page.sv-game.f1 .sv-btn[aria-pressed="false"] { border-style: solid; border-color: var(--sv-line); }
+.sv-page.sv-game.f1 .sv-sheet .sv-row:has(> .sv-btn[aria-pressed]) { margin-bottom: 8px; }
+
+/* ==== new tabs (owner 11/22 plan 1): 추천 · 경기 · 선수 · 분석 ==== */
+.sv-page.sv-game.f1 .f1-tabcard { background: var(--sv-paper); border: 1px solid var(--sv-line); border-radius: 14px; padding: 12px 14px; margin: 0 0 10px; }
+.sv-page.sv-game.f1 .f1-tc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.sv-page.sv-game.f1 .f1-tc-head h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-est { font-size: 12px; font-weight: 700; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-tc-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-tc-link { display: flex; align-items: center; width: 100%; min-height: 44px; margin-top: 6px; padding: 0 2px; border: 0; border-top: 1px solid var(--sv-line);
+  background: none; font: inherit; font-size: 14px; font-weight: 800; color: var(--f1-scene-tag); text-align: left; }
+/* win probability */
+.sv-page.sv-game.f1 .f1-wp-now { display: flex; gap: 16px; margin: 0 0 4px; font-size: 14px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-wp-now b { font-size: 18px; font-weight: 800; }
+.sv-page.sv-game.f1 .f1-wp-now .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+.sv-page.sv-game.f1 .f1-wp-now .sw.home { background: var(--f1-team-home); } .sv-page.sv-game.f1 .f1-wp-now .sw.away { background: var(--f1-team-away); }
+.sv-page.sv-game.f1 .f1-wp-chart { display: block; width: 100%; height: auto; }
+.sv-page.sv-game.f1 .f1-wp-frame { fill: #fff; stroke: var(--sv-line); }
+.sv-page.sv-game.f1 .f1-wp-grid { stroke: #eef1ec; }
+.sv-page.sv-game.f1 .f1-wp-mid { stroke: var(--sv-grid, #b9c8b2); stroke-dasharray: 3 3; }
+.sv-page.sv-game.f1 .f1-wp-area.home { fill: var(--f1-team-home); fill-opacity: .22; } .sv-page.sv-game.f1 .f1-wp-area.away { fill: var(--f1-team-away); fill-opacity: .26; }
+.sv-page.sv-game.f1 .f1-wp-line { fill: none; stroke: var(--f1-wp-ink); stroke-width: 2; stroke-linejoin: round; }
+.sv-page.sv-game.f1 .f1-wp-side { font-size: 11px; font-weight: 700; } .sv-page.sv-game.f1 .f1-wp-side.home { fill: var(--f1-team-home); } .sv-page.sv-game.f1 .f1-wp-side.away { fill: #8a6410; }
+.sv-page.sv-game.f1 .f1-wp-50 { font-size: 11px; fill: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-wp-drop { stroke: #374151; stroke-width: 1.2; stroke-dasharray: 3 3; }
+.sv-page.sv-game.f1 .f1-wp-hit { fill: #374151; }
+.sv-page.sv-game.f1 .f1-wp-now-dot { fill: #e0485c; stroke: #fff; stroke-width: 2; }
+.sv-page.sv-game.f1 .f1-wp-inn { font-size: 12px; font-weight: 700; fill: var(--sv-muted); } .sv-page.sv-game.f1 .f1-wp-inn.later { fill: #c3cbc6; font-weight: 500; }
+.sv-page.sv-game.f1 .f1-wp-num circle { fill: #374151; } .sv-page.sv-game.f1 .f1-wp-num text { font-size: 11px; font-weight: 800; fill: #fff; }
+.sv-page.sv-game.f1 .f1-wp-notes { list-style: none; margin: 6px 0 0; padding: 0; border-top: 1px solid var(--sv-line); }
+.sv-page.sv-game.f1 .f1-wp-notes li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #eef1ec; }
+.sv-page.sv-game.f1 .f1-wp-notes li:last-child { border-bottom: 0; }
+.sv-page.sv-game.f1 .f1-wp-notes i { flex: none; width: 20px; height: 20px; border-radius: 50%; background: #374151; color: #fff; font-style: normal; font-size: 11px; font-weight: 800; display: grid; place-items: center; margin-top: 1px; }
+.sv-page.sv-game.f1 .f1-wp-notes span { display: grid; gap: 2px; } .sv-page.sv-game.f1 .f1-wp-notes b { font-size: 14px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-wp-notes small { font-size: 13px; font-weight: 700; } .sv-page.sv-game.f1 .f1-wp-notes small.down { color: #8a6410; } .sv-page.sv-game.f1 .f1-wp-notes small.up { color: var(--f1-team-home); }
+/* line score inside the 경기 tab */
+.sv-page.sv-game.f1 .f1-ls-card .sv-ls { width: 100%; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-ls-card .sv-ls-grid .h { color: var(--sv-muted); } .sv-page.sv-game.f1 .f1-ls-card .sv-ls-grid .t, .sv-page.sv-game.f1 .f1-ls-card .sv-ls-grid .r { color: var(--sv-ink) !important; }
+/* pitch log */
+.sv-page.sv-game.f1 .f1-log-pa { padding: 4px 0 6px; border-top: 1px solid var(--sv-line); }
+.sv-page.sv-game.f1 .f1-log-head { display: flex; justify-content: space-between; gap: 8px; margin: 6px 0 2px; font-size: 14px; }
+.sv-page.sv-game.f1 .f1-log-head b { color: var(--sv-ink); } .sv-page.sv-game.f1 .f1-log-head span { font-weight: 800; color: var(--sv-ink); white-space: nowrap; }
+.sv-page.sv-game.f1 .f1-log-pa ol { list-style: none; margin: 0; padding: 0; }
+.sv-page.sv-game.f1 .f1-log-pa li button { display: grid; grid-template-columns: 24px 70px 64px 1fr auto; align-items: center; gap: 6px; width: 100%; min-height: 40px; padding: 0; border: 0; background: none; font: inherit; text-align: left; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-log-pa li b { font-size: 14px; } .sv-page.sv-game.f1 .f1-log-pa li small { font-size: 12px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-log-call { font-size: 14px; } .sv-page.sv-game.f1 .f1-log-pa li small { font-variant-numeric: tabular-nums; } .sv-page.sv-game.f1 .f1-log-pa li em { font-style: normal; font-size: 12px; color: var(--sv-muted); white-space: nowrap; }
+/* rows that open the box score / line-up */
+.sv-page.sv-game.f1 .f1-tab-rows { display: grid; gap: 8px; }
+.sv-page.sv-game.f1 .f1-tab-rows button { display: grid; grid-template-columns: 1fr auto; align-items: center; min-height: 56px; padding: 8px 14px; border: 1px solid var(--sv-line); border-radius: 14px; background: var(--sv-paper); font: inherit; text-align: left; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-tab-rows b { font-size: 15px; } .sv-page.sv-game.f1 .f1-tab-rows small { grid-column: 1; font-size: 12px; color: var(--sv-muted); } .sv-page.sv-game.f1 .f1-tab-rows span { grid-row: 1 / span 2; grid-column: 2; font-size: 20px; color: var(--sv-muted); }
+/* pitcher mix (today vs season, same batter side) */
+.sv-page.sv-game.f1 .f1-mix-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; font-size: 12px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-mix-key .k { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin-right: 5px; } .sv-page.sv-game.f1 .k.today { background: var(--sv-ink); } .sv-page.sv-game.f1 .k.season { background: #c3cbc6; }
+.sv-page.sv-game.f1 .f1-mix ul { list-style: none; margin: 0; padding: 0; }
+.sv-page.sv-game.f1 .f1-mix li { display: grid; grid-template-columns: 70px 1fr 44px; align-items: center; gap: 8px; min-height: 36px; }
+.sv-page.sv-game.f1 .f1-mix li > b { font-size: 14px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-mix .bars { display: grid; gap: 3px; } .sv-page.sv-game.f1 .f1-mix .bar { display: block; height: 8px; border-radius: 4px; background: #f1f3ef; overflow: hidden; }
+.sv-page.sv-game.f1 .f1-mix .bar i { display: block; height: 100%; border-radius: 4px; } .sv-page.sv-game.f1 .f1-mix .bar.today i { background: var(--sv-ink); } .sv-page.sv-game.f1 .f1-mix .bar.season i { background: #aab2ad; }
+.sv-page.sv-game.f1 .f1-mix .vals { display: grid; text-align: right; line-height: 1.15; } .sv-page.sv-game.f1 .f1-mix .vals b { font-size: 13px; color: var(--sv-ink); } .sv-page.sv-game.f1 .f1-mix .vals small { font-size: 12px; color: #8a938d; }
+/* batter season / head to head */
+.sv-page.sv-game.f1 .f1-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0; }
+.sv-page.sv-game.f1 .f1-stats dt { font-size: 12px; color: var(--sv-muted); } .sv-page.sv-game.f1 .f1-stats dd { margin: 0; font-size: 22px; font-weight: 800; color: var(--sv-ink); font-variant-numeric: tabular-nums; }
+.sv-page.sv-game.f1 .f1-line-sub { margin: 4px 0 0; font-size: 14px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-h2h-who { margin: 0; font-size: 13px; color: var(--sv-muted); } .sv-page.sv-game.f1 .f1-h2h-big { margin: 6px 0 2px; font-size: 22px; font-weight: 800; color: var(--sv-ink); }
+/* 분석 tab */
+.sv-page.sv-game.f1 .f1-an-links { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 10px; padding: 4px 12px; border-radius: 12px; background: var(--sv-bg); }
+.sv-page.sv-game.f1 .f1-an-links button { min-height: 44px; border: 0; background: none; font: inherit; font-size: 14px; font-weight: 800; color: var(--f1-scene-tag); }
+.sv-page.sv-game.f1 .f1-an-title { margin: 4px 0 0; font-size: 16px; font-weight: 800; color: var(--sv-ink); }
+/* 추천: 자세히 opened inside the card */
+.sv-page.sv-game.f1 .f1-rec-more { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--sv-line); }
+.sv-page.sv-game.f1 .f1-rec-more .sv-row { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+
+.sv-page.sv-game.f1 .f1-rm-list { list-style: none; margin: 0; padding: 0; }
+.sv-page.sv-game.f1 .f1-rm-list li { display: grid; grid-template-columns: 24px 64px 1fr 88px; align-items: center; gap: 8px; min-height: 40px; border-bottom: 1px solid #eef1ec; }
+.sv-page.sv-game.f1 .f1-rm-list b { font-size: 15px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-rm-zone { font-size: 14px; color: var(--sv-ink); } .sv-page.sv-game.f1 .f1-rm-zone small { font-size: 12px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-rm-share { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 14px; font-weight: 800; color: var(--sv-ink); font-variant-numeric: tabular-nums; }
+.sv-page.sv-game.f1 .f1-rm-share > i { display: block; width: 44px; height: 6px; border-radius: 3px; background: #e5e7eb; overflow: hidden; }
+.sv-page.sv-game.f1 .f1-rm-share > i > i { display: block; height: 100%; background: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-rm-mix { margin: 8px 0 0; font-size: 14px; font-weight: 700; color: var(--sv-ink); }
+/* booth monitor (D3: keep the wide layout; 1920×1080 read from 1–2 m): the same column, larger */
+@media (min-width: 1600px) and (min-height: 900px) { .sv-page.sv-game.f1 { zoom: var(--f1-booth-zoom, 1.2); } }
+.sv-page.sv-game.f1 .f1-rm-rank { display: flex; align-items: center; }
+
+/* ---- visual review 2 of the tabs (Fable 11/22) ---- */
+.sv-page.sv-game.f1 .f1-wp-side { paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
+.sv-page.sv-game.f1 .f1-log-key { margin: 0 0 6px; }
+.sv-page.sv-game.f1 .sv-reclist.f1-rec-none span { word-break: keep-all; text-wrap: pretty; }
+.sv-page.sv-game.f1 .sv-sheet [role="tabpanel"] .f1-tabcard { margin-top: 12px; }
+body:has(.sv-page.sv-game.f1 .sv-bottom-nav[aria-label="화면 메뉴"]) .pz-sh-more { display: none !important; }
+ol.f1-sc-list em { font-size: 15px; font-weight: 800; color: var(--sv-ink); }
+/* scene card: the recommendation before the deciding pitch | the pitch thrown */
+.f1-sc-card { margin: 4px 0 8px; padding: 10px; border-radius: 12px; background: var(--sv-bg); }
+.f1-sc-card-t { margin: 0 0 6px; font-size: 14px; font-weight: 800; color: var(--sv-ink); } .f1-sc-card-t small { font-size: 12px; font-weight: 600; color: var(--sv-muted); margin-left: 6px; }
+.f1-sc-zones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.f1-sc-zones figure { margin: 0; padding: 6px; border-radius: 10px; background: var(--sv-paper); text-align: center; }
+.f1-sc-zones figcaption { font-size: 13px; font-weight: 800; color: var(--sv-ink); }
+.f1-sc-zones svg.sv-zone { position: static; display: block; width: 100%; height: 150px; overflow: hidden; pointer-events: none; }
+.f1-sc-zones p { margin: 4px 0 0; font-size: 13px; color: var(--sv-ink); }
+/* wide: header and sheets share the card column */
+@media (min-width: 760px) {
+  .sv-page.sv-game.f1 .sv-hd-1 { max-width: 720px; margin-inline: auto; }
+  .sv-page.sv-game.f1 .sv-sheet.frame-c { max-width: 720px; }
+}
+/* ---- booth monitor layouts (owner 11/22; switch f1Flags BOOTH: ?pzb=l1|l2|l3|one[,wp]) ----
+   l1: one column is the strike zone top to bottom, the other holds everything else; l2: three columns, the zone in the middle;
+   l3: the phone column, larger — the rotated 1080×1920 monitor always shows it. The win-probability card (wp) shows only on the booth.
+   The screen never scrolls on the booth: the page is one screen high and the at-bat list takes the room that is left, newest pitch in view. */
+.sv-page.sv-game.f1 .f1-bwp { display: none; }
+.sv-page.sv-game.f1 .f1-bwp .f1-tabcard { margin: 0; }
+@media (min-width: 1600px) and (min-height: 900px) {
+  .sv-page.sv-game.f1:is(.f1-bl-l1, .f1-bl-l2) { --f1-booth-zoom: 1.5; }
+  .sv-page.sv-game.f1:is(.f1-bl-l1, .f1-bl-l2).f1-bwp-on { --f1-booth-zoom: 1.4; }
+  .sv-page.sv-game.f1.f1-bl-l3 { --f1-booth-zoom: 1.25; }
+  .sv-page.sv-game.f1:is(.f1-bl-l1, .f1-bl-l2) { min-height: calc(100vh / var(--f1-booth-zoom)); }
+  .sv-page.sv-game.f1:is(.f1-bl-l1, .f1-bl-l2) .sv-hd-1 { max-width: none; }
+  .sv-page.sv-game.f1 .sv-live-layout.f1-bcols { display: grid; gap: 12px; max-width: none; margin: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr);
+    height: calc(100vh / var(--f1-booth-zoom) - var(--f1-hd-h, 58px)); padding: 4px 16px calc(var(--f1-nav-room) - 8px); overflow: hidden; }
+  .sv-page.sv-game.f1.f1-bl-l1 .f1-bcols { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); }
+  .sv-page.sv-game.f1.f1-bl-l2 .f1-bcols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr); }
+  .sv-page.sv-game.f1 .f1-bcol { display: flex; flex-direction: column; gap: var(--f1-gap); min-width: 0; min-height: 0; }
+  .sv-page.sv-game.f1 .f1-brow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--f1-gap); min-height: 0; align-items: stretch; }
+  .sv-page.sv-game.f1 .f1-brow.has-tl { flex: 1 1 0; }
+  .sv-page.sv-game.f1 .f1-brow > .f1-bwp { min-height: 0; overflow: hidden; }
+  .sv-page.sv-game.f1 .f1-brow > .f1-bwp > .f1-tabcard { height: 100%; box-sizing: border-box; }
+  /* the zone card takes the whole column; the drawing is the card height minus its padding and legend */
+  .sv-page.sv-game.f1 .f1-bcol-zone .f1-zone { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center;
+    --sv-zone-height: calc(100vh / var(--f1-booth-zoom) - var(--f1-hd-h, 58px) - var(--f1-nav-room) - 96px); }
+  .sv-page.sv-game.f1 .f1-bcol-zone .sv-zrow { --sv-side: 96px; }
+  .sv-page.sv-game.f1 .f1-bcol-zone .pz-bat3d { transform: translateY(-50%) scale(1.35); }
+  .sv-page.sv-game.f1 .f1-bcols .f1-bwp { display: block; }
+  /* the at-bat list fills what is left of its column and scrolls inside (the newest pitch is kept in view) */
+  .sv-page.sv-game.f1 .f1-bcol > .f1-timeline, .sv-page.sv-game.f1 .f1-brow > .f1-timeline { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .sv-page.sv-game.f1 :is(.f1-bcol, .f1-brow) > .f1-timeline .sv-atbat-list { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+}
+/* compact win probability on the booth: a shorter chart, each note on one line */
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-chart { max-height: var(--f1-bwp-chart, 170px); }
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-notes li { padding: 5px 0; align-items: center; }
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-notes span { display: flex; flex-wrap: wrap; column-gap: 8px; align-items: baseline; }
+.sv-page.sv-game.f1 .f1-bwp .f1-tc-note { margin-top: 4px; }
+@media (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) {
+  .sv-page.sv-game.f1 { zoom: var(--f1-booth-zoom-v, 2); --f1-booth-zoom: var(--f1-booth-zoom-v, 2); --sv-zone-height: 290px; min-height: calc(100vh / var(--f1-booth-zoom)); }
+  .sv-page.sv-game.f1.f1-bwp-on { --f1-booth-zoom-v: 1.55; --sv-zone-height: 270px; }
+  .sv-page.sv-game.f1.f1-bwp-on .f1-bwp { display: block; }
+  .sv-page.sv-game.f1 .sv-live-layout { height: calc(100vh / var(--f1-booth-zoom) - var(--f1-hd-h, 58px)); overflow: hidden; }
+  .sv-page.sv-game.f1 .sv-stage { flex: 1 1 0; min-height: 0; }
+  .sv-page.sv-game.f1 .sv-stage > .f1-timeline { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .sv-page.sv-game.f1 .sv-stage > .f1-timeline .sv-atbat-list { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+}
+
+/* booth fixes after the first live captures (11/22): no page scroll, no empty band under the players, the zone wider in l2,
+   at least three timeline rows, a shorter win-probability card, and larger key text for reading from a distance */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .sv-page.sv-game.f1:is(.f1-bl-l1, .f1-bl-l2) { padding-bottom: 0; --f1-fs-body: 17px; --f1-fs-title: 20px; --f1-fs-team: 18px; --f1-fs-small: 13px; }
+  .sv-page.sv-game.f1 .f1-bcols .sv-mu:not(.line) { padding-bottom: 10px; min-height: 0; }
+  .sv-page.sv-game.f1 .f1-bcols .sv-rec-cell { font-size: 24px; font-weight: 700; }
+  .sv-page.sv-game.f1 .f1-bcols .f1-timeline .sv-pr-what b { font-size: 19px; }
+  .sv-page.sv-game.f1 :is(.f1-bcol, .f1-brow) > .f1-timeline { min-height: 150px; }
+  .sv-page.sv-game.f1.f1-bl-l2 .f1-bcols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr); }
+  .sv-page.sv-game.f1.f1-bl-l2 .f1-bcol-zone .sv-zrow { --sv-side: 64px; }
+  .sv-page.sv-game.f1.f1-bl-l2 .f1-bcol-zone .pz-bat3d { transform: translateY(-50%); }
+  .sv-page.sv-game.f1 .f1-brow > .f1-bwp { --f1-bwp-chart: 130px; }
+}
+.sv-page.sv-game.f1 .f1-bwp .f1-tc-link { display: none; } /* the 분석 tab is one tap away; the booth card keeps the chart, the numbered notes and the model note */
+@media (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) {
+  .sv-page.sv-game.f1 { padding-bottom: 0; }
+  .sv-page.sv-game.f1.f1-bwp-on { --sv-zone-height: 250px; --f1-bwp-chart: 140px; }
+  .sv-page.sv-game.f1 .sv-stage > .f1-timeline { min-height: 150px; }
+}
+@media (min-width: 1600px) and (min-height: 900px) {
+  .sv-page.sv-game.f1.f1-bl-l1.f1-bwp-on { --f1-booth-zoom: 1.25; }
+  .sv-page.sv-game.f1 .f1-brow > .f1-bwp { --f1-bwp-chart: none; }
+  .sv-page.sv-game.f1 .f1-bcols .sv-rec-type { font-size: 26px; }
+}
+@media (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) {
+  .sv-page.sv-game.f1.f1-bwp-on { --f1-bwp-chart: none; }
+  .sv-page.sv-game.f1 .sv-rec-type { font-size: 20px; }
+}
+/* booth review (Fable 11/22, REVIEW-FABLE-BOOTH3): cards never shrink under the timeline; the timeline's top fades instead of a cut row;
+   larger win-probability text; a larger 3D batter beside the l1 zone; l1 gives the win-probability card the wider half */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .sv-page.sv-game.f1 .f1-bcol > :not(.f1-timeline):not(.f1-zone):not(.f1-brow), .sv-page.sv-game.f1 .f1-brow > .f1-bwp { flex-shrink: 0; }
+  .sv-page.sv-game.f1 .f1-brow { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
+  .sv-page.sv-game.f1.f1-bl-l1 .f1-bcol-zone .pz-bat3d { transform: translateY(-40%) scale(1.75); }
+}
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-side, .sv-page.sv-game.f1 .f1-bwp .f1-wp-50 { font-size: 14px; }
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-inn { font-size: 15px; }
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-num text { font-size: 12px; }
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-notes b { font-size: 16px; } .sv-page.sv-game.f1 .f1-bwp .f1-wp-notes small { font-size: 15px; }
+.sv-page.sv-game.f1 .f1-bwp .f1-wp-now { font-size: 16px; } .sv-page.sv-game.f1 .f1-bwp .f1-wp-now b { font-size: 22px; }
+@media (min-width: 1600px) and (min-height: 900px), (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) {
+  .sv-page.sv-game.f1 .f1-timeline .sv-atbat-list.f1-tl-over { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px); mask-image: linear-gradient(to bottom, transparent 0, #000 28px); }
+}
+@media (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) {
+  .sv-page.sv-game.f1 .sv-stage > :not(.f1-timeline), .sv-page.sv-game.f1 .sv-live-layout > * { flex-shrink: 0; }
+  .sv-page.sv-game.f1 .sv-live-layout > .sv-stage { flex-shrink: 1; }
+  .sv-page.sv-game.f1.f1-bwp-on { --sv-zone-height: 230px; --f1-bwp-chart: 120px; }
+}
+@media (min-width: 1600px) and (min-height: 900px) { .sv-page.sv-game.f1 .f1-brow > .f1-bwp { --f1-bwp-chart: 175px; } }
+/* booth ",big" (PM 11/22, 2 m): score, recommended pitch names and their % at about 45 monitor px whatever the zoom; the % says what it is */
+.sv-page.sv-game.f1 .f1-big-pct { display: none; }
+@media (min-width: 1600px) and (min-height: 900px) {
+  .sv-page.sv-game.f1.f1-big .sv-hd-score strong { font-size: calc(54px / var(--f1-booth-zoom, 1)); }
+  .sv-page.sv-game.f1.f1-big .sv-hd-score .t { font-size: calc(30px / var(--f1-booth-zoom, 1)); }
+  .sv-page.sv-game.f1.f1-big .f1-bcols .sv-rec-cell { flex-direction: column; gap: 2px; padding: 6px 4px; }
+  .sv-page.sv-game.f1.f1-big .f1-bcols .sv-rec-type { font-size: calc(46px / var(--f1-booth-zoom, 1)); line-height: 1.1; }
+  .sv-page.sv-game.f1.f1-big .f1-bcols .f1-big-pct { display: block; font-style: normal; font-weight: 800; font-size: calc(44px / var(--f1-booth-zoom, 1)); line-height: 1.05; color: var(--sv-ink); font-variant-numeric: tabular-nums; }
+  .sv-page.sv-game.f1.f1-big .f1-bcols .sv-rec-head h2::after { content: " · %는 모델이 고를 비율"; font-weight: 600; color: var(--sv-muted); font-size: .8em; }
+  .sv-page.sv-game.f1.f1-big .f1-bcols .sv-who-name, .sv-page.sv-game.f1.f1-big .f1-bcols .sv-who b { font-size: calc(32px / var(--f1-booth-zoom, 1)); }
+}
+/* walkthrough 11/22: on a zoomed booth page the sheet heights (dvh) were zoomed too and ran off the top — divide them back */
+@media (min-width: 1600px) and (min-height: 900px), (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) {
+  .sv-page.sv-game.f1 .sv-backdrop.frame-c { --sv-sheet-half: calc(50dvh / var(--f1-booth-zoom, 1.2)); }
+  .sv-page.sv-game.f1 .sv-sheet.frame-c.full { height: calc(100dvh / var(--f1-booth-zoom, 1.2) - 52px); max-height: calc(100dvh / var(--f1-booth-zoom, 1.2) - 52px); }
+  .sv-page.sv-game.f1 .sv-sheet.frame-c { max-height: calc(100dvh / var(--f1-booth-zoom, 1.2) - 24px); }
+}
+/* owner 11/22 (4-5 + 추가): first tab — no matchup chip (it lives in the 선수 tab), no second legend line (the 3D batter shows the side),
+   and on a phone the first screen never scrolls before 자세히 opens: the page is one screen high and the at-bat list takes the
+   room that is left (newest pitch in view, top fades). With 자세히 open the page scrolls as before. */
+body:has(.sv-page.sv-game.f1) .pz-sh-line { display: none !important; }
+.sv-page.sv-game.f1 .sv-mu:not(.line) { padding-bottom: 10px; }
+.sv-page.sv-game.f1 .f1-zone .sv-zone-legend p + p { display: none; }
+@media (max-width: 759px) and (orientation: portrait) {
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) > .sv-hd { flex: none; }
+  /* #38 11/23 (393×664): the floating tab bar covered the 이번 타석 list and the page could not scroll — keep the bar's height free
+     under the content and let the page scroll when a short screen cannot hold the list's first rows */
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) > .sv-live-layout { flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-live-layout > *, .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-stage > :not(.f1-timeline) { flex-shrink: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-live-layout > .sv-stage { flex: 1 0 auto; min-height: 0; }  /* never shorter than its content: a short screen scrolls instead of hiding the list */
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-stage > .f1-timeline { flex: 1 1 0; min-height: 156px; display: flex; flex-direction: column; }  /* rc5 (owner 11/23): head + waiting line + the newest 2 pitches; a short phone scrolls the page */
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-stage > .f1-timeline .sv-atbat-list { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+}
+@media (max-width: 759px) and (orientation: portrait) {
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-timeline .sv-atbat-list.f1-tl-over { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px); mask-image: linear-gradient(to bottom, transparent 0, #000 22px); }
+}
+/* LOG-b (owner 11/22): plate-appearance card = small zone | pitch list with the state each pitch was thrown in */
+.sv-page.sv-game.f1 .f1-logb .f1-log-pa { background: #f6f8f4; border-radius: 12px; padding: 10px 12px; margin: 10px 0 0; }
+.sv-page.sv-game.f1 .f1-logb-body { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px; align-items: start; }
+.sv-page.sv-game.f1 .f1-logb-zone { background: #fff; border: 1px solid var(--sv-line); border-radius: 10px; padding: 4px; }
+.sv-page.sv-game.f1 .f1-logb-zone svg.sv-zone { position: static; display: block; width: 100%; height: 118px; overflow: hidden; pointer-events: none; }
+.sv-page.sv-game.f1 .f1-logb ol { list-style: none; margin: 0; padding: 0; }
+.sv-page.sv-game.f1 .f1-logb li button { display: grid; gap: 1px; width: 100%; padding: 5px 0; border: 0; border-bottom: 1px solid #e6ebe2; background: none; text-align: left; font: inherit; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-logb li:last-child button { border-bottom: 0; }
+.sv-page.sv-game.f1 .f1-logb-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; }
+.sv-page.sv-game.f1 .f1-logb-line small { color: var(--sv-muted); font-size: 12.5px; }
+.sv-page.sv-game.f1 .f1-logb-line .f1-log-call { margin-left: auto; color: var(--sv-muted); font-size: 13px; white-space: nowrap; }
+.sv-page.sv-game.f1 .f1-logb-state { display: flex; gap: 6px; padding-left: 26px; font-size: 12px; color: var(--sv-muted); font-variant-numeric: tabular-nums; }
+.sv-page.sv-game.f1 .f1-logb-state em { margin-left: auto; font-style: normal; color: #6b7a70; }
+/* player tab additions (owner 11/22 4-2) */
+.sv-page.sv-game.f1 .f1-pmap-svg { display: block; width: 100%; max-width: 280px; margin: 4px auto 0; }
+.sv-page.sv-game.f1 .f1-pmap-zone { fill: #fff; stroke: #13201a; stroke-width: 2; }
+.sv-page.sv-game.f1 .f1-pmap-grid { stroke: #c9d4c2; stroke-width: 1; }
+.sv-page.sv-game.f1 .f1-pmap-key { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0; font-size: 13px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-pmap-key i, .sv-page.sv-game.f1 .f1-speed-name i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.sv-page.sv-game.f1 .f1-speed-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.sv-page.sv-game.f1 .f1-speed-list li { display: grid; grid-template-columns: 82px minmax(0, 1fr) 72px; align-items: center; gap: 8px; min-height: 30px; font-size: 13.5px; }
+.sv-page.sv-game.f1 .f1-speed-bar { position: relative; height: 10px; background: #eef1ec; border-radius: 5px; }
+.sv-page.sv-game.f1 .f1-speed-bar i { position: absolute; top: 0; bottom: 0; border-radius: 5px; opacity: .75; }
+.sv-page.sv-game.f1 .f1-speed-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: #13201a; }
+.sv-page.sv-game.f1 .f1-speed-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-speed-axis { display: flex; justify-content: space-between; margin: 2px 80px 0 90px; font-size: 11px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-today-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.sv-page.sv-game.f1 .f1-today-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid #eef1ec; font-size: 14px; }
+.sv-page.sv-game.f1 .f1-today-list li:last-child { border-bottom: 0; }
+.sv-page.sv-game.f1 .f1-today-list span, .sv-page.sv-game.f1 .f1-today-list small { color: var(--sv-muted); font-size: 13px; }
+.sv-page.sv-game.f1 .f1-split { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-variant-numeric: tabular-nums; }
+.sv-page.sv-game.f1 .f1-split th, .sv-page.sv-game.f1 .f1-split td { padding: 6px 4px; border-bottom: 1px solid #eef1ec; text-align: right; font-size: 14px; }
+.sv-page.sv-game.f1 .f1-split thead th { font-size: 12px; font-weight: 600; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-split th[scope="row"], .sv-page.sv-game.f1 .f1-split thead th:first-child { text-align: left; font-weight: 700; color: var(--sv-ink); font-size: 13px; }
+.sv-page.sv-game.f1 .f1-split td { font-weight: 700; }
+.sv-page.sv-game.f1 .f1-split + .f1-split { margin-top: 10px; }
+.sv-page.sv-game.f1 .f1-rm-links { margin: 0; }
+/* LOG-b fixes: the old one-line grid of .f1-log-pa buttons must not apply inside a LOG-b card */
+.sv-page.sv-game.f1 .f1-logb .f1-log-pa li button { grid-template-columns: minmax(0, 1fr); min-height: 0; align-items: stretch; }
+.sv-page.sv-game.f1 .f1-logb .f1-log-pa { border-top: 0; }
+.sv-page.sv-game.f1 .f1-logb-line b, .sv-page.sv-game.f1 .f1-logb-line small { white-space: nowrap; }
+.sv-page.sv-game.f1 .f1-logb-line { flex-wrap: nowrap; }
+.sv-page.sv-game.f1 .f1-logb .f1-log-pa > ol > li, .sv-page.sv-game.f1 .f1-logb .f1-logb-body li { padding: 4px 0; }
+.sv-page.sv-game.f1 .f1-logb-state { flex-wrap: wrap; column-gap: 8px; }
+.sv-page.sv-game.f1 .f1-logb-st { white-space: nowrap; }
+.sv-page.sv-game.f1 .f1-logb-state em { margin-left: 0; }
+/* owner 11/23 21:1x (rc5): the per-inning line stays on every phone — the short-phone rule that hid it on the first tab is gone
+   (an iPhone with the address bar at the bottom, ~393×694, lost it); a short screen scrolls the page instead */
+.sv-page.sv-game.f1 .f1-rm-pct { margin: 0 0 4px; }
+@media (max-width: 759px) and (orientation: portrait) and (max-height: 720px) {
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-stage > .f1-timeline { display: none; }  /* Fable SONG4 MUST 1 fallback: no half-hidden title */
+}
+/* B (owner 11/22): in-place tab views keep the header and the tab bar; their cards use the sheet look on the page */
+.sv-page.sv-game.f1 .f1-view { display: block; }
+.sv-page.sv-game.f1 .f1-view .sv-tabs { position: sticky; top: 0; z-index: 3; background: var(--sv-bg); margin: 0 0 4px; }
+.sv-page.sv-game.f1 .f1-view .sv-player-title { margin: 12px 2px 4px; }
+@media (min-width: 760px) { .sv-page.sv-game.f1 .f1-view { max-width: 720px; margin-inline: auto; } }
+@media (min-width: 1600px) and (min-height: 900px) { .sv-page.sv-game.f1 .f1-view { height: auto; overflow: visible; } }
+/* the in-place view reuses the sheet's content styles without being a sheet */
+.sv-page.sv-game.f1 .sv-sheet.frame-c.f1-inplace { position: static; width: 100%; max-width: none; height: auto; max-height: none; border-radius: 0; box-shadow: none; transition: none;
+  background: transparent; transform: none; display: block; padding-bottom: 0; }
+.sv-page.sv-game.f1 .f1-inplace > .sv-sheet-body { overflow: visible; padding: 4px 0 0; }
+/* owner 11/23: every tab starts with the same game card (box score · runners · count) as the 예측 tab, with the same gap below it */
+.sv-page.sv-game.f1 .f1-view > .f1-game { margin-bottom: var(--f1-gap); }
+/* ...and the same width: on a portrait phone the one-screen 예측 page is a flex column, where main's auto side margins shrank it to its
+   content (350 px cards on a 390/430 phone, full width again once 자세히 opened); it now spans the page like the 경기·선수 views */
+@media (max-width: 759px) and (orientation: portrait) { .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) > .sv-live-layout { width: 100%; } }
+.sv-page.sv-game.f1 .f1-inplace .sv-tabs { margin: 0 0 8px; padding: 0 4px; background: var(--sv-bg); }
+.sv-page.sv-game.f1 .f1-inplace .sv-dl.sv-facts, .sv-page.sv-game.f1 .f1-inplace .sv-player-title { padding: 0 6px; }
+/* owner 11/22 추천 탭: no "오늘 …" line under the player names; the result card is a quiet grey band (no card in a card); the at-bat
+   list shows the newest pitch on top (1구 at the bottom) and stays visible during the result card and on short phones */
+/* owner 11/22: today's line stays, without the word 오늘 */
+.sv-page.sv-game.f1 .sv-rec-sec.f1-hold { padding: 14px var(--f1-pad-x); background: #eceff0; }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card { background: transparent; color: var(--sv-ink); padding: 0; border-radius: 0; min-height: 0; box-shadow: none; }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-title { color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card.has-ending .sv-rc-title b { color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-hold .sv-result-card .sv-rc-body b { color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-timeline .f1-newest-first > li.next, .sv-page.sv-game.f1 .f1-timeline .f1-newest-first > li.result { order: -1; }
+.sv-page.sv-game.f1 .f1-timeline .sv-atbat-list.f1-newest-first.f1-tl-over { -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22px) !important; mask-image: linear-gradient(to top, transparent 0, #000 22px) !important; }
+@media (max-width: 759px) and (orientation: portrait) and (max-height: 720px) {
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-stage > .f1-timeline { display: flex; min-height: 156px; }
+}
+/* owner 11/22 colour rule everywhere on F1: ball green, strike·foul yellow (as the B/S dots), the pitch that made an out red (as the O dots),
+   a hit or any other reach blue; a ball in play whose result is not known yet stays dark */
+.sv-page.sv-game.f1, .sv-page.sv-game.f1 .sv-sheet.frame-c { --f1-hit: #2b6cb0; }
+.sv-page.sv-game.f1 .sv-actual.g1.ball > circle, .sv-page.sv-game.f1 .sv-actual.g1.ball > .sv-wedge { fill: var(--f1-b); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.g1.strike > circle, .sv-page.sv-game.f1 .sv-actual.g1.strike > .sv-wedge { fill: var(--f1-s); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.g1.retired > circle, .sv-page.sv-game.f1 .sv-actual.g1.retired > .sv-wedge { fill: var(--f1-o); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.g1.reached > circle, .sv-page.sv-game.f1 .sv-actual.g1.reached > .sv-wedge { fill: var(--f1-hit); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.ball .sv-g1-num, .sv-page.sv-game.f1 .sv-actual.retired .sv-g1-num, .sv-page.sv-game.f1 .sv-actual.reached .sv-g1-num { fill: #fff; }
+.sv-page.sv-game.f1 .sv-actual.strike .sv-g1-num { fill: #2a2100; }
+.sv-page.sv-game.f1 .sv-g1.ball { background: var(--f1-b); border-color: var(--f1-b); color: #fff; }
+.sv-page.sv-game.f1 .sv-g1.strike { background: var(--f1-s); border-color: var(--f1-s); color: #2a2100; }
+.sv-page.sv-game.f1 .sv-g1.retired { background: var(--f1-o); border-color: var(--f1-o); color: #fff; }
+.sv-page.sv-game.f1 .sv-g1.reached { background: var(--f1-hit); border-color: var(--f1-hit); color: #fff; }
+.sv-page.sv-game.f1 .sv-zone-legend .k.ball { background: var(--f1-b); border: 0; }
+.sv-page.sv-game.f1 .sv-zone-legend .k.strike { background: var(--f1-s); }
+.sv-page.sv-game.f1 .sv-zone-legend .k.retired { background: var(--f1-o); }
+.sv-page.sv-game.f1 .sv-zone-legend .k.reached { background: var(--f1-hit); }
+/* owner 11/22 선수 탭: no cards — sections separated by lines; no explanatory notes */
+.sv-page.sv-game.f1 .f1-view-player .f1-tabcard { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 14px 6px 12px; margin: 0; border-top: 1px solid var(--sv-line); }
+.sv-page.sv-game.f1 .f1-view-player .f1-tc-note { display: none; }
+.sv-page.sv-game.f1 .f1-view-player .f1-logb .f1-log-pa { background: none; padding: 8px 0; border-top: 1px solid #eef1ec; border-radius: 0; }
+/* owner 11/22 경기 탭 승리확률: no box (lines only) and, per big scene, the game state before → after */
+.sv-page.sv-game.f1 .f1-view-game .f1-wp { background: none; border: 0; border-radius: 0; padding: 12px 4px; border-top: 1px solid var(--sv-line); border-bottom: 1px solid var(--sv-line); }
+.sv-page.sv-game.f1 .f1-wp-notes li > button { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 0; border: 0; background: none; text-align: left; font: inherit; color: inherit; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-go { margin-left: auto; align-self: center; color: var(--sv-muted); font-size: 20px; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-chg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0 2px; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-st { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid var(--sv-line); border-radius: 8px; background: #fff; font-size: 12.5px; }
+.sv-page.sv-game.f1 .f1-wp-notes b.f1-wp-sc { font-weight: 800; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--sv-ink); }
+.sv-page.sv-game.f1 .f1-dia { width: 24px; height: 19px; }
+.sv-page.sv-game.f1 .f1-dia rect { fill: #fff; stroke: #9aa8ae; stroke-width: 1.4; }
+.sv-page.sv-game.f1 .f1-dia rect.on { fill: var(--f1-s); stroke: #a87b05; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-outs { display: inline-flex; gap: 3px; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-outs i { width: 8px; height: 8px; border-radius: 50%; border: 1.4px solid var(--f1-dot-ring); box-sizing: border-box; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-outs i.on { background: var(--f1-o); border: 0; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-outs em { font-style: normal; font-weight: 800; color: var(--f1-o); }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-cnt { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-arrow { color: var(--sv-muted); font-weight: 800; }
+.sv-page.sv-game.f1 .f1-wp-empty { margin: 8px 0 4px; font-size: 14px; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .sv-actual.retired > circle { fill: var(--f1-o); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.reached > circle { fill: var(--f1-hit); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.ball:not(.g1) > circle { fill: var(--f1-b); stroke: #fff; }
+.sv-page.sv-game.f1 .sv-actual.strike:not(.g1) > circle { fill: var(--f1-s); stroke: #fff; }
+/* owner 11/22 4th round: (4) the arrow travels with the after-state; (5) inning chips; (1-3) legend gone, open list only, result row highlight; (7) paused button */
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-to { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-st { white-space: nowrap; }
+.sv-page.sv-game.f1 .f1-inn-chips { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scrollbar-width: none; }
+.sv-page.sv-game.f1 .f1-inn-chips button { flex: none; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--sv-line); background: #fff; font: inherit; font-size: 13px; font-weight: 700; color: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-inn-chips button[aria-selected="true"] { background: var(--sv-ink); border-color: var(--sv-ink); color: #fff; }
+.sv-page.sv-game.f1 .f1-atbat-list li.f1-hl > .sv-pitch-row, .sv-page.sv-game.f1 .sv-atbat-list li.f1-hl > .sv-pitch-row { background: #eef1ec; border-radius: 12px; }
+.sv-page.sv-game.f1 .sv-atbat-list li.f1-hl .sv-pr-res { color: var(--sv-ink); font-weight: 800; }
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused { background: #eef1ec; border-radius: 999px; padding: 6px 12px; }
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused i { width: 8px; height: 8px; border-radius: 1px; background: var(--sv-muted); }
+.sv-page.sv-game.f1 .f1-rec-more { border-top: 0; margin-top: 0; padding-top: 4px; }
+/* owner 11/22: (a) the booth monitors are not touched — no bottom tab bar on the wide (L1/L2) and rotated (L3) layouts;
+   (b) with the legend gone, a pitch's result word takes its dot's colour (yellow and green a shade darker so the words stay readable) */
+@media (min-width: 1600px) and (min-height: 900px) { .sv-page.sv-game.f1 .sv-bottom-nav { display: none; } .sv-page.sv-game.f1 { --f1-nav-room: 24px; } }
+@media (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) { .sv-page.sv-game.f1 .sv-bottom-nav { display: none; } .sv-page.sv-game.f1 { --f1-nav-room: 24px; } }
+.sv-page.sv-game.f1 li:has(.sv-g1.ball) :is(.sv-pr-res, .f1-log-call) { color: #17703d; }
+.sv-page.sv-game.f1 li:has(.sv-g1.strike) :is(.sv-pr-res, .f1-log-call) { color: #8a6410; }
+.sv-page.sv-game.f1 li:has(.sv-g1.retired) :is(.sv-pr-res, .f1-log-call) { color: #c0392f; }
+.sv-page.sv-game.f1 li:has(.sv-g1.reached) :is(.sv-pr-res, .f1-log-call) { color: var(--f1-hit); }
+.sv-page.sv-game.f1 li:has(.sv-g1) :is(.sv-pr-res, .f1-log-call) { font-weight: 700; }
+/* XVAL-UX 11/22 (12:00 list, no decision): out dots in the state chips are empty rings unless out (the generic numbered-circle rule filled them);
+   the rotated booth (L3) drops the win-probability card until its overlap is fixed; result words may wrap (no cut, no sideways page);
+   inning chips easier to tap */
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-outs i:not(.on) { background: transparent; }
+.sv-page.sv-game.f1 .f1-wp-notes span.f1-wp-outs i { width: 8px; height: 8px; margin: 0; }
+@media (orientation: portrait) and (min-width: 1000px) and (min-height: 1600px) { .sv-page.sv-game.f1 .f1-bwp, .sv-page.sv-game.f1.f1-bwp-on .f1-bwp { display: none; } }
+.sv-page.sv-game.f1 .f1-logb-line .f1-log-call { white-space: normal; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.sv-page.sv-game.f1 .f1-logb-line { flex-wrap: wrap; }
+.sv-page.sv-game.f1 .f1-inn-chips button { min-height: 40px; }
+/* Fable eye 11/22 (필수 3): the paused button is text only (no square mark) and never pushes the score — it may wrap to two lines on narrow phones */
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused i { display: none; }
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused { padding: 5px 10px; font-size: 13px; line-height: 1.2; max-width: 34vw; white-space: normal; text-align: center; }
+/* 375 px check 11/22: two short lines (▶ 라이브로 / 새 공 n) so the button never reaches the score */
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; max-width: none; white-space: nowrap; }
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused .f1-pz-go { font-weight: 800; }
+.sv-page.sv-game.f1 .sv-hd-status.f1-paused .f1-pz-new { font-size: 11.5px; font-weight: 600; color: var(--sv-muted); }
+/* owner 11/23 (rc5 ③): the 경기 tab's 투구별 기록 lists plate appearances with divider lines, not a grey box each (as the 선수 tab) */
+.sv-page.sv-game.f1 .f1-log.f1-logb .f1-log-pa { background: none; border-radius: 0; padding: 10px 0 8px; margin: 0; border-top: 1px solid var(--sv-line); }
+/* owner 11/23 21:4x (rc6 ⓐ): the 이번 타석 list drops the "N구 · 다음 공 기다리는 중" line — the N구 예측 card above already says it is
+   waiting — so the newest real pitch is the top row; before the first pitch of an at-bat (the line is the only row) it stays */
+.sv-page.sv-game.f1 #sv-atbat-list > li.next:not(:only-child) { display: none; }
+/* owner 11/23 22:0x (rc7 ⓑ, style only): on a short portrait phone the 예측 tab's top two cards (line score · batter/pitcher) and bottom two
+   (prediction · 이번 타석) join into one card each, each player's role · hand · today on one line under the name (only where both cards of a pair are on screen — Fable rc7 MUST), gaps and inner padding shrink — so line score, players,
+   zone, prediction and the newest real pitch fit above the tab bar on 393×694 / 393×664 / 375×635; text sizes do not change */
+/* scope switch (owner decides): this one media line — short portrait phones (default) or every portrait phone: (max-width: 759px) and (orientation: portrait) and (max-height: 720px); owner 22:0x "범위 1" = every portrait phone */
+@media (max-width: 759px) and (orientation: portrait) {
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) { --f1-gap: 6px; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-live-layout { padding-top: 2px; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-game:has(+ .f1-players) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; padding-top: 6px; padding-bottom: 2px; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-game + .f1-players { margin-top: calc(-1 * var(--f1-gap)); border-top-left-radius: 0; border-top-right-radius: 0; border-top: 1px solid var(--sv-line);
+    min-height: 0; padding: 6px 14px 6px; }
+  /* owner 22:1x: names stay left (batter) · right (pitcher) as before; the role · hand and today's line sit together on one line under the name */
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "n n" "r t"; column-gap: 6px; row-gap: 0; align-items: baseline; min-height: 32px; }  /* the name row spans the whole cell, so the fit check (tight → surname) still sees the cell width — Fable */
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who.pit { grid-template-columns: minmax(0, 1fr) auto; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who.pit > small { justify-self: end; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who > b { grid-area: n; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who > small { grid-area: r; white-space: nowrap; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who > .sv-who-today { grid-area: t; min-width: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-players .sv-who > .sv-who-today::before { content: "· "; color: var(--sv-muted); font-weight: 400; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-zone { padding-top: 2px; padding-bottom: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-rec-sec:has(+ .f1-timeline) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-rec-sec:not(.f1-hold) { padding-top: 6px; padding-bottom: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-rec-sec { gap: 2px; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-rec-sec .sv-reclist { padding-top: 0; padding-bottom: 2px; min-height: 44px; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .sv-stage > .sv-rec-sec + .f1-timeline { margin-top: calc(-1 * var(--f1-gap)); border-top-left-radius: 0; border-top-right-radius: 0; border-top: 1px solid var(--sv-line); }
+}
+/* the lowest phones (≤650 high, e.g. 375×635) also trim the zone drawing's box a little; text sizes stay */
+@media (max-width: 759px) and (orientation: portrait) and (max-height: 650px) {
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-zone .sv-zrow { height: 202px; min-height: 0; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-zone { padding-top: 4px; }
+  .sv-page.sv-game.f1:not(.f1-recopen):not(.f1-inview) .f1-zone .sv-zone-wrap { height: 200px; min-height: 0; }
+}

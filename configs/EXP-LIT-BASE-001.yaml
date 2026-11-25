@@ -1,0 +1,193 @@
+# EXP-LIT-BASE-001 — 문헌식 기준 모델을 R과 같은 자료·같은 E_PS에서 비교 (owner 결정 "② 1", 2026-11-21)
+# 등록 문서: ${PITCHEEZY_JOBS}/20261121-lit-base/PREREG.md
+# 이 파일만 실행기(experiments/lit_base/run.py)가 읽는다. 결과 열람 전 고정; status REGISTERED + execute true 전에는 실자료 학습 거부.
+id: EXP-LIT-BASE-001
+status: REGISTERED       # Fable 검토 PASS-with-fixes(필수 3건 f0798073 반영), 2026-11-21
+execute: true
+author: claude-opus-5-5 (LIT-BASE-20261121 worker)
+created_kst: '2026-11-21'
+data_role: >-
+  2026 EXPOSED DEVELOPMENT (FIT 2026-03-25..09-27 정규시즌, R과 같은 package·같은 창). E_PS(2026 포스트시즌 31경기, 8,943구,
+  849799 제외)는 모든 학습·선정·보정에서 빠지고 마지막 채점 1회에만 쓴다. 849799에는 어떤 지표도 없다.
+single_change: >-
+  모델 계열만 바뀐다(R의 PSR/no-ID 신경망 앙상블 대신 문헌에서 흔한 계열). 정보 집합·학습 창·표적 9묶음·E_PS 행·생략 규칙·
+  하한·부트스트랩은 R 채점(EXP-SVC-P9-003 CR)과 같다.
+
+data:
+  package:
+    root: ${PITCHEEZY_JOBS}/20261016-oof-completion-003/research/oof3-prepare-attempt-001/inputs
+    rows: 713021
+    all_keys_sha256: 345d4d86d0bbceb9943d5239e71ca3311f851721a1181921bf3bbcb24a548e17   # EXP-MPS-FS-001 fold.expected.FIT_keys_sha256
+    sha256:            # package manifest.json files (같은 바이트를 R/FS-001이 학습에 씀)
+      x-prequential.npy: e84ad8938cb64884cf7f63bbff79b8b8393018418145fe4f3450a3723d7b467d
+      corpus-subset.npz: b8608d18d0e6c4a907fb11a9d8812f1a184ede7e7905be4428c8043739a264ff
+      seq-inputs.npz: 44682d7c7f1fa6c17f9c4b21a87702656fb8a62a82232f5617486f5fbd2f1255
+      game-date.npy: 7aa8d167a1316e410481130e4bd0a05f2770927624458994b10a43967699efb1
+      encoder.json: 375c1075db3ecc5f11e0bc0847a75f9298b9f28de84dc0610c35acdc676f8e26
+  eps_inputs:          # scripts/lit_base/export_eps.py (라벨·모델 없음, R 성분과 같은 W1 v3 재생 루프)
+    path: ${PITCHEEZY_JOBS}/20261121-lit-base/eps-inputs/eps-inputs.npz
+    sha256: 4055cfe618298455f7dfee4fd59652e5d0b782123d219d9b9c812b353931f5b2
+    rows: 8943
+    built: 8668        # 275행 생략 = R·C와 같은 행(B2 components와 game_pk/n/service_key/w1_key/built 완전 일치 확인)
+  excluded_game_pks: [849799, 849802, 849803, 849804, 849805, 849809, 849810, 849811, 849812, 849813, 849815, 849816, 849817, 849818,
+                      849819, 849820, 849822, 849823, 849825, 849826, 849827, 849828, 849829, 849830, 849831, 849832, 849833, 849834,
+                      849835, 849838, 849839, 849844, 849841, 849842, 849843, 849845, 849846, 849848, 849849, 849851]
+
+splits:
+  fit_window: ['2026-03-25', '2026-09-27']      # R(EXP-MPS-FS-001)과 같은 FIT 창. 포스트시즌 행 없음(game_type R)
+  fit_tr_end: '2026-08-31'                      # tune 단계 학습 = 03-25..08-31 (607,192행 중 9묶음 라벨 행)
+  dev_start: '2026-09-01'                       # DEV = 09-01..09-27 (105,829행 중 9묶음 라벨 행). 결과 열람 전 고정
+  rule: >-
+    초매개변수·epoch/rounds·온도 tau·최고 기준 모델 선정은 DEV에서만. 선정 뒤 FIT 전체(03-25..09-27)로 다시 학습하고
+    E_PS 입력을 예측한다. E_PS 라벨은 score 단계에서 처음이자 한 번만 읽는다.
+
+features:
+  information_set: >-
+    R과 같다: state11(볼·스트라이크·아웃·이닝·점수차·초말·주자 3·타자 좌·투수 좌), 투수 ID, 타자 ID, 같은 경기 같은 투수의
+    엄격히 앞선 투구 최대 32개(구종 19코드·결과 10·볼·스트라이크·같은 타자). 현재 투구의 물리량·위치·결과는 없다.
+  target_encoding_alpha: 4.0      # 표 특징(MLR/GBT)의 투수·투수×카운트·투수×타석·타자 구종 비율 평활 (frozen 빈도표와 같은 4)
+  target_encoding_folds: 5        # 학습 행은 game_pk % 5 경기 단위 out-of-fold 인코딩(자기 라벨 미사용); 평가 행은 학습 전체 인코딩
+
+families:
+  B-TAB:
+    enabled: true
+    kind: table
+    lane: cpu
+    literature: 투수×카운트 빈도표(관전·중계에서 쓰는 가장 흔한 기준; 기존 frozen 빈도표와 같은 식, FIT 전체로 다시 맞춤)
+    temperature: true
+    tune: {seed: 0, configs: [{alpha: 1}, {alpha: 2}, {alpha: 4}, {alpha: 8}, {alpha: 16}, {alpha: 32}]}
+    final: {seeds: [0]}
+  B-MLR:
+    enabled: true
+    kind: mlr
+    lane: cpu
+    literature: 다항 로지스틱 회귀(투수 성향·카운트·직전 투구 특징; 투수별 모형을 투수 절편으로 근사)
+    temperature: true
+    base: {max_iter: 300}
+    tune:
+      seed: 0
+      configs:
+        - {l2: 1.0e-7, pitcher_intercepts: false}
+        - {l2: 1.0e-6, pitcher_intercepts: false}
+        - {l2: 1.0e-5, pitcher_intercepts: false}
+        - {l2: 1.0e-4, pitcher_intercepts: false}
+        - {l2: 1.0e-7, pitcher_intercepts: true}
+        - {l2: 1.0e-6, pitcher_intercepts: true}
+        - {l2: 1.0e-5, pitcher_intercepts: true}
+        - {l2: 1.0e-4, pitcher_intercepts: true}
+    final: {seeds: [0]}
+  B-GBT:
+    enabled: true
+    kind: gbt
+    lane: cpu
+    literature: gradient boosted trees(LightGBM 4.6.0 다중 분류)
+    temperature: true
+    base: {learning_rate: 0.1, max_rounds: 2000, early_stopping_rounds: 50, max_bin: 255}
+    tune:
+      seed: 0
+      configs:     # 12개 고정 목록(무작위 탐색 아님)
+        - {num_leaves: 31, min_data_in_leaf: 200, feature_fraction: 0.8, lambda_l2: 1}
+        - {num_leaves: 63, min_data_in_leaf: 200, feature_fraction: 0.8, lambda_l2: 1}
+        - {num_leaves: 127, min_data_in_leaf: 200, feature_fraction: 0.8, lambda_l2: 1}
+        - {num_leaves: 255, min_data_in_leaf: 200, feature_fraction: 0.8, lambda_l2: 1}
+        - {num_leaves: 63, min_data_in_leaf: 50, feature_fraction: 0.8, lambda_l2: 1}
+        - {num_leaves: 63, min_data_in_leaf: 1000, feature_fraction: 0.8, lambda_l2: 1}
+        - {num_leaves: 127, min_data_in_leaf: 1000, feature_fraction: 0.8, lambda_l2: 10}
+        - {num_leaves: 255, min_data_in_leaf: 1000, feature_fraction: 0.8, lambda_l2: 10}
+        - {num_leaves: 63, min_data_in_leaf: 200, feature_fraction: 0.5, lambda_l2: 1}
+        - {num_leaves: 127, min_data_in_leaf: 200, feature_fraction: 0.5, lambda_l2: 10}
+        - {num_leaves: 31, min_data_in_leaf: 50, feature_fraction: 1.0, lambda_l2: 0}
+        - {num_leaves: 127, min_data_in_leaf: 200, feature_fraction: 1.0, lambda_l2: 0}
+    final: {seeds: [0]}       # deterministic=true: seed를 바꿔도 같은 모형이라 1개
+  B-SEQ:
+    enabled: true
+    kind: seq
+    lane: mps
+    literature: 순환 신경망(GRU) 구종 예측 — 앞선 투구 열 + 상황 + 투수·타자 임베딩
+    temperature: true
+    max_seconds_per_fit: 5400
+    base: {encoder: gru, window: 32, type_dim: 16, context_dim: 32, head_hidden: 128, dropout: 0.1, lr: 2.0e-3, weight_decay: 1.0e-4,
+           batch_size: 2048, max_epochs: 15, patience: 2, id_dropout: 0.05, hidden: 128, pitcher_dim: 32, batter_dim: 16}
+    tune:
+      seed: 0
+      configs:
+        - {hidden: 64, pitcher_dim: 16, batter_dim: 8}
+        - {hidden: 128, pitcher_dim: 32, batter_dim: 16}
+        - {hidden: 128, pitcher_dim: 32, batter_dim: 16, dropout: 0.2}
+        - {hidden: 128, pitcher_dim: 64, batter_dim: 16}
+        - {hidden: 256, pitcher_dim: 32, batter_dim: 16}
+        - {hidden: 128, pitcher_dim: 32, batter_dim: 16, lr: 1.0e-3}
+        - {hidden: 128, pitcher_dim: 32, batter_dim: 32, id_dropout: 0.1}
+        - {hidden: 128, pitcher_dim: 32, batter_dim: 16, window: 12}
+    final: {seeds: [0, 1, 2]}  # 3 seed 확률 평균 (R은 15성분 앙상블). DEV에서도 같은 3 seed 평균으로 tau·선정
+  B-TAK:
+    enabled: true
+    kind: seq
+    lane: mps
+    literature: >-
+      Takamido & Nakamoto(2026, arXiv 2606.17345) Transformer 구조(앞선 6구, 임베딩 256, 헤드 4, FF 512, 2블록, 맥락 dense 32, 결합 dense 64,
+      lr 1e-4, batch 512). 변경: 표적 인플레이/헛스윙 이진 -> 9구종; 투구 물리 7개 제외(R 정보 집합 밖); 타자 시즌 지표 대신 타자 임베딩;
+      투수 임베딩 추가(구종 표적에 투수 식별이 필요); 조기 종료 val AUC -> DEV NLL, 200 epoch -> 최대 20.
+      기존 B2 재구현(EXP-P1-006~008)은 결과 11갈래 예측이라 이 과제에 바로 쓸 수 없다.
+    temperature: true
+    max_seconds_per_fit: 5400
+    base: {encoder: transformer, window: 6, type_dim: 32, d_model: 256, heads: 4, ff: 512, blocks: 2, context_dim: 32, head_hidden: 64,
+           dropout: 0.1, lr: 1.0e-4, weight_decay: 0.0, batch_size: 512, max_epochs: 20, patience: 3, id_dropout: 0.05,
+           pitcher_dim: 32, batter_dim: 16}
+    tune:
+      seed: 0
+      configs:
+        - {lr: 1.0e-4}
+        - {lr: 3.0e-4}
+        - {lr: 3.0e-4, dropout: 0.2}
+    final: {seeds: [0, 1, 2]}
+
+decision:
+  primary: dNLL = NLL(R) - NLL(B*) on E_PS, both with q floor 0.001 (E.floor), game_pk paired bootstrap 2000, seed 20261110
+  best_baseline_rule: >-
+    B* = enabled family 중 DEV NLL(선정 설정, 신경망은 3 seed 평균, DEV에서 맞춘 tau 적용)이 가장 낮은 것. select 단계가 E_PS 채점 전에
+    best.json으로 고정한다. E_PS 결과로 B*를 바꾸지 않는다.
+  verdicts:
+    r_better: R이 낫다                 # 95% 상한 < 0
+    no_difference: 차이 감지 안 됨      # 구간이 0을 포함
+    baseline_better: 기준 모델이 낫다    # 95% 하한 > 0 (불리한 결과도 그대로 보고)
+  secondary: [각 기준 모델 vs R ΔNLL·ΔBrier·ΔECE10·Δtop1, top1, top3, ECE10(top-label), 구종별 ECE 평균, tau=1 판(보정 없음), 각 기준 vs C·vs 9월 빈도표]
+  wording: 재구현 비교(같은 자료의 문헌식 모델)이지 논문 재현이 아니다. 정책 개선 주장 없음.
+
+scoring:
+  cr_dir: ${PITCHEEZY_SVC_RUNS}/EXP-SVC-P9-003/CR/attempt-001   # R·C·9월 빈도표·라벨 (receipt sha 확인)
+  rows: 8943
+  games: 31
+  omitted_rows: 275            # R과 같은 생략 행 -> 모든 후보 1/9
+  floor_eps: 0.001
+  bootstrap: {unit: game_pk, replicates: 2000, seed: 20261110}
+  tool: scripts/svc_p9/eval_prediction.py (floor, row_parts, pooled, paired_contrast) at ade795de
+
+resources:
+  output_root: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001
+  heavy_lock: ${PITCHEEZY_RUNS}/ML-MATRIX-20260924/.heavy.lock   # driver가 끝까지 쥔다(비차단 획득)
+  threads: {cpu: 6, mps: 2}      # 10코어 중 최대 8 사용(여유 2)
+  seq_device: mps
+  internal_free_bytes_min: 10737418240     # 10 GiB
+  memory_free_percent_min: 30
+  forbidden_windows_kst:                   # 이 구간에는 새 단계를 시작하지 않고, 진행 중인 자기 자식만 멈춘 뒤 끝나면 다시 돈다
+    - ['2026-11-22T19:30:00', '2026-11-22T22:10:00']
+  protected: 발행·부스 프로세스(포트 8876 등)·기록기에는 신호를 보내지 않는다. pgrep/pkill 금지, pid 파일로만 추적.
+  gpu: A5000 미사용(SEED-003이 2·3·4 점유, 0·1 금지). PM이 owner에게 물을 수 있게 PREREG에 추정 속도만 적는다.
+
+dry_run:
+  package_days: ['2026-08-30', '2026-08-31']   # 실자료 package 이틀 조각(파이프라인 확인용). tune: 첫날 학습/둘째 날 평가
+  configs_per_family: 1
+  override:
+    seq: {max_epochs: 1}
+    mlr: {max_iter: 20}
+    gbt: {max_rounds: 20}
+  score: false                                  # dry run은 E_PS 라벨을 절대 읽지 않는다
+
+limitations:
+  - E_PS는 이미 여러 번 본 자료이고, R은 E_PS 비교(R−C)로 채택됐다. 이 비교도 같은 E_PS를 다시 쓰므로 독립 시험이 아니다.
+  - 문헌식 재구현(같은 자료·같은 정보 집합)이지 논문 재현이 아니다. 논문 보고값과 나란히 순위를 매기지 않는다.
+  - R은 15성분 앙상블 + 7–8월 OOF로 맞춘 tau/w 혼합이고, 기준 모델은 단일 모형(신경망은 3 seed 평균) + DEV tau다.
+  - 기준 모델 초매개변수 예산은 위 목록이 전부다. 더 넓은 탐색에서 더 좋아질 수 있다.
+  - DEV(9월)는 tune 학습 창 바로 뒤라 E_PS(10월 포스트시즌)와 분포가 다르다.
+  - tau는 DEV에서 맞추고 DEV로 선정에 쓴다(모수 1개, 모든 기준 모델 같은 처리).

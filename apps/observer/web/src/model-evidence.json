@@ -1,0 +1,209 @@
+{
+  "schema": "pitcheezy-model-evidence-card-v1",
+  "note": "Display copy of committed main-repo results (unrounded). Descriptive; no new computation. Service and recommendation use G0; the G15 mix is a research baseline only (D145).",
+  "prediction": {
+    "experimentId": "EXP-P11-001",
+    "scope": "Previously exposed eligible 2025 whole-MLB DEV",
+    "outcomeClasses": 10,
+    "requestedPitches": 341941,
+    "pitches": 311721,
+    "games": 1161,
+    "g0": {
+      "nll": 1.4904081967248524,
+      "brier": 0.726592367393062,
+      "ece10": 0.008710236256349225
+    },
+    "frequency": {
+      "nll": 1.50408101626456,
+      "brier": 0.7294806170360207,
+      "ece10": 0.0016600869646492627
+    },
+    "deltaNll": -0.013672819539707377,
+    "deltaNllCi95": [
+      -0.014415351081429984,
+      -0.012924306115981212
+    ],
+    "deltaBrier": -0.00288824964295874,
+    "bootstrapDraws": 10000,
+    "bootstrapUnit": "game",
+    "seeds": 5,
+    "negativeSeeds": 5,
+    "devWindow": [
+      "2025-07-01",
+      "2025-09-30"
+    ],
+    "devWindowSource": "docs/ML_EXPERIMENT_MATRIX.md line 26 (TRAIN 2023-05-15~2025-04-30, early-stop/calibration 2025-05-01~06-30)"
+  },
+  "researchMix": {
+    "experimentId": "EXP-P16-001",
+    "pitches": 311721,
+    "games": 1161,
+    "deltaNllVsG0": -0.004061572859477275,
+    "deltaNllVsG0Ci95": [
+      -0.004382625428931896,
+      -0.003752427299028304
+    ],
+    "seeds": 5,
+    "negativeSeeds": 5,
+    "usedInService": false
+  },
+  "policy": {
+    "id": "MLB-2026-OPE-v1",
+    "attempt": "OPE-2026-a1",
+    "games": 2429,
+    "plateAppearances": 184288,
+    "excludedUnknownPitcher": 34763,
+    "evaluatedPlateAppearances": 149525,
+    "deltaBounds": [
+      -0.001204616445139576,
+      0.0009206006143749304
+    ],
+    "label": "NO_EVIDENCE_OF_IMPROVEMENT",
+    "improvementThreshold": 0.001,
+    "unit": "defensive win probability per plate appearance",
+    "exposure": "Single registered run; the 2026 window was exposed by earlier P0/P1 OPEs, cross-fits and selection (D87); not an unseen-data evaluation"
+  },
+  "source": {
+    "repoCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
+    "files": {
+      "results/EXP-P11-001.json": "44dae07c73907c9c54344b1612fddc61db5698bb346288e4788d289c3a64230b",
+      "results/EXP-P16-001.json": "9d372da26b39fca07d6963a6861044721b31cf42209c92d5edb66f7b8a778597",
+      "results/MLB-2026-OPE-v1.json": "0bb8fcd028ff1c86528e7a49727cca90f85ecae266cede1db690998d045209e9",
+      "docs/ML_EXPERIMENT_MATRIX.md": "38a725094a07dbeaa8540a977d7fce39a6a85bf930b1d09979f6e61d673a5155"
+    },
+    "decisions": [
+      "D87",
+      "D131",
+      "D143",
+      "D145",
+      "D155"
+    ]
+  },
+  "conditioning": {
+    "note": "What the probabilities condition on and how the recommendation uses them. Code/contract facts at the pinned commit; no new computation.",
+    "deliveryDraws": 400,
+    "sourceCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
+    "files": {
+      "experiments/pitchmdp/pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
+      "experiments/pitchmdp/pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
+      "experiments/pitchmdp/pitchmdp/matrix_policy.py": "421f3d13f187a27505485790cbe470cd98f38b4af61ccba36a738ee9e2e6793c",
+      "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "86bed8c9dbbcb6b76075b6ae9caafdad81c6ab5ea48d556e16bc25051f6393b1",
+      "experiments/pitchmdp/pitchmdp/sequence_data.py": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65",
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e",
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": "b39b8236aeb904627d531d3201f85a79da33e8c69bbe320b22f1e92e35f2ff83",
+      "experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9"
+    },
+    "anchors": {
+      "experiments/pitchmdp/pitchmdp/matrix_features.py": [
+        "self._encode_types(self.frame.iloc[rows].pitch_type) if candidate_pitch_types is None"
+      ],
+      "experiments/pitchmdp/pitchmdp/sequence_delivery.py": [
+        "TIERS = [('pitch_type', 'p_throws', 'stand'),",
+        "Every retained vector was one actual TRAIN delivery",
+        "tokens, valid = store.gather(repeated, current=samples.reshape(-1, samples.shape[-1]))"
+      ],
+      "experiments/pitchmdp/pitchmdp/matrix_policy.py": [
+        "pitch_type=action",
+        "Policy requires the exact frozen 400-draw delivery model"
+      ],
+      "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": [
+        "## 3. ARM-B 식 (구종-only",
+        "π_ref^B·exp(Q̂^ref/τ)"
+      ],
+      "experiments/pitchmdp/pitchmdp/sequence_data.py": [
+        "PHYSICAL_COLUMNS = (\"effective_speed\", \"release_spin_rate\", \"spin_axis\",",
+        "\"pfx_x\", \"pfx_z\", \"plate_x\", \"plate_z\")"
+      ],
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": [
+        "'draws': 400, 'kind': 'flatten_mlp'"
+      ],
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": [
+        "'primary': weights[0] * calibrated + (1 - weights[0]) * frequency['dev']"
+      ],
+      "experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py": [
+        "TYPE_KEYS = [\"pitch_type\", *COUNT_KEYS]"
+      ]
+    },
+    "facts": [
+      "Current pitch-type input is the scored row's actual pitch type unless candidate types are passed (DEV scoring: actual thrown type).",
+      "Current physical delivery (speed, spin rate/axis, movement, location; 8 channels) is not an input before the pitch; it is averaged over 400 TRAIN deliveries keyed by pitcher/pitch type/hand/count tiers with league fallback (P11 G0 path: 400 draws, no candidate types passed to gather).",
+      "Not on the card (Q&A only): the P11 'service model' score is the June blend weight*mean(5 neural members) + (1-weight)*frequency baseline (C1 ensemble weight 0.7468, results/EXP-P10-001.json), and the frequency baseline also conditions on the actual pitch type (type/count/hand, plus outs/bases in the context level).",
+      "ARM-B recommends pitch type only: each candidate type is scored by simulated full-PA defensive WE and probability is shifted from the TRAIN pitch-mix baseline toward higher value (P3).",
+      "The watch screen location is a realized-delivery proxy, not evaluated (served /api/watch location.basis realized_delivery_proxy, evaluated false)."
+    ]
+  },
+  "blend": {
+    "note": "How the P11 'service model' probability is formed: archived June-2025 blend weight * mean(5 frozen members) + (1 - weight) * context-frequency baseline. Read from committed files at the pinned commit; no new computation.",
+    "sourceCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
+    "members": 5,
+    "modelWeight": 0.7467754577062221,
+    "weightPath": "results/EXP-P10-001.json reports.G0-global.selection.model_weight",
+    "blendWindow": [
+      "2025-06-01",
+      "2025-06-30"
+    ],
+    "files": {
+      "results/EXP-P10-001.json": "82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c",
+      "configs/EXP-P11-001.yaml": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b",
+      "experiments/pitchmdp/scripts/score_ml_g0_whole.py": "e9a0f627b39a9dde4c2f777b661a8370b7f259e4130762cde9df1eb01bc007d2"
+    },
+    "anchors": {
+      "configs/EXP-P11-001.yaml": [
+        "\"analysis_results_sha256\": \"82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c\"",
+        "\"june_weights\": \"reuse C1 analysis G0-global ensemble and per-seed blend weights unchanged\""
+      ],
+      "experiments/pitchmdp/scripts/score_ml_g0_whole.py": [
+        "frozen_five_predictions(members, baseline, read_json(Path(c1_results_path))['reports']['G0-global'])"
+      ],
+      "results/EXP-P10-001.json": [
+        "\"model_weight\": 0.7467754577062221"
+      ]
+    },
+    "facts": [
+      "P11 g0 estimand = predictions['primary'] (matrix_g0_whole_metrics.evaluate_whole), primary = w*mean(5 calibrated members) + (1-w)*frequency (matrix_g0_whole_metrics.py anchor pinned in conditioning).",
+      "w is the archived C1 G0-global June weight from EXP-P10-001.json, pinned in the P11 config by sha256 and read by score_ml_g0_whole.py.",
+      "Blend window 2025-06-01~06-30 (ML_EXPERIMENT_MATRIX.md, pinned in source.files), before DEV 07-01~09-30."
+    ],
+    "servicePath": {
+      "note": "The card labels the P11 g0 estimand 'service model'. These pins show the watch/live ARM-B predictor (policy_identity.bind_components -> load_g0_ensemble -> FrozenG0Ensemble) uses the same five members and the same June ensemble weight (not per-seed weights). Added in the Opus review of 3a3690d; no new computation.",
+      "files": {
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": "b39b8236aeb904627d531d3201f85a79da33e8c69bbe320b22f1e92e35f2ff83",
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e",
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py": "76b8fd5ef0ea2b7cf8ae8c7e071821c73b206aad8f09b6ca4f5ea7335d199dd0",
+        "experiments/pitchmdp/pitchmdp/policy_identity.py": "c1dfec8294116089d8a545edb9c098c5cac35ff6845eeb666cfb9a4ea816a81a",
+        "configs/G0-RESEARCH-FROZEN-v1.json": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+      },
+      "anchors": {
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": [
+          "weights = [archived_report['selection']['model_weight'],"
+        ],
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": [
+          "ensemble = selection.get('model_weight')",
+          "return {'june_ensemble_model_weight': float(ensemble),"
+        ],
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py": [
+          "Five-member G0: per-seed May temperature, mean of five, common June ensemble blend.",
+          "Per-seed June weights are NOT used for the ensemble.",
+          "weight = calibration.get('june_ensemble_model_weight')"
+        ],
+        "experiments/pitchmdp/pitchmdp/policy_identity.py": [
+          "g0 = load_g0_ensemble(bundle, inputs, paths, load_member=load_member, load_frequency=load_frequency,",
+          "_require(g0.neural_weight == calibration['june_ensemble_model_weight']"
+        ],
+        "configs/G0-RESEARCH-FROZEN-v1.json": [
+          "EXP-P11-001/frozen_calibration.json"
+        ]
+      },
+      "frozenCalibration": {
+        "bundleRole": "p11_frozen_calibration",
+        "sha256": "e3b96ef49196a658278c7c1c3c436104bd6314a81303ba8b997391e1918e1021",
+        "juneEnsembleModelWeight": 0.7467754577062221,
+        "readOn": "2026-10-04 from the external SSD path pinned in the bundle (not in git); optional smoke check via G0_FROZEN_CALIBRATION"
+      },
+      "fitSample": {
+        "pitches": 4821,
+        "note": "June blend rows are the Cpanel development panel only (P10 coverage.blend.eligible_pitches; P11 expected_samples.blend), not all MLB June; reviewer read 20 pitchers / 110 games / month 2025-06 from the T7 blend_metadata.parquet (sha de4b784c)."
+      }
+    }
+  }
+}

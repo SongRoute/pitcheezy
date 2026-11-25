@@ -1,0 +1,181 @@
+# EXP-EXPL-1121-FINAL (v4 = v3 + 풀에 X-GRU-A4-seeds·X-GRU-A4b-seeds(따로 두 성분)·X-GRU-A5-b24 추가, 다른 선택 규칙 그대로; E_PS 재열람 = 탐색) — 단일 18개 + 조합을 CANDIDATES-1121 규칙으로 DEV에서 고르고, 조건이 맞을 때만 E_PS 재열람 채점 1회(확인 아님).
+# 등록 문서: ${PITCHEEZY_JOBS}/20261121-lit-base/PREREG-EXPL-FINAL.md(v2) + PREREG-EXPL-FINAL-v3.md(v3) + PREREG-EXPL-FINAL-v4.md(v4). 실행기 experiments/lit_base/expl.py (--part FINAL: select, predict, score)
+id: EXP-EXPL-1121-FINAL
+status: REGISTERED     # v4, 재검토(REVIEW-EXPL-FINAL-v4-FABLE.md) 뒤 활성화. v3(61f74177, 채점 끝)를 대체하지 않는다; 실행은 PM 신호 (2026-11-21)
+version: v4             # v4 변경 = pool에 EXP-EXPL-1121-A4 추가, output_root FINAL-v4(새 root), 판정 문구 앞에 "탐색(재열람)", eps_gates에 v3 열람 값 추가(v3 뒤)
+viewing_state: >-
+  v4는 FINAL v3의 E_PS 채점(1순위·기준 GM-w·B-SEQ·R·U1 대비) 결과를 본 뒤 실행한다. 이전 열람(R 채택, LIT-BASE, PREQ, CANDIDATES)에 더해
+  이 FINAL 계열 안에서 E_PS 열람 2회째다. A4 팔 설계는 A·A2·A3·B DEV를 본 뒤 정했고 E_PS(v3)는 보기 전이다.
+  v4의 E_PS 결과는 확인 시험이 아니라 탐색(재열람)으로만 보고한다.
+execute: true
+author: claude-opus-5-5 (LIT-BASE/EXPL worker)
+created_kst: '2026-11-21'
+data_role: >-
+  DEV(2026-09-01..09-27) 선택 결과(각 등록의 selection.json)만으로 B*_static을 고정한 뒤, E_PS(포스트시즌 31경기, 8,943구, 849799 제외)로 1회 확인.
+  E_PS 라벨은 score에서만, X-PREQ의 E_PS 갱신은 officialDate가 엄격히 이른 E_PS 경기 라벨만(as-of).
+
+data:
+  package:
+    root: data/final-1124/september-package       # 레포 상대(서버 link data/final-1124 = 맥 worktree 심볼릭 링크). 서버 sha 7/7 일치(a5000 세션)
+    rows: 713021
+    all_keys_sha256: 345d4d86d0bbceb9943d5239e71ca3311f851721a1181921bf3bbcb24a548e17
+    sha256:
+      x-prequential.npy: e84ad8938cb64884cf7f63bbff79b8b8393018418145fe4f3450a3723d7b467d
+      corpus-subset.npz: b8608d18d0e6c4a907fb11a9d8812f1a184ede7e7905be4428c8043739a264ff
+      seq-inputs.npz: 44682d7c7f1fa6c17f9c4b21a87702656fb8a62a82232f5617486f5fbd2f1255
+      game-date.npy: 7aa8d167a1316e410481130e4bd0a05f2770927624458994b10a43967699efb1
+      encoder.json: 375c1075db3ecc5f11e0bc0847a75f9298b9f28de84dc0610c35acdc676f8e26
+  eps_inputs:                                      # predict 단계만(맥), 라벨 없음
+    path: ${PITCHEEZY_JOBS}/20261121-lit-base/eps-inputs/eps-inputs.npz
+    sha256: 4055cfe618298455f7dfee4fd59652e5d0b782123d219d9b9c812b353931f5b2
+    rows: 8943
+    built: 8668
+  excluded_game_pks: [849799, 849802, 849803, 849804, 849805, 849809, 849810, 849811, 849812, 849813, 849815, 849816, 849817, 849818,
+                      849819, 849820, 849822, 849823, 849825, 849826, 849827, 849828, 849829, 849830, 849831, 849832, 849833, 849834,
+                      849835, 849838, 849839, 849844, 849841, 849842, 849843, 849845, 849846, 849848, 849849, 849851]
+
+splits:          # LIT-BASE와 같다
+  fit_window: ['2026-03-25', '2026-09-27']
+  fit_tr_end: '2026-08-31'
+  dev_start: '2026-09-01'
+  rule: >-
+    tune = FIT_tr(X-DATA는 + 2023~2025 전체)로 학습, DEV로 설정·epoch/rounds·seed 묶음 tau 선정. fitw = FIT 전체로 같은 설정·같은 budget 재학습 후
+    가중치 저장(.pt / LightGBM model.txt + 표적 인코딩 표). E_PS 예측은 EXPL-FINAL에서 최종 후보 한 팔만, 맥에서.
+
+features:
+  information_set: >-
+    R·LIT-BASE와 같다: state11, 투수 ID, 타자 ID, 같은 경기 같은 투수의 엄격히 앞선 투구 최대 32개(구종 19·결과 10·볼·스트라이크·같은 타자).
+    현재 투구 물리·위치·결과 없음.
+  target_encoding_alpha: 4.0
+  target_encoding_folds: 5
+
+pool:
+  EXP-EXPL-1121-A:
+    config: configs/EXP-EXPL-1121-A.yaml
+    config_sha256: 0a26336184b7cacdd3d17465cdc6baac846eef4c8c51af1ee4edbce435cf435d
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A
+    families: [X-GRU-A, X-GRU-B, X-TAK, X-GBT]
+  EXP-EXPL-1121-A2:
+    config: configs/EXP-EXPL-1121-A2.yaml
+    config_sha256: e226b7aed68122ea5af23eb2aa0d54ef2fd210fd09533f758ed12cbf2525a37c
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A2
+    families: [X-GRU-A2a, X-GRU-A2b]
+  EXP-EXPL-1121-B:
+    config: configs/EXP-EXPL-1121-B.yaml
+    config_sha256: afe04930c1514e55a8966c47308cbf1fd2945facc662ee98542d5602ab58e557
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/B
+    families: [X-DATA]          # B의 X-PREQ 팔(단일 1위 위 U1)은 v2에서 '조합 1순위 위 U1'로 대체되어 쓰지 않는다
+  EXP-EXPL-1121-A3:              # v3 추가. A3 설정은 A·A2·B DEV 결과를 본 뒤 정했다(E_PS 안 봄)
+    config: configs/EXP-EXPL-1121-A3.yaml
+    config_sha256: 99d62d06e05e12bef977ac2f755014c5a568516c0aad4177abd09ee7406ae535
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A3    # 서버 결과는 gpu pull 뒤 여기 attempt-001/{tune,fitw}로 모은다
+    families: [X-GRU-A3-seeds, X-GRU-A3-plus]
+  EXP-EXPL-1121-A4:              # v4 추가. A4 설정은 A·A2·A3·B DEV 결과를 본 뒤 정했다(E_PS 안 봄)
+    config: configs/EXP-EXPL-1121-A4.yaml
+    config_sha256: 022d0607cfc9ce2dd1c0670524d3289d24b29f0316a9e010ddab3cb3f79fc951
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A4    # 서버 결과는 gpu pull 뒤 여기 attempt-001/{tune,fitw}로 모은다
+    families: [X-GRU-A4-seeds]   # X-GRU-A4-cal은 풀에서 뺀다(REVIEW-EXPL-A4-FABLE 필수 4: seed 1개 DEV 낙관 성분, 설정 0이면 A3-seeds seed 10과 사실상 같음). 넣으려면 이유를 적고 재검토
+  EXP-EXPL-1121-A4b:             # v4 추가(GPU4, seed 60..89). A4-seeds와 한 성분으로 묶지 않고 따로 둔다(묶는 코드가 없고, 묶음은 FINAL 조합 AM-eq로 생김)
+    config: configs/EXP-EXPL-1121-A4b.yaml
+    config_sha256: 0a0b52bd13f94f605b27842fa543634098ea5e23d680339cc3328323722b5b63
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A4b
+    families: [X-GRU-A4b-seeds]
+  EXP-EXPL-1121-A5:              # v4 추가 후보. 두 팔(b24, b30) 중 DEV NLL(tau)이 낮은 한 팔만 넣는다(결과 전 고정, 동률 1e-6이면 b24). v4 등록 때 families에 기입
+    config: configs/EXP-EXPL-1121-A5.yaml
+    config_sha256: 106884b063c73b72d399fb87b241ddcec444b2898872159d1ae36cf66cf535c6
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A5
+    families: [X-GRU-A5-b24]     # 규칙 적용(파일 확인 23:2x): b24 dev_nll_ensemble_tau 1.2196458431377835 < b30 1.2196483431861036(차 2.5e-6, 동률 1e-6 밖). b30은 서술용
+  LIT-BASE:
+    config: configs/EXP-LIT-BASE-001.yaml
+    config_sha256: 2972a3116a1a1f82f82fa34715f42ca9c4336af63f3bfd93a5dcaada86095bf6
+    root: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001
+    families: [B-SEQ]
+
+preq:                          # U1 = EXP-PREQ-001 tilt, 1순위 위에 따로(정적 순위 밖). κ는 DEV에서만(동률이면 큰 κ)
+  alpha: 4.0
+  ratio_clip: [0.05, 20.0]
+  kappa_grid: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, .inf]
+
+combo:                         # CANDIDATES-1121(20261121-candidates/PREREG.md sha e35fb32e…)과 같은 규칙
+  candidates_dir: ${PITCHEEZY_JOBS}/20261121-candidates
+  dev_npz_sha256: a50971f925989c45a64c5bdb6caccf8e0932ff9c4f5f3178eb6985d2d00391b9    # D6 DEV 예측(C september OOF 재합성 1.2593941 포함)
+  dev_half_sha256: 05bcfd8111e6701d8626b100964105414449018763be3658d00eab92a8037635   # 교차적합 반(09-01..13 / 09-14..27)
+  cand_py_sha256: 8987d487ae9af4c484f73942849e7b29e2baead0b1e280a75291a27943038659     # combine/fit 원본
+  d6: [C, B-SEQ, B-GBT, B-TAK, B-MLR, B-TAB]
+  lit_final_root: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001
+  max_subset: 4                # 성분 18개(v4; v3 15개, v2 13개)의 전수는 계산이 맞지 않아 크기 ≤ 4 전수 + 전체 18개 집합(AM/GM 4방식 × 온도 2). CANDIDATES는 6개 전수였다
+  tie: 0.0005
+  processes: 6
+  reference: {name: 'C+SEQ+GBT GM-w', dev_nll_crossfit: 1.2261915183584156}   # 기존 조합 1순위(GM-w 0.159/0.536/0.305, T 1), 재현 게이트
+  eps_gates:                   # score가 result.json 전에 재현해야 하는 이미 열람된 값(candidates/out/candidates.json)
+    reference_eps_nll: 1.1551793823220442
+    bseq_eps_nll: 1.158214666214278
+
+decision:
+  final_rule: >-
+    후보 = 성분 18개(D6 + X-GRU-A, X-GRU-B, X-TAK, X-GBT, X-GRU-A2a, X-GRU-A2b, X-DATA, X-GRU-A3-seeds, X-GRU-A3-plus, X-GRU-A4-seeds, X-GRU-A4b-seeds, X-GRU-A5-b24)의 단일·조합(AM-eq/GM-eq/AM-w/GM-w × 온도 없음/T).
+    점수 = DEV 교차적합 NLL(하한 0.001). 1순위 = 최저와 0.0005 이내 중 성분 수 적음 → 동일 가중 → 온도 없음 순(CANDIDATES-1121과 같음).
+    가중치·T는 DEV 전체로 다시 맞춰 E_PS에 쓴다. 기준 후보 = 기존 조합 1순위 C+SEQ+GBT GM-w(같은 후보 집합 안에 있고, 따로 대비 보고).
+    select가 E_PS를 읽기 전에 best.json으로 고정(덮어쓰기 금지). U1은 1순위 위에 따로(정적 순위 밖). E_PS 재열람 채점은 v4_rule 조건일 때만 1회(확인 아님).
+  v4_rule: >-
+    (v3 E_PS 결과를 보기 전에 고정, REVIEW-EXPL-A4-FABLE 필수 2·3) 실행 조건: A4-seeds·A4b-seeds tune·fitw DONE + T7 회수(마감 2026-11-23 12:00 KST)면 v3 결과와 상관없이 select를 돌린다.
+    v4 1순위가 v3 1순위와 같으면 v4는 E_PS를 채점하지 않는다. 다르면 v4 1순위 DEV 교차적합 NLL이 v3 1순위보다 0.0005(tie)를 넘게 낮을 때만
+    v4 1순위가 부스 후보가 되고 E_PS 재열람 채점 1회를 한다. 아니면 v3 1순위 유지, v4 E_PS 미채점. v3·v4 사이 선택에 E_PS 수치를 쓰지 않는다.
+    A4b 처리(결과 보기 전 고정): (a) 마감 안 A4-seeds·A4b 둘 다 DONE → 17성분·25,610개. (b) A4b만 미완료 → A4b를 뺀 16성분·20,040개.
+    (c) A4-seeds만 미완료 → A4-seeds를 뺀 16성분(v3 + A4b). (d) 둘 다 미완료 → v4를 돌리지 않는다. DONE인 팔은 DEV 값과 무관하게 반드시 포함한다(본 뒤 빼기 금지).
+    빠지는 판은 해당 pool 항목만 지운 config로 재검토 뒤 실행한다.
+    A5(두 팔 b24·b30, 78d0be41에서 v3 E_PS 열람 전 고정): 마감 안 DONE인 팔 중 selection.json dev_nll_ensemble_tau가 낮은 한 팔만 넣는다(동률 1e-6이면 b24).
+    선택된 팔은 A3-seeds보다 DEV가 나빠도 넣는다. 둘 다 미완료면 A5 항목을 지운다(빈 families는 members()가 거부). 넣으면 성분 18개·후보 32,276개.
+    v3 판정 문구는 v4로 바뀌지 않는다. v4 score는 v3 score/result.json이 먼저 있어야 한다(prior_view 게이트, v4 등록 때 코드로 추가).
+  verdicts:
+    R_minus_best: {upper_lt_0: '탐색(재열람): R이 낫다', lower_gt_0: '탐색(재열람): 새 후보가 낫다', else: '탐색(재열람): 차이 감지 안 됨'}
+    best_minus_BSEQ: {upper_lt_0: '탐색(재열람): 새 후보가 B-SEQ보다 낫다', lower_gt_0: '탐색(재열람): B-SEQ가 낫다', else: '탐색(재열람): 차이 감지 안 됨'}
+    best_minus_reference: {upper_lt_0: '탐색(재열람): 새 1순위가 기존 GM-w보다 낫다', lower_gt_0: '탐색(재열람): 기존 GM-w가 낫다', else: '탐색(재열람): 차이 감지 안 됨'}
+  report: [R − 1순위, 1순위 − B-SEQ, 1순위 − C, 1순위 − 기존 GM-w, U1 − 1순위, R − U1, U1 − B-SEQ, 각 top1 변화 따로, top3, ECE]
+  service_format: 'final-mix.json = svc-mix-bundle-v1 (name, method AM|GM, weights, temperature or null, components[name, module, candidate, weights_dir]); EXP-SVC-PRED-001과 같은 형식'
+  booth: 부스 모델 선택은 PM·owner 결정(후보 R, B-SEQ, 기존 GM-w, 새 1순위, U1 판).
+
+reference:
+  bseq_eps_pred:
+    path: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/final/B-SEQ/eps-pred.npz
+    sha256: c3e26eab82764f13c9b2e4aa7e85a3586b393ec74a3857cc707f42b18b3a0b4a
+
+prior_view:                    # v4: FINAL v3가 먼저 E_PS를 채점했다(score가 sha로 확인). 이 실행의 E_PS는 재열람(탐색)이다
+  root: ${PITCHEEZY_RUNS}/EXPL-20261121/FINAL/attempt-001
+  result_json_sha256: afa32e0f579d71e08831796cbfa54a7422ea70fae8882ccbd7606a9f2897d064
+  best_json_sha256: 6ee39b959d9755687021a17c2d0f7b5d054060e0367c8ba73bdfb0b02fa26a70
+  top1: XGBT+XGRUA3s+XGRUA3p AM-w +T
+  top1_dev_nll_crossfit: 1.2151225500779832
+  top1_eps_nll: 1.1485520767576602         # v3 result.json metrics.TOP1.nll (기록용; v4 score는 다시 계산하지 않는다)
+  viewed_at_kst: '2026-11-21T22:04:21'
+  verified: RESULT-VERIFY-EXPL-FINAL-v3-FABLE.md VERIFIED-with-notes, 깨끗한 재예측 비트 일치(오염 없음)
+
+scoring:
+  cr_dir: ${PITCHEEZY_SVC_RUNS}/EXP-SVC-P9-003/CR/attempt-001
+  rows: 8943
+  games: 31
+  omitted_rows: 275
+  floor_eps: 0.001
+  bootstrap: {unit: game_pk, replicates: 2000, seed: 20261110}
+
+resources:
+  output_root: ${PITCHEEZY_RUNS}/EXPL-20261121/FINAL-v4     # v3 root(FINAL)와 분리: v3 best.json·result.json을 건드리지 않는다
+  report_dir: ${PITCHEEZY_JOBS}/20261121-lit-base
+  heavy_lock: ${PITCHEEZY_RUNS}/ML-MATRIX-20260924/.heavy.lock
+  threads: {mac-cpu: 6}
+  internal_free_bytes_min: 10737418240
+  memory_free_percent_min: 30
+  forbidden_windows_kst:
+    - ['2026-11-22T19:30:00', '2026-11-22T22:10:00']
+
+dry_run:
+  package_days: ['2026-08-29', '2026-08-30', '2026-08-31']
+  configs_per_family: 1
+
+limitations:
+  - E_PS는 이미 여러 번 봤다(R 채택, LIT-BASE 채점, EXP-PREQ-001, FINAL v3). v4 채점은 이 계열 안 재열람이며 탐색으로만 보고한다. 독립 시험이 아니다.
+  - DEV는 LIT-BASE에서 본 자료이고 팔 설계(A2·A3 포함)가 그 결과를 보고 정해졌다. A3는 A·A2·B DEV를 본 뒤 정했다. 조합 후보가 32,276개(v3 15,438개, v2 8,666개)라 DEV 1위는 운으로 1위일 수 있다.
+  - 조합 탐색은 크기 ≤ 4 + 전체 집합으로 줄였다(CANDIDATES의 6개 전수와 다름).
+  - D6(B-*)의 E_PS 예측은 가중치 없는 LIT final 예측이다. 서비스 연결에는 EXP-SVC-PRED-001 재학습이 필요하다.
+  - E_PS 예측은 서버 CUDA 가중치를 맥 CPU에서 돌린다(비트 재현 보장 없음).
+  - X-PREQ의 DEV와 E_PS 갱신 조건이 다르다(m 기간, c 표본 크기).

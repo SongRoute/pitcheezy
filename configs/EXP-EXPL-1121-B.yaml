@@ -1,0 +1,137 @@
+# EXP-EXPL-1121-B — 부스 모델 후보 확장 탐색 2차 묶음(2023~2025 자료 추가 GRU, U1 투수 구종 비율 갱신). EXP-LIT-BASE-001의 코드·분할·정보 집합·선택 규칙을 이어받는다.
+# owner: "부스 모델을 다른 후보들이랑 비교해서 선정한다", "최대한 모델을 발전시켜보자"; PREQ 팔 "1번으로 가자" (2026-11-21).
+# 등록 문서: ${PITCHEEZY_JOBS}/20261121-lit-base/PREREG-EXPL.md. 실행기: experiments/lit_base/expl.py
+id: EXP-EXPL-1121-B
+part: B    # R 구조+투구 흐름 팔은 EXPL-C(미등록). 최종 선택·E_PS 채점은 EXPL-FINAL 등록에서 전체 후보 집합을 DEV로만
+status: REGISTERED     # Fable PASS-with-fixes, 필수 3건 반영 (2026-11-21)
+execute: true
+author: claude-opus-5-5 (LIT-BASE/EXPL worker)
+created_kst: '2026-11-21'
+data_role: >-
+  2026 EXPOSED DEVELOPMENT(FIT 03-25..09-27 정규시즌, R과 같은 package) + X-DATA 학습 전용 2023~2025 정규시즌(데이터 버전 d20260911-s2325 frozen; D3·D15의 원래 학습 창).
+  DEV(2026-09-01..09-27)에서만 순위·선택. 이 묶음은 E_PS를 읽지 않는다(서버·맥 모두). E_PS 확인 1회는 EXPL-FINAL 등록에서.
+
+data:
+  package:
+    root: data/final-1124/september-package       # 레포 상대(서버 link data/final-1124 = 맥 worktree 심볼릭 링크). 서버 sha 7/7 일치(a5000 세션)
+    rows: 713021
+    all_keys_sha256: 345d4d86d0bbceb9943d5239e71ca3311f851721a1181921bf3bbcb24a548e17
+    sha256:
+      x-prequential.npy: e84ad8938cb64884cf7f63bbff79b8b8393018418145fe4f3450a3723d7b467d
+      corpus-subset.npz: b8608d18d0e6c4a907fb11a9d8812f1a184ede7e7905be4428c8043739a264ff
+      seq-inputs.npz: 44682d7c7f1fa6c17f9c4b21a87702656fb8a62a82232f5617486f5fbd2f1255
+      game-date.npy: 7aa8d167a1316e410481130e4bd0a05f2770927624458994b10a43967699efb1
+      encoder.json: 375c1075db3ecc5f11e0bc0847a75f9298b9f28de84dc0610c35acdc676f8e26
+  hist:                                            # scripts/lit_base/build_hist.py (2026 동등성 게이트 PASS: 713,021행 불일치 0, state11 차 0.0)
+    root: data/expl-1121-hist                      # 서버 ~/cc/shared/pitcheezy/expl-1121/hist/ 를 이 이름으로 link(a5000 세션), 맥은 T7 심볼릭 링크
+    sha256:
+      2023: d2a148f89bad21176efba4fe7d6725bc766fb864a3ec5b6d1907f6017868c4c6
+      2024: f12b4ea0dc4545a3a51093543b7f4af2b99f6543beadd846f0bf7b9968ac46e4
+      2025: ffb03121bdd4a950fd9af5058452e78e6da30ec70b242903a3567e638d7f6dff
+  eps_inputs:                                      # 이 묶음에서는 읽지 않는다(EXPL-FINAL의 predict가 맥에서 읽음). 기록용 고정값
+    path: ${PITCHEEZY_JOBS}/20261121-lit-base/eps-inputs/eps-inputs.npz
+    sha256: 4055cfe618298455f7dfee4fd59652e5d0b782123d219d9b9c812b353931f5b2
+    rows: 8943
+    built: 8668
+  excluded_game_pks: [849799, 849802, 849803, 849804, 849805, 849809, 849810, 849811, 849812, 849813, 849815, 849816, 849817, 849818,
+                      849819, 849820, 849822, 849823, 849825, 849826, 849827, 849828, 849829, 849830, 849831, 849832, 849833, 849834,
+                      849835, 849838, 849839, 849844, 849841, 849842, 849843, 849845, 849846, 849848, 849849, 849851]
+
+splits:          # LIT-BASE와 같다
+  fit_window: ['2026-03-25', '2026-09-27']
+  fit_tr_end: '2026-08-31'
+  dev_start: '2026-09-01'
+  rule: >-
+    tune = FIT_tr(X-DATA는 + 2023~2025 전체)로 학습, DEV로 설정·epoch/rounds·seed 묶음 tau 선정. fitw = FIT 전체로 같은 설정·같은 budget 재학습 후
+    가중치 저장(.pt / LightGBM model.txt + 표적 인코딩 표). E_PS 예측은 EXPL-FINAL에서 최종 후보 한 팔만, 맥에서.
+
+features:
+  information_set: >-
+    R·LIT-BASE와 같다: state11, 투수 ID, 타자 ID, 같은 경기 같은 투수의 엄격히 앞선 투구 최대 32개(구종 19·결과 10·볼·스트라이크·같은 타자).
+    현재 투구 물리·위치·결과 없음.
+  target_encoding_alpha: 4.0
+  target_encoding_folds: 5
+
+families:
+  X-DATA:
+    kind: seq
+    lane: gpu-data
+    device: cuda
+    data: plus                     # 2023~2025 정규시즌 2,133,173행을 학습에 더한다(DEV·E_PS는 그대로). 투수·타자 어휘는 학습 행 전체
+    seeds: [0, 1, 2]
+    max_seconds_per_fit: 5400
+    base: {encoder: gru, window: 32, type_dim: 16, context_dim: 32, head_hidden: 128, dropout: 0.1, lr: 2.0e-3, weight_decay: 1.0e-4,
+           batch_size: 4096, max_epochs: 25, patience: 3, id_dropout: 0.05, hidden: 128, pitcher_dim: 64, batter_dim: 16, layers: 1}
+    tune:
+      seed: 0
+      configs:
+        - {}                                          # LIT-BASE B-SEQ 선정 구조, batch 4096(자료 4배)
+        - {hidden: 256, layers: 2}
+        - {hidden: 256, layers: 2, batch_size: 2048}
+  X-PREQ:
+    kind: preq
+    lane: mac-cpu
+    note: >-
+      EXP-PREQ-001 U1(experiments/preq/preq.py tilt 식 그대로: q ∝ q_base ⊙ clip(((c + κ m)/(n + κ))/m, [0.05, 20]))을
+      풀(EXPL-A 4팔 ∪ X-DATA ∪ LIT-BASE B-SEQ) 중 DEV 1위 팔(tau 적용) 위에 얹는다. 신경망 재학습 없음.
+      DEV: 날짜순 재생, 각 행은 DEV 안에서 엄격히 이른 날짜(끝난 날 전체)의 같은 투수 라벨만 반영. m = 2026 FIT_tr 투수 비율(alpha 4).
+      E_PS(EXPL-FINAL에서만): m = 2026 FIT 전체 투수 비율, c = officialDate가 엄격히 이른 E_PS 경기 라벨. κ는 DEV에서만.
+    alpha: 4.0
+    ratio_clip: [0.05, 20.0]
+    kappa_grid: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, .inf]   # EXP-PREQ-001과 같음; 동률(1e-9)이면 큰 κ
+
+pool:                                  # X-PREQ 바탕 팔 후보. 각 config 바이트 sha가 pin과 같아야 한다
+  EXP-EXPL-1121-A:
+    config: configs/EXP-EXPL-1121-A.yaml
+    config_sha256: 0a26336184b7cacdd3d17465cdc6baac846eef4c8c51af1ee4edbce435cf435d
+    root: ${PITCHEEZY_RUNS}/EXPL-20261121/A    # 서버 결과는 gpu pull 뒤 여기 attempt-001/{tune,fitw}로 모은다
+    families: [X-GRU-A, X-GRU-B, X-TAK, X-GBT]
+  LIT-BASE:
+    config: configs/EXP-LIT-BASE-001.yaml
+    config_sha256: 2972a3116a1a1f82f82fa34715f42ca9c4336af63f3bfd93a5dcaada86095bf6
+    root: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001
+    families: [B-SEQ]
+
+decision:
+  provisional_rule: >-
+    이 묶음 안 순위 = DEV NLL(선정 설정, seed 묶음 평균, DEV tau)이 낮은 순. select는 provisional-best.json(묶음 안 1위)만 쓴다.
+  final_rule: >-
+    팔을 나눠 등록해도 최종 선택은 전체 후보 집합에서 DEV로만 한다. 정적 모델 B*_static = 풀(EXPL-A 4팔 ∪ X-DATA ∪ LIT-BASE B-SEQ) 중
+    DEV NLL(seed 묶음 평균, DEV tau) 최소. X-PREQ(경기 뒤 갱신 모드, data-roles.md:21에 따라 정적 팔과 같은 순위에 섞지 않음)는
+    B*_static 위에 얹은 판으로 따로 고정·보고한다(κ ∞가 격자에 있어 DEV에서 구조상 바탕 이하이므로 순위 비교 대상이 아님).
+    EXPL-FINAL 등록이 select·predict·score를 맡고 E_PS는 1회. 비교: R − B*_static, B*_static − B-SEQ, B*_static − C,
+    X-PREQ − B*_static, R − X-PREQ, X-PREQ − B-SEQ, 각 top1 변화를 따로. 풀 팔이 실패·취소되면 PM 결정으로 등록을 고치고 재검토한다.
+  booth: 부스 모델 선택은 PM·owner 결정(후보 R, B-SEQ, B*_new).
+
+reference:
+  dev_selections:
+    LIT-BASE B-SEQ: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-SEQ/selection.json
+    LIT-BASE B-GBT: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-GBT/selection.json
+    LIT-BASE B-TAK: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-TAK/selection.json
+
+resources:
+  output_root: runs/EXP-EXPL-1121-B        # 서버: 기존 runs link 아래 runs/EXP-EXPL-1121/<lane>/ (PITCHEEZY_LANE). 맥: PITCHEEZY_OUT_ROOT=T7 경로
+  report_dir: ${PITCHEEZY_JOBS}/20261121-lit-base
+  heavy_lock: ${PITCHEEZY_RUNS}/ML-MATRIX-20260924/.heavy.lock
+  threads: {gpu-data: 4, mac-cpu: 6}
+  internal_free_bytes_min: 10737418240
+  memory_free_percent_min: 30
+  forbidden_windows_kst:                   # 맥만: 새 fit을 시작하지 않는다
+    - ['2026-11-22T19:30:00', '2026-11-22T22:10:00']
+  gpu: A5000 GPU 2·3·4만. 실행·점유 확인·UUID 고정은 a5000-gpu 세션. 맥 MPS는 쓰지 않는다.
+
+dry_run:
+  package_days: ['2026-08-29', '2026-08-30', '2026-08-31']   # 첫날 학습, 나머지 2일 DEV(U1 as-of 경로가 실제로 돈다)
+  configs_per_family: 1
+  hist_days: ['2025-09-27', '2025-09-28']
+  override:
+    seq: {max_epochs: 1}
+    gbt: {max_rounds: 20}
+
+limitations:
+  - E_PS는 이미 여러 번 봤고(R 채택, LIT-BASE 채점), EXPL-FINAL에서 다시 쓴다. 독립 시험이 아니다.
+  - DEV(9월)는 LIT-BASE에서 이미 수치를 본 자료이고, 이번 팔 설계(상한 늘리기 등)는 그 DEV 결과를 보고 정했다. DEV 순위는 낙관적일 수 있다.
+  - tau와 κ는 DEV에서 맞추고 DEV로 선정에 쓴다(모수 1개씩).
+  - 서버(CUDA)와 맥은 비트 재현이 보장되지 않는다. E_PS 예측(EXPL-FINAL)은 서버 가중치를 맥 CPU에서 돌린다.
+  - X-DATA의 2023~2025 자료는 같은 projection·같은 2026 Encoder11을 쓰며 2026 동등성 게이트만 확인했다(시즌 간 구종 분류·투수 기량 변화는 미측정). 시즌 구분 입력은 없다.
+  - X-PREQ는 바탕 팔이 풀 전체에서 정해지므로 다른 모든 팔 tune 뒤에만 돈다. κ와 tau는 DEV에서 맞춘다. EXP-PREQ-001에서 E_PS top1이 −0.66%p 떨어진 기록이 있어 top1 변화를 따로 보고한다.

@@ -1,0 +1,22 @@
+{
+ "name": "XGBT+XGRUA3p+XGRUA5b24_AM-w_+T",
+ "method": "AM-w",
+ "members": [
+  "X-GBT",
+  "X-GRU-A3-plus",
+  "X-GRU-A5-b24"
+ ],
+ "weights": [
+  0.15478128785718553,
+  0.2986896746065864,
+  0.5465290375362281
+ ],
+ "temperature": 0.9391571873384407,
+ "trained_window": [
+  "2026-03-25",
+  "2026-09-27"
+ ],
+ "selected_by": "EXP-EXPL-1121-FINAL v4: DEV (September) cross-fit NLL; ties within 0.0005 go to the simpler candidate",
+ "combine": "q = sum_i w_i q_i; final = softmax(log(q) / temperature)  (experiments/lit_base/final2.py:combine)",
+ "note": "Copied from the archived final-mix.json of the v4 run (weights and temperature only; file paths dropped)."
+}

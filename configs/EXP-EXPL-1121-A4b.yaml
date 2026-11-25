@@ -1,0 +1,105 @@
+# EXP-EXPL-1121-A4b — A3-seeds 설정(X-GRU-A2a DEV 1위, hidden 96) 그대로, seed 60..89 한 팔(GPU4). A4의 작은 추가 등록. 새 모델 코드 없음. 이 뒤 seed 추가 등록은 하지 않는다.
+# owner: "최대한 모델을 발전시켜보자", 부스 모델은 모든 후보 중 DEV로만 (2026-11-21). PM 지시(GPU4 19:49 KST부터 유휴).
+# 등록 문서: ${PITCHEEZY_JOBS}/20261121-lit-base/PREREG-EXPL-A4b.md. 실행기: experiments/lit_base/expl.py --part A4b
+id: EXP-EXPL-1121-A4b
+part: A4b   # 최종 선택은 EXPL-FINAL v4(v3 결과 뒤 등록, 풀 = v3 + A4-seeds + A4b-seeds)에서 DEV로만
+status: REGISTERED     # Fable PASS-with-fixes(REVIEW-EXPL-A4b-FABLE.md) 필수 3건 반영 (2026-11-21). 실행 뒤 이 파일은 고치지 않는다(FINAL v4 pin)
+execute: true
+author: claude-opus-5-5 (LIT-BASE/EXPL worker)
+viewing_state: >-
+  A·A2·A3·B DEV를 본 뒤 정했다. X-GRU-A3-seeds(seed 20개) DEV 1.22123 1위, X-GRU-A3-plus 1.23498(hist 추가해도 나아지지 않음, PM 전달·파일 확인),
+  A4(cal·seeds)는 GPU2에서 진행 중이고 활성화 시점(19:5x KST)까지 A4 DEV 값은 보지 않았다. E_PS는 보지 않았다(FINAL v3 채점 전). 최종 선택은 FINAL v4에서 DEV로만.
+created_kst: '2026-11-21'
+data_role: >-
+  2026 EXPOSED DEVELOPMENT(FIT 03-25..09-27 정규시즌, R과 같은 package). DEV(2026-09-01..09-27)에서만 순위·선택.
+  이 묶음은 E_PS를 읽지 않는다(서버·맥 모두). hist(2023~2025)는 쓰지 않는다.
+
+data:
+  package:
+    root: data/final-1124/september-package       # 레포 상대(서버 link data/final-1124 = 맥 worktree 심볼릭 링크). 서버 sha 7/7 일치(a5000 세션)
+    rows: 713021
+    all_keys_sha256: 345d4d86d0bbceb9943d5239e71ca3311f851721a1181921bf3bbcb24a548e17
+    sha256:
+      x-prequential.npy: e84ad8938cb64884cf7f63bbff79b8b8393018418145fe4f3450a3723d7b467d
+      corpus-subset.npz: b8608d18d0e6c4a907fb11a9d8812f1a184ede7e7905be4428c8043739a264ff
+      seq-inputs.npz: 44682d7c7f1fa6c17f9c4b21a87702656fb8a62a82232f5617486f5fbd2f1255
+      game-date.npy: 7aa8d167a1316e410481130e4bd0a05f2770927624458994b10a43967699efb1
+      encoder.json: 375c1075db3ecc5f11e0bc0847a75f9298b9f28de84dc0610c35acdc676f8e26
+  eps_inputs:                                      # 이 묶음에서는 읽지 않는다(EXPL-FINAL의 predict가 맥에서 읽음). 기록용 고정값
+    path: ${PITCHEEZY_JOBS}/20261121-lit-base/eps-inputs/eps-inputs.npz
+    sha256: 4055cfe618298455f7dfee4fd59652e5d0b782123d219d9b9c812b353931f5b2
+    rows: 8943
+    built: 8668
+  excluded_game_pks: [849799, 849802, 849803, 849804, 849805, 849809, 849810, 849811, 849812, 849813, 849815, 849816, 849817, 849818,
+                      849819, 849820, 849822, 849823, 849825, 849826, 849827, 849828, 849829, 849830, 849831, 849832, 849833, 849834,
+                      849835, 849838, 849839, 849844, 849841, 849842, 849843, 849845, 849846, 849848, 849849, 849851]
+
+splits:          # LIT-BASE와 같다
+  fit_window: ['2026-03-25', '2026-09-27']
+  fit_tr_end: '2026-08-31'
+  dev_start: '2026-09-01'
+  rule: >-
+    tune = FIT_tr로 학습, DEV로 설정·epoch/rounds·seed 묶음 tau 선정. fitw = FIT 전체로 같은 설정·같은 budget 재학습 후
+    가중치 저장(.pt / LightGBM model.txt + 표적 인코딩 표). E_PS 예측은 EXPL-FINAL에서 최종 후보 한 팔만, 맥에서.
+
+features:
+  information_set: >-
+    R·LIT-BASE와 같다: state11, 투수 ID, 타자 ID, 같은 경기 같은 투수의 엄격히 앞선 투구 최대 32개(구종 19·결과 10·볼·스트라이크·같은 타자).
+    현재 투구 물리·위치·결과 없음.
+  target_encoding_alpha: 4.0
+  target_encoding_folds: 5
+
+families:
+  X-GRU-A4b-seeds:                               # GPU4. A3-seeds·A4-seeds 설정 그대로, seed 60..89 (기존 0..59와 겹치지 않는 30개)
+    lane: gpu4
+    kind: seq
+    device: cuda
+    data: base
+    seeds: [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89]
+    max_seconds_per_fit: 3600
+    base: {encoder: gru, window: 32, type_dim: 16, context_dim: 32, head_hidden: 128, dropout: 0.1, lr: 2.0e-3, weight_decay: 1.0e-4,
+           batch_size: 2048, max_epochs: 40, patience: 3, id_dropout: 0.05, hidden: 96, pitcher_dim: 64, batter_dim: 16, layers: 1}
+    tune:
+      seed: 60                                       # = seeds[0]. budget = seed 60의 DEV 조기 종료 epoch(A2a·A3·A4와 같은 규칙)
+      configs:
+        - {}                                           # 설정 탐색 없음
+
+decision:
+  provisional_rule: >-
+    이 묶음 안 순위 = DEV NLL(선정 설정, seed 묶음 평균, DEV tau)이 낮은 순. select는 provisional-best.json(묶음 안 1위)만 쓴다.
+  final_rule: >-
+    최종 선택은 전체 후보 집합에서 DEV로만 한다. 이 묶음(A4b-seeds)은 EXPL-FINAL v4(v3 결과 뒤 등록, 풀 = v3 + A4-seeds + A4b-seeds, 따로 두 성분)로 들어간다.
+    A2a·A3-seeds·A4-seeds·A4b-seeds의 큰 seed 묶음은 FINAL 조합 후보(AM-eq 등)로만 합쳐지며 이 묶음에서 따로 합치지 않는다.
+    E_PS는 최종 후보 확인용 1회(FINAL).
+  booth: 부스 모델 선택은 PM·owner 결정(후보 R, B-SEQ, B*_new).
+
+reference:
+  dev_selections:
+    LIT-BASE B-SEQ: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-SEQ/selection.json
+    LIT-BASE B-GBT: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-GBT/selection.json
+    LIT-BASE B-TAK: ${PITCHEEZY_RUNS}/LIT-BASE-20261121/EXP-LIT-BASE-001/attempt-001/tune/B-TAK/selection.json
+
+resources:
+  output_root: runs/EXP-EXPL-1121-A4b      # 서버: runs/EXP-EXPL-1121-A4b/<PITCHEEZY_LANE>/attempt-001. 회수: T7 EXPL-20261121/A4b/attempt-001/{tune,fitw}
+  report_dir: ${PITCHEEZY_JOBS}/20261121-lit-base
+  heavy_lock: ${PITCHEEZY_RUNS}/ML-MATRIX-20260924/.heavy.lock
+  threads: {gpu4: 4}
+  internal_free_bytes_min: 10737418240
+  memory_free_percent_min: 30
+  forbidden_windows_kst:                   # 맥만: 새 fit을 시작하지 않는다
+    - ['2026-11-22T19:30:00', '2026-11-22T22:10:00']
+  gpu: A5000 GPU 2·3·4만. 실행·점유 확인·UUID 고정은 a5000-gpu 세션. 맥 MPS는 쓰지 않는다.
+
+dry_run:
+  package_days: ['2026-08-30', '2026-08-31']
+  configs_per_family: 1
+  override:
+    seq: {max_epochs: 1}
+    gbt: {max_rounds: 20}
+
+limitations:
+  - A·A2·A3·B DEV를 보고 정한 설정이고 같은 DEV를 다시 쓴다. DEV 순위가 더 낙관적일 수 있다.
+  - budget은 seed 60의 DEV 조기 종료 epoch이라 A4-seeds(seed 30)와 다를 수 있다.
+  - 수확 체감: A2a(10) 1.22411 → A3-seeds(20) 1.22123. seed를 더 늘리는 등록은 이것이 마지막이다.
+  - E_PS는 이미 여러 번 봤고 FINAL v3에서 다시 채점한다. v4 채점은 재열람(탐색)이다.
+  - 서버(CUDA)와 맥은 비트 재현이 보장되지 않는다.

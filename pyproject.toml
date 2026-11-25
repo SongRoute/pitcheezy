@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pitcheezy"
+description = "Next-pitch-type prediction for baseball viewers: model, re-scoring scripts and the viewer service"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dynamic = ["version"]
+# Re-scoring and figures need only numpy, scipy and matplotlib.
+dependencies = [
+  "numpy",
+  "scipy",
+  "pandas>=2.2",
+  "pyyaml",
+]
+
+[project.optional-dependencies]
+figures = ["matplotlib", "pillow"]
+train = [
+  "torch>=2.4",
+  "lightgbm>=4.6",
+  "pyarrow>=14",
+  "pybaseball==2.2.7",  # the version used to collect Statcast data for training
+]
+dev = ["pytest"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pitcheezy.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "experiments/lit_base"]
