@@ -8,7 +8,7 @@ from experiments.lit_base import run as R
 
 
 def test_type9_matches_prepitch_targets():
-    from experiments.gpu14h_prepitch.train import targets
+    targets = pytest.importorskip('experiments.gpu14h_prepitch.train', reason='옛 실험 모듈 experiments.gpu14h_prepitch는 이 공개 레포에 없음(원래 레포에만 있음)').targets
     assert np.array_equal(D.TYPE9, targets(np.arange(len(D.TYPES))))
 
 
@@ -34,7 +34,7 @@ def test_token_features_pa_prefix():
 
 
 def test_context_strictly_earlier():
-    from experiments.ws_seq.train_seq import build_context_index
+    build_context_index = pytest.importorskip('experiments.ws_seq.train_seq', reason='옛 실험 모듈 experiments.ws_seq는 이 공개 레포에 없음(원래 레포에만 있음)').build_context_index
     pit = np.array([1, 1, 1, 2]); g = np.array([5, 5, 5, 5]); ab = np.array([1, 1, 2, 2]); pn = np.array([1, 2, 1, 1])
     ctx = build_context_index(pit, g, ab, pn, 4)
     assert (ctx[0] == -1).all() and ctx[1, 0] == 0 and list(ctx[2, :2]) == [1, 0] and (ctx[3] == -1).all()
@@ -70,7 +70,11 @@ def test_window_guard():
 
 def _preq_module():
     import importlib.util
-    spec = importlib.util.spec_from_file_location('preq_ref', '${PITCHEEZY_REPO}/experiments/preq/preq.py')
+    import os
+    path = os.path.expandvars('${PITCHEEZY_REPO}/experiments/preq/preq.py')
+    if not os.path.isfile(path):
+        pytest.skip('곁가지 실험 코드 experiments/preq/preq.py가 이 공개 레포에 없음(PITCHEEZY_REPO에 원래 레포를 두면 실행됨)')
+    spec = importlib.util.spec_from_file_location('preq_ref', path)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 

@@ -81,7 +81,7 @@ python scripts/make_onepage.py            # docs/onepage-16x9.{png,pdf}
 
 ## 6. 테스트 상태 (2026-11-25, 이 레포에서 실행)
 
-- `pytest experiments/lit_base/test_lit_base.py tests/test_wc8.py`: 33 통과, 2 건너뜀, 7 실패.
-  - 실패 7건은 모두 이 레포에 넣지 않은 것을 읽어서입니다: 경기 등록 정보 파일(MLB 파생, 4건), 옛 실험 모듈 `experiments.ws_seq`·`experiments.gpu14h_prepitch`(2건), 곁가지 실험 코드 `experiments/preq`(1건).
+- `pytest experiments/lit_base/test_lit_base.py tests/test_wc8.py`: 33 통과, 9 건너뜀, 0 실패.
+  - 건너뛰는 9건 가운데 7건은 이 레포에 넣지 않은 것이 필요한 테스트입니다. 경기 등록 정보 파일(MLB 파생)이 4건, 옛 실험 모듈 `experiments.ws_seq`·`experiments.gpu14h_prepitch`가 2건, 곁가지 실험 코드 `experiments/preq`가 1건입니다. 각 테스트의 건너뜀 메시지에 이유가 적혀 있습니다. 나머지 2건은 원래부터 기준 작업 사본이 없으면 건너뜁니다.
 - `apps/observer`의 백엔드·화면 테스트는 돌리지 않았습니다. 실제 경기 자료로 만든 테스트 고정 파일을 뺐고, 원래 레포의 다른 모듈(`pitcheezy.seq_shadow` 등)이 없어서 상당수가 실패하거나 건너뛸 것으로 봅니다(미측정).
 - 화면(`apps/observer/web`)은 `npm install` 뒤 빌드할 수 있게 팀원 스킨 플러그인을 설정에서 뺐지만, 이 레포에서 빌드해 보지는 않았습니다(미확인).

@@ -282,7 +282,14 @@ def test_compare_rows():
 
 
 # ---------------------------------------------------------------- guards and per-game configs (pinned configs only)
+
+def _need_facts():
+    if not pathlib.Path(C.FACTS).exists():
+        pytest.skip('경기 등록 정보 파일(registration-facts.json, MLB 파생)이 이 공개 레포에 없음')
+
+
 def test_game_entry_guards():
+    _need_facts()
     f = C.facts()
     eps = int(f['E_PS']['game_pks'][0])
     with pytest.raises(SystemExit):
@@ -299,6 +306,7 @@ def test_game_entry_guards():
 
 @pytest.mark.parametrize('model', C.MODELS)
 def test_game_config_only_replaced_blocks(model, tmp_path):
+    _need_facts()
     import predict as P
     game = C.game_entry(849843)
     c = P.game_config(model, game, tmp_path, 'deadbeef')
