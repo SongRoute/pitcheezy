@@ -2,9 +2,9 @@
  "schema": "pitcheezy-cv-m3-evidence-v1",
  "note": "Display copy of the PM M3 receipt. Shared-transform reading agreement, not physical accuracy or intent validation. Not used for prediction training/tuning/selection or policy evaluation.",
  "source": {
-  "teamRepo": "Pitcheezy/transition-models",
-  "teamCommit": "1687c1e8a7ea7213c164679e94d7515a0b530629",
-  "teamDoc": "docs/INTENT_V0_M3_EVAL.md",
+  "teamRepo": "(팀원 레포, 비공개)",
+  "teamCommit": "(비공개)",
+  "teamDoc": "(비공개)",
   "receiptPath": "results/checks/CV-M3-receipt-recalculation-20261004.json",
   "receiptSha256": "b9b2ab1911f55facf98ef74f202f9c00b0837e6a0c827132dc1566091d2bf630",
   "receiptCreatedUtc": "2026-10-04T03:56:43.463296+00:00",

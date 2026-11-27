@@ -23,7 +23,7 @@ data:
       game-date.npy: 7aa8d167a1316e410481130e4bd0a05f2770927624458994b10a43967699efb1
       encoder.json: 375c1075db3ecc5f11e0bc0847a75f9298b9f28de84dc0610c35acdc676f8e26
   hist:                                            # scripts/lit_base/build_hist.py (2026 동등성 게이트 PASS: 713,021행 불일치 0, state11 차 0.0)
-    root: data/expl-1121-hist                      # 서버 ~/cc/shared/pitcheezy/expl-1121/hist/ 를 이 이름으로 link(a5000 세션), 맥은 T7 심볼릭 링크
+    root: data/expl-1121-hist                      # 학습 서버의 공유 폴더를 이 이름으로 연결, 맥은 외장 디스크 링크
     sha256:
       2023: d2a148f89bad21176efba4fe7d6725bc766fb864a3ec5b6d1907f6017868c4c6
       2024: f12b4ea0dc4545a3a51093543b7f4af2b99f6543beadd846f0bf7b9968ac46e4
